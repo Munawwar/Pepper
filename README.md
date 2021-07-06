@@ -1,5 +1,7 @@
 ## Pepper
 
+NOTE: Project is still a work-in-progress
+
 Reuse your server side templates on the client side. Pepper some client-side JS after serving the HTML.
 
 Use template libraries like mustache, handlebars, jade.. (any that can compile to JS)
