@@ -1,23 +1,23 @@
 {
-  "name": "sahte-react",
-  "version": "0.1.0",
-  "description": "Library to use nunjucks and dom-diff to manage front-end UI.",
-  "main": "sahte-react.js",
+  "name": "@pepper-js/pepper",
+  "version": "0.0.1",
+  "description": "Bring your server-side templates to life",
+  "main": "pepper.js",
   "directories": {
     "test": "test"
   },
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "dist": "terser pepper.js -mc -o dist/pepper.min.js --source-map",
+    "publish": "npm publish --access public"
   },
   "keywords": [
-    "fake",
-    "react"
+    "sprinkle some js"
   ],
   "author": "Munawwar",
   "license": "MIT",
-  "dependencies": {},
   "devDependencies": {
     "nunjucks": "^3.0.0",
-    "swig": "^1.4.2"
-  }
+    "terser": "^5.7.1"
+  },
+  "dependencies": {}
 }
