@@ -23,7 +23,9 @@ Bundle size - udomdiff + pepper.js is 2.2 KB gzipped
         <div id="node-to-sync"></div>
         <script>
             var view = new Pepper({
-                getHtml: (data) => `<div>${data.text}</div>`,
+                getHtml: (data) => `<button on-click="onClick">${data.text}</button>`,
+                // or you can instead use a template library here
+                
                 data: { text: 'Test' },
                 target: '#node-to-sync', // optional
                 
@@ -32,12 +34,14 @@ Bundle size - udomdiff + pepper.js is 2.2 KB gzipped
                 }
             });
             view.mount();
-            // or if you want to only hydrate, call view.hydrate()
-            // or if no target specified, do view.append(document.body)
+            // or call view.hydrate(), for hydration
+            // or view.append(document.body), if no target specified
         </script>
     </body>
 </html>
 ```
+
+You can find examples for several templating language in the [examples directory](./examples).
 
 **Important note**: The template HTML should be wrapped inside a single HTML tag. In other words, Pepper assumes the template has a single root element. If not, then Pepper would take the first element (as root) and ignore the rest.
 
@@ -55,12 +59,12 @@ Or use `view.assign()` to not overwrite existing props
 ### Refs to DOM nodes
 
 ```html
-<div on-click="onClick">
-    <span ref="spanEl">{{ text }}</span>
-</div>
+<button ref="btnEl" on-click="onClick">
+    {{ text }}
+</button>
 ```
 
-Now you can use `this.spanEl` (inside a view method) or `view.spanEl` (from outside) to access the span element.
+Now you can use `this.btnEl` (inside a view method) or `view.btnEl` (from outside) to access the span element.
 
 ### Debug access
 
@@ -106,14 +110,10 @@ window.setInterval(incrementCounterAction, 1000);
 
 Note that if you don't "connect" your view to specific properties from the Pepper store, then you cannot access those property at all.
 
-Also note; I have moved the code that manipulates the central store (data side effects) to separate function(s) (i.e action). Even though this is completely optional, I would recommended always doing it that way, since it is later easier to find out what's manipulating the central store. If you put this code in the view it gets mixed with UI code and would be harder to find later.
+Also note; I have moved the code that manipulates the central store (data side effects) to separate function(s) (i.e action). Even though this is completely optional, I would recommended always doing it that way, since it is later easier to find out what's manipulating the central store. If you put this code in the view it would be harder to find later.
 
 Important note: This is a performance optimization in disguise. You can naively put all your HTML within a single Pepper view and all the states within it.
 But that could take a hit on rendering performance. So Pepper Store gives you an option to make smaller views, while keeping the rest of the HTML static, and refresh only the views that needs a refresh (with some manual "connecting" from the developer's end).
-
-### Security
-
-Templates allow script and style tags. Therefore do not execute untrusted HTML (without running it through an HTML sanitizer first).
 
 ### Browser compatibility
 

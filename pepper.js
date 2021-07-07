@@ -62,20 +62,26 @@
          */
         dom: function dom(html) {
             const supportsTemplate = 'content' in document.createElement('template');
+            var frag;
             if (supportsTemplate) {
                 var templateTag = document.createElement('template');
                 templateTag.innerHTML = html;
-                return templateTag.content;
+                frag = templateTag.content;
             } else if (window.jQuery) { // IE 11 (jquery fallback)
-                var frag = document.createDocumentFragment();
+                frag = document.createDocumentFragment();
                 var nodes = jQuery.parseHTML(html);
                 nodes.forEach(function (node) {
                     frag.appendChild(node);
                 });
-                return frag;
-            } else { // fallback to our parseHTML function which we extracted out from jquery)
-                return window.parseHTML(html);
+            } else { // fallback to our parseHTML function which we extracted out from jquery
+                frag = window.parseHTML(html);
             }
+            // remove script tags
+            var toRemove = frag.querySelectorAll('script');
+            for (var i = 0; i < toRemove.length; i += 1) {
+                frag.removeChild(toRemove[i])
+            }
+            return frag;
         },
 
         /**
@@ -324,8 +330,8 @@
                 return acc;
             }, {});
             var data = Object.assign(storeDataSubset, this.data);
-            var view = utils.dom(this.getHtml(data));
-            var el = view.firstElementChild;
+            var frag = utils.dom(this.getHtml(data));
+            var el = frag.firstElementChild;
 
             // Update existing DOM.
             if (target) {
