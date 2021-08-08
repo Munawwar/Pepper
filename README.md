@@ -20,21 +20,22 @@ Bundle size - udomdiff + pepper.js is 2.2 KB gzipped
         <script src="pepper.js"></script>
     </head>
     <body>
-        <div id="node-to-sync"></div>
+        <button id="node-to-sync" on-click="onClick">Test</button>
         <script>
             var view = new Pepper({
-                getHtml: (data) => `<button on-click="onClick">${data.text}</button>`,
+                getHtml: (data) => `<button id="node-to-sync" on-click="onClick">${data.text}</button>`,
                 // or you can instead use a template library here
                 
                 data: { text: 'Test' },
                 target: '#node-to-sync', // optional
+                hydrate: true, // optional
                 
                 onClick: function () {
                     console.log('Clicked!');
                 }
             });
-            view.mount();
-            // or call view.hydrate(), for hydration
+            // or you can call view.hydrate() here.
+            // or call view.mount(), to create new DOM nodes
             // or view.append(document.body), if no target specified
         </script>
     </body>

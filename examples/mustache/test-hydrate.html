@@ -6,17 +6,21 @@
         <script src="./button.js"></script>
     </head>
     <body>
-        <div id="myview"></div>
+        <button id="my-button" on-click="onClick">
+            <span ref="spanEl">Test</span>
+        </button>
 
         <script>
             new Pepper({
                 getHtml: (data) => mustacheTemplates.button.render(data),
                 data: { text: 'Test' },
-                target: '#myview',
-                mount: true,
+                target: '#my-button',
+                hydrate: true,
+
                 onClick: function () {
                     console.log('Clicked!');
                     this.assign({ text: 'Clicked' });
+                    console.log(this.spanEl);
                 }
             });
         </script>
