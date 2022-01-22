@@ -1,6 +1,6 @@
 {
   "name": "@pepper-js/pepper",
-  "version": "0.0.1",
+  "version": "0.0.2",
   "description": "Bring your server-side templates to life",
   "main": "pepper.js",
   "directories": {
@@ -19,5 +19,6 @@
     "nunjucks": "^3.0.0",
     "terser": "^5.7.1"
   },
+  "repository": "github:Munawwar/pepper",
   "dependencies": {}
 }
