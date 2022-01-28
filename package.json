@@ -2,7 +2,14 @@
   "name": "@pepper-js/pepper",
   "version": "0.0.2",
   "description": "Bring your server-side templates to life",
-  "main": "pepper.js",
+  "type": "module",
+  "main": "./pepper.js",
+  "module": "./pepper.mjs",
+  "source": "./pepper.js",
+  "exports": {
+    "require": "./pepper.js",
+    "default": "./pepper.mjs"
+  },
   "directories": {
     "test": "test"
   },

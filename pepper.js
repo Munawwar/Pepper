@@ -1,115 +1,118 @@
 /*global window, $*/
 
 (function (factory) {
-	window.Pepper = factory();
+	if (typeof module === 'object' && module.exports) {
+		// Node cjs
+		module.exports = factory();
+	} else {
+		window.Pepper = factory();
+	}
 })(function () {
-	const idMap = new WeakMap();
-	var utils = {
-		// Deep merge helper
-		merge: function merge(out) {
-			out = out || {};
-			for (var argIndex = 1; argIndex < arguments.length; argIndex += 1) {
-				var obj = arguments[argIndex];
-				if (!obj || typeof val !== 'object') {
-					continue;
-				}
-				var keys = Object.keys(obj);
-				for (var keyIndex = 1; keyIndex < keys.length; keyIndex += 1) {
-					var key = keys[keyIndex];
-					var val = obj[key];
-					out[key] = (typeof val === 'object' && val !== null)
-						? utils.merge(out[key], val)
-						: val;
-				}
-			}
-			return out;
-		},
-
-		/**
-		 * Generates an unique alpha-numeric identifier.<br/>
-		 * To get the same permutation as RFC-4122 use len=24.
-		 * @param {Number} [len=11] Length of the UUID.
-		 * @return {String} The UUID
-		 * @method uuid
-		 */
-		uuid: function (len = 11) {
-			return 'x'.repeat(len).replace(/x/g, function () {
-				return (Math.random() * 36 | 0).toString(36);
+	var arrayProto = Array.prototype;
+	// utils
+	function from(arrayLike, fromIndex) {
+		return arrayProto.slice.call(arrayLike, fromIndex);
+	}
+	function each(arrayLike, fn, context) {
+		return arrayProto.forEach.call(arrayLike, fn, context);
+	}
+	function assign(target) {
+		from(arguments, 1).forEach(function (obj) {
+			Object.keys(obj).forEach(function (key) {
+				target[key] = obj[key];
 			});
-		},
-
-		/**
-		 * Send in any object (including function, DOM Nodes or whatever) and get a unique id.
-		 * If you send the object again, the same id will be returned as the last time.
-		 * This does not leak memory.
-		 * @method getUID
-		 */
-		getUID: function getUID(obj, create = true) {
-			var id = idMap.get(obj);
-			if (!id && create) {
-				id = utils.uuid();
-				idMap.set(obj, id);
+		});
+		return target;
+	}
+	// Deep merge helper
+	function merge(out) {
+		out = out || {};
+		for (var argIndex = 1; argIndex < arguments.length; argIndex += 1) {
+			var obj = arguments[argIndex];
+			if (!obj || typeof val !== 'object') {
+				continue;
 			}
-			return id;
-		},
-
-		/*Dom helpers*/
-		/**
-		 * Converts html string to a document fragment.
-		 * @param {String} html
-		 * @return {DocumentFragment}
-		 * @method dom
-		 */
-		dom: function dom(html) {
-			const supportsTemplate = 'content' in document.createElement('template');
-			var frag;
-			if (supportsTemplate) {
-				var templateTag = document.createElement('template');
-				templateTag.innerHTML = html;
-				frag = templateTag.content;
-			} else if (window.jQuery) { // IE 11 (jquery fallback)
-				frag = document.createDocumentFragment();
-				var nodes = jQuery.parseHTML(html);
-				nodes.forEach(function (node) {
-					frag.appendChild(node);
-				});
-			} else { // fallback to our parseHTML function which we extracted out from jquery
-				frag = window.parseHTML(html);
+			var keys = Object.keys(obj);
+			for (var keyIndex = 1; keyIndex < keys.length; keyIndex += 1) {
+				var key = keys[keyIndex];
+				var val = obj[key];
+				out[key] = (typeof val === 'object' && val !== null)
+					? merge(out[key], val)
+					: val;
 			}
-			// remove script tags
-			var toRemove = frag.querySelectorAll('script');
-			for (var i = 0; i < toRemove.length; i += 1) {
-				frag.removeChild(toRemove[i])
-			}
-			return frag;
-		},
+		}
+		return out;
+	}
+	/**
+	 * Converts html string to a document fragment.
+	 * @param {String} html
+	 * @return {DocumentFragment}
+	 * @method dom
+	 */
+	function parseAsFragment(html) {
+		var supportsTemplate = 'content' in document.createElement('template');
+		var frag;
+		if (supportsTemplate) {
+			var templateTag = document.createElement('template');
+			templateTag.innerHTML = html;
+			frag = templateTag.content;
+		} else if (window.jQuery) { // IE 11 (jquery fallback)
+			frag = document.createDocumentFragment();
+			var nodes = jQuery.parseHTML(html);
+			nodes.forEach(function (node) {
+				frag.appendChild(node);
+			});
+		} else { // fallback to our parseHTML function which we extracted out from jquery
+			frag = window.parseHTML(html);
+		}
+		// remove script tags
+		var toRemove = frag.querySelectorAll('script');
+		for (var i = 0; i < toRemove.length; i += 1) {
+			frag.removeChild(toRemove[i])
+		}
+		return frag;
+	}
 
-		/**
-		 * Helper to attach handleEvent object event listener to element.
-		 * @param {HTMLElement} node
-		 * @param {Object} context
-		 * @param {String} eventName
-		 * @param {Function} func
-		 * @method dom
-		 */
-		on: function on(node, context, eventName, func) {
-			node._bindings = node._bindings || {};
-			node._bindings[eventName] = func;
-			// add func to id mapping
-			utils.getUID(func);
-			node.addEventListener(eventName, context);
-		},
-		
-		/**
-		 * Removes all event handlers on node. Ensure same context is passed as it
-		 * was for on() method, else the event listeners wont get removed.
-		 */
-		off: function off(node, context) {
-			if (node._bindings) {
-				Object.keys(node._bindings).forEach(function (eventName) {
-					node.removeEventListener(eventName, context);
-				});
-				delete node._bindings;
+	// Sync patch DOM from source element to target element.
+	function patchDom(newNode, targetNode) {
+		if (newNode.nodeType !== targetNode.nodeType || (newNode.nodeType === 1 && newNode.nodeName !== targetNode.nodeName)) {
+			return targetNode.parentNode.replaceChild(newNode, targetNode);
+		}
+		// Should only reach here if both nodes are of same type.
+		if (newNode.nodeType === 1) { // HTMLElements
+			// Sync attributes
+			// Remove any attributes not in source
+			each(targetNode.attributes, function (attr) {
+				if (!newNode.attributes.getNamedItem(attr.name)) {
+					targetNode.attributes.removeNamedItem(attr.name);
+				}
+			});
+
+			// update the rest
+			each(newNode.attributes, function (attr) {
+				if (targetNode.getAttribute(attr.name) !== attr.value) {
+					targetNode.setAttribute(attr.name, attr.value);
+				}
+			});
+	
+			// Remove extra nodes
+			while (targetNode.childNodes.length > newNode.childNodes.length) {
+				targetNode.removeChild(targetNode.lastChild);
+			}
+
+			// recursively sync childNodes and their attributes
+			each(newNode.childNodes, function (newChildNode, i) {
+				var oldChildNode = targetNode.childNodes[i];
+				if (!oldChildNode) {
+					targetNode.appendChild(newChildNode)
+				} else if (newChildNode !== oldChildNode) {
+					// recursively patch child nodes
+					patchDom(newChildNode, oldChildNode);
+				}
+			});
+		} else if (newNode.nodeType === 3 || newNode.nodeType === 8) { // text and comment nodes
+			if (targetNode.nodeValue !== newNode.nodeValue) {
+				targetNode.nodeValue = newNode.nodeValue;
 			}
 		}
 	};
@@ -137,7 +140,7 @@
 		delete config.data;
 		delete config.mount;
 		delete config.hydrate;
-		Object.assign(this, config);
+		assign(this, config);
 
 		Object.defineProperty(this, 'data', {
 			configurable: false,
@@ -156,10 +159,48 @@
 		}
 	};
 
+	// private
+	var handlerMap = new WeakMap();
+	/**
+	 * Helper to attach handleEvent object event listener to element.
+	 * @param {HTMLElement} node
+	 * @param {Object} context
+	 * @param {String} eventName
+	 * @param {Function} func
+	 */
+	function attachHandler(node, context, eventName, func) {
+		if (!func) return;
+		var newMap = handlerMap.get(node) || {};
+		newMap[eventName] = func;
+		handlerMap.set(node, newMap);
+		node.addEventListener(eventName, context);
+	}
+	/**
+	 * Removes all event handlers on node. Ensure same context is passed as it
+	 * was for attachHandler() function, else the event listeners wont get removed.
+	 */
+	function removeAllHandlers(node, context) {
+		Object.keys(handlerMap.get(node) || {}).forEach(function (eventName) {
+			node.removeEventListener(eventName, context);
+		});
+		handlerMap.delete(node);
+	}
+	/**
+	 * Invokes an event handler that was registered via attachHandler
+	 * @param {Pepper} context 
+	 * @param {Event} event 
+	 */
+	function callHandler(context, event) {
+		var node = event.currentTarget;
+		var func = (handlerMap.get(node) || {})[event.type];
+		if (func) {
+			func.call(context, event);
+		}
+	}
+
 	// Static methods and properties
-	Object.assign(Pepper, {
+	assign(Pepper, {
 		uid: 1,
-		utils: utils,
 		generateUId: function () {
 			var id = 'view-' + Pepper.uid;
 			Pepper.uid += 1;
@@ -202,7 +243,7 @@
 				var changedProps = Object.keys(newData).filter(function (prop) {
 					return currentData[prop] !== newData[prop];
 				});
-				Object.assign(this._data, newData);
+				assign(this._data, newData);
 				this.notify(changedProps);
 			},
 			notify: function (changedProps) {
@@ -245,7 +286,7 @@
 
 
 	// Methods and properties
-	Object.assign(Pepper.prototype, {
+	assign(Pepper.prototype, {
 		/**
 		 * The data object.
 		 * This is a private variable accessed through this.data
@@ -269,8 +310,8 @@
 		 * Set data on this.data (using Object.assign), and re-render.
 		 */
 		assign: function () {
-			var args = Array.prototype.slice.call(arguments);
-			Object.assign.apply(Object, [this.data].concat(args));
+			var args = from(arguments);
+			assign.apply(null, [this.data].concat(args));
 			this.render();
 		},
 
@@ -278,18 +319,12 @@
 		 * Deep merge data with this.data, and re-render.
 		 */
 		merge: function (data) {
-			utils.merge(this.data, data);
+			merge(this.data, data);
 			this.render();
 		},
 
 		handleEvent: function handleEvent(event) {
-			var node = event.currentTarget;
-			var self = this;
-			const func = node._bindings[event.type];
-			// check if array was not tampered
-			if (utils.getUID(func, false)) {
-				func.call(self, event);
-			}
+			callHandler(this, event);
 		},
 
 		/**
@@ -315,10 +350,10 @@
 
 			// Step 2: Remove event listeners before patch.
 			if (target) {
-				[target].concat(Array.from(target.querySelectorAll('*')))
+				[target].concat(from(target.querySelectorAll('*')))
 					.forEach(function (node) {
 						if (node.nodeType === 1) {
-							utils.off(node, this);
+							removeAllHandlers(node, this);
 						}
 					}, this);
 			}
@@ -329,23 +364,15 @@
 				acc[prop] = storeData[prop];
 				return acc;
 			}, {});
-			var data = Object.assign(storeDataSubset, this.data);
-			var frag = utils.dom(this.getHtml(data));
+			var data = assign(storeDataSubset, this.data);
+			var frag = parseAsFragment(this.getHtml(data));
 			var el = frag.firstElementChild;
 
 			// Update existing DOM.
 			if (target) {
 				var parent = target.parentNode,
-					childIndex = Array.from(parent.childNodes).indexOf(target);
-
-				// Update UI using https://github.com/WebReflection/udomdiff
-				window.udomdiff(
-					parent,
-					[target],
-					[el],
-					function (n) { return n},
-					target.nextSibling,
-				);
+						childIndex = from(parent.childNodes).indexOf(target);
+				patchDom(el, target);
 				this.el = parent.childNodes[childIndex];
 			} else {
 				this.el = el;
@@ -378,11 +405,11 @@
 			// Note:
 			// ref creates a reference to the node as property on the view.
 			// refs creates an array property on the view, into which the node is pushed.
-			Array.from(self.el.querySelectorAll('[ref]')).forEach(function (node) {
+			each(self.el.querySelectorAll('[ref]'), function (node) {
 				self[node.getAttribute('ref')] = node;
 			});
 
-			var refs = Array.from(self.el.querySelectorAll('[refs]'));
+			var refs = from(self.el.querySelectorAll('[refs]'));
 			// Reset references first
 			refs.forEach(function (node) {
 				self[node.getAttribute('ref')] = [];
@@ -393,13 +420,13 @@
 			});
 
 			// Step 6: Attach event listeners.
-			[self.el].concat(Array.from(self.el.querySelectorAll('*')))
+			[self.el].concat(from(self.el.querySelectorAll('*')))
 				.forEach(function (node) {
 					if (node.nodeType === 1) {
-						Array.from(node.attributes).forEach(function (attr) {
+						each(node.attributes, function (attr) {
 							if (attr.name.startsWith('on-')) {
 								var eventName = attr.name.replace(/on-/, '');
-								utils.on(node, self, eventName, self[attr.value]);
+								attachHandler(node, self, eventName, self[attr.value]);
 							}
 						});
 					}

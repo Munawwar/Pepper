@@ -8,7 +8,7 @@ Use template libraries like mustache, handlebars, jade.. (any that can compile t
 
 Benefit of mustache/handlebars is that it runs on several server-side languages, making SSR more possible if you don't want to or cannot use JS on server-side.
 
-Bundle size - udomdiff + pepper.js is 2.2 KB gzipped
+Bundle size - pepper.js is 2 KB gzipped
 
 ### Example
 
@@ -16,7 +16,6 @@ Bundle size - udomdiff + pepper.js is 2.2 KB gzipped
 <!DOCTYPE html>
 <html>
     <head>
-        <script src="https://unpkg.com/udomdiff@1.1.0/min.js"></script>
         <script src="pepper.js"></script>
     </head>
     <body>
@@ -118,7 +117,7 @@ But that could take a hit on rendering performance. So Pepper Store gives you an
 
 ### Browser compatibility
 
-Supports every browser as GOV UK (2021) - https://www.gov.uk/service-manual/technology/designing-for-different-browsers-and-devices#browsers-to-test-in-from-january-2021
+Supports every browser as GOV UK (2021) - https://www.gov.uk/service-manual/technology/designing-for-different-browsers-and-devices
 
 (currently includes IE 11, Safari 12 and Samsung Internet)
 
