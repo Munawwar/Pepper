@@ -115,6 +115,19 @@ Also note; I have moved the code that manipulates the central store (data side e
 Important note: This is a performance optimization in disguise. You can naively put all your HTML within a single Pepper view and all the states within it.
 But that could take a hit on rendering performance. So Pepper Store gives you an option to make smaller views, while keeping the rest of the HTML static, and refresh only the views that needs a refresh (with some manual "connecting" from the developer's end).
 
+### Server-side rendering
+
+If you use a template engine then that's your server-side rendering :)
+
+But if you used no template engine, but hand-wrote getHtml(), then you can import Pepper and your views with node.js
+
+```js
+// CJS
+const Pepper = require('@pepper-js/pepper')
+// ESM
+import Pepper from '@pepper-js/pepper';
+```
+
 ### Browser compatibility
 
 Supports every browser as GOV UK (2021) - https://www.gov.uk/service-manual/technology/designing-for-different-browsers-and-devices
