@@ -134,17 +134,16 @@
 
 	/**
 	 * Assumptions:
-	 * 1. no duplicates allowed within newNodes
-	 * 2. no duplicates allowed within liveNodes
-	 * 3. neither list should contain `after` node or any node before `after` node
-	 * 4. neither list should contain `preserveAfter` node or any node after it
+	 * 1. liveNodes are child nodes of parentNode
+	 * 2. no duplicates allowed within newNodes
+	 * 3. no duplicates allowed within liveNodes
+	 * 4. neither list should contain `after` node or any node before `after` node
 	 * @param {Node[]} newNodes
 	 * @param {Node[]} liveNodes
 	 * @param {Node} parentNode
 	 * @param {Node} [after] sync nodes after a specified node, so that the nodes before it doesn't get touched
-	 * @param {Node} [preserveAfter] all nodes after this node (including node) will be preserved where it is
 	 */
-	function patchDom(newNodes, liveNodes, parentNode, after, preserveAfter) {
+	function patchDom(newNodes, liveNodes, parentNode, after) {
 
 		// fast path: case if newNodes.length is zero. means remove all
 		if (!newNodes.length) {
@@ -220,6 +219,7 @@
 
 		// figure out where to start syncing from
 		var insertAt = from(parentNode.childNodes).indexOf(after) + 1;
+		var newLiveNodes = new Set();
 
 		// re-ordering
 		// we now look at new nodes top-to-bottom and order them exactly at it's final index
@@ -229,6 +229,7 @@
 			var existingLiveNode = domLookup[hash].n2l.get(newNode);
 			var nodeAtPosition = parentNode.childNodes[insertAt + index];
 			if (existingLiveNode) {
+				newLiveNodes.add(existingLiveNode);
 				// put it at the position. If nodeAtPosition is undefined, then inserts to end
 				if (nodeAtPosition !== existingLiveNode) {
 					parentNode.insertBefore(existingLiveNode, nodeAtPosition);
@@ -253,6 +254,7 @@
 				|| !salvagableElements[newNodeName]
 				|| !salvagableElements[newNodeName].length
 			) {
+				newLiveNodes.add(newNode);
 				parentNode.insertBefore(newNode, nodeAtPosition);
 				return;
 			}
@@ -261,6 +263,7 @@
 			// but we do have an existing element of same nodeType that can be re-used
 			var newEl = /** @type {Element} */ (newNode); // gah, typescript!
 			var aLiveNode = salvagableElements[newNode.nodeName].shift(); // pick first one
+			newLiveNodes.add(aLiveNode);
 			// place it at where the new node should be
 			if (nodeAtPosition !== aLiveNode) {
 				parentNode.insertBefore(aLiveNode, nodeAtPosition);
@@ -277,13 +280,12 @@
 			}
 		});
 
-		// now remove any elements after last newNode and before preserveAfter point
-		// remember newNodes.length > 0 because we handled fast path.
-		var lastNode = parentNode.childNodes[insertAt + newNodes.length - 1];
-		while (lastNode.nextSibling && lastNode.nextSibling !== preserveAfter) {
-			// prevent any potential infinite loop by using lastNode.parentNode
-			lastNode.parentNode.removeChild(lastNode.nextSibling);
-		}
+		// now remove any element not in newLiveNodes
+		liveNodes.forEach(function (node) {
+			if (!newLiveNodes.has(node)) {
+				parentNode.removeChild(node);
+			}
+		});
 	};
 	// -- end of dom-sync logic --
 
@@ -542,7 +544,7 @@
 			if (target) {
 				var parent = target.parentNode,
 						childIndex = from(parent.childNodes).indexOf(target);
-				patchDom([el], [target], parent, target.previousSibling, target.nextSibling);
+				patchDom([el], [target], parent, target.previousSibling);
 				this.el = parent.childNodes[childIndex];
 			} else {
 				this.el = el;
