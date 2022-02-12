@@ -73,12 +73,31 @@
 		return frag;
 	}
 
-	// -- dom-sync logic --
 	function isCustomElement(element) {
 		if (element.tagName.indexOf('-') > 0) return true;
 		var attr = element.getAttribute('is');
 		return (attr && attr.indexOf('-') > 0);
 	}
+	/**
+	 * Traverse elements of a tree in order of visibility (pre-order traversal)
+	 * @param {Node} parentNode
+	 * @param {(Node) => void} onNextNode
+	 */
+	function traverseElements(parentNode, onNextNode) {
+		var treeWalker = document.createTreeWalker(parentNode, NodeFilter.SHOW_ELEMENT),
+				node = treeWalker.currentNode;
+		while (node) {
+			// dont touch the inner nodes of custom elements
+			if (isCustomElement(node)) {
+				node = treeWalker.nextSibling();
+				continue;
+			}
+			onNextNode(node);
+			node = treeWalker.nextNode();
+		}
+	}
+
+	// -- dom-sync logic --
 	/**
 	 * @param {Element} newNode
 	 * @param {Element} liveNode
@@ -273,8 +292,8 @@
 			// - reactivity with CE is via attributes only)
 			if (!isCustomElement(newEl)) {
 				patchDom(
-					Array.from(newEl.childNodes),
-					Array.from(aLiveNode.childNodes),
+					from(newEl.childNodes),
+					from(aLiveNode.childNodes),
 					aLiveNode,
 				);
 			}
@@ -379,8 +398,6 @@
 			return id;
 		},
 
-		getHtml: function () { return ''; },
-
 		// a global store for Pepper views (it's like a singleton global redux store)
 		// it only does a shallow (i.e level 1) equality check of the store data properties
 		// for notifying relevant connected views to re-render
@@ -477,6 +494,13 @@
 		 * Example: ['cart', 'wishlist']
 		 */
 		connect: null,
+
+		/**
+		 * Function that returns component's html to be rendered
+		 * @param {any} data combined data from this.data and connected pepper store data
+		 * @returns {string}
+		 */
+		getHtml: function () { return ''; },
 		
 		/**
 		 * Set data on this.data (using Object.assign), and re-render.
@@ -507,37 +531,41 @@
 		 * @private
 		 */
 		render: function render() {
-			// Step 1: Remove event listeners
+			// Step 1: Remove event listeners and refs
 			// Step 2: Note the currently focused element
 			// Step 3: Render/Update UI.
 			// Step 4: Resolve references
 			// Step 5: Re-focus
 			// Step 6: Re-attach listeners
-
-			var target = this.el;
+			
+			var self = this;
+			var target = self.el;
 
 			// Step 1: Find input field focus, remember it's id attribute, so that it
 			// can be refocused later.
 			var focusId = document.activeElement.id;
 
-			// Step 2: Remove event listeners before patch.
+			// Step 2: Remove event listeners and refs before patch.
 			if (target) {
-				[target].concat(from(target.querySelectorAll('*')))
-					.forEach(function (node) {
-						if (node.nodeType === 1) {
-							removeAllHandlers(node, this);
-						}
-					}, this);
+				traverseElements(target, function (node) {
+					var refVal = node.getAttribute('ref');
+					if (refVal && self[refVal] instanceof Node) {
+						delete self[refVal];
+					}
+					if (handlerMap.has(node)) {
+						removeAllHandlers(node, self);
+					}
+				});
 			}
 
 			// Step 3: Render/Update UI
 			var storeData = Pepper.store._data;
-			var storeDataSubset = (this.connect || []).reduce(function (acc, prop) {
+			var storeDataSubset = (self.connect || []).reduce(function (acc, prop) {
 				acc[prop] = storeData[prop];
 				return acc;
 			}, {});
-			var data = assign(storeDataSubset, this.data);
-			var frag = parseAsFragment(this.getHtml(data));
+			var data = assign(storeDataSubset, self.data);
+			var frag = parseAsFragment(self.getHtml(data));
 			var el = frag.firstElementChild;
 
 			// Update existing DOM.
@@ -545,9 +573,9 @@
 				var parent = target.parentNode,
 						childIndex = from(parent.childNodes).indexOf(target);
 				patchDom([el], [target], parent, target.previousSibling);
-				this.el = parent.childNodes[childIndex];
+				self.el = parent.childNodes[childIndex];
 			} else {
-				this.el = el;
+				self.el = el;
 			}
 
 			// Step 4: Re-focus
@@ -558,7 +586,7 @@
 				}
 			}
 
-			this.domHydrate();
+			self.domHydrate();
 		},
 
 		/**
@@ -566,43 +594,26 @@
 		 */
 		domHydrate: function domHydrate() {
 			// Doing step 5 and 6 from render() function
-			// Step 5: Resolve references
-			// Step 6: Attach listeners
-			var self = this;
+			// Step 5: Resolve refs
+			// Step 6: Attach event listeners
 
+			var self = this;
 			// TODO: only set this on debug mode
 			self.el.pepperInstance = self;
 
-			// Step 5. Resolve element ref and refs.
-			// Note:
-			// ref creates a reference to the node as property on the view.
-			// refs creates an array property on the view, into which the node is pushed.
-			each(self.el.querySelectorAll('[ref]'), function (node) {
-				self[node.getAttribute('ref')] = node;
-			});
-
-			var refs = from(self.el.querySelectorAll('[refs]'));
-			// Reset references first
-			refs.forEach(function (node) {
-				self[node.getAttribute('ref')] = [];
-			});
-			// Create reference.
-			refs.forEach(function (node) {
-				self[node.getAttribute('ref')].push(node);
-			});
-
-			// Step 6: Attach event listeners.
-			[self.el].concat(from(self.el.querySelectorAll('*')))
-				.forEach(function (node) {
-					if (node.nodeType === 1) {
-						each(node.attributes, function (attr) {
-							if (attr.name.startsWith('on-')) {
-								var eventName = attr.name.replace(/on-/, '');
-								attachHandler(node, self, eventName, self[attr.value]);
-							}
-						});
+			// Note: ref creates a reference to the node as property on the view.
+			traverseElements(target, function (node) {
+				var refVal = node.getAttribute('ref');
+				if (refVal) {
+					self[refVal] = node;
+				}
+				each(node.attributes, function (attr) {
+					if (attr.name.startsWith('on-')) {
+						var eventName = attr.name.replace(/on-/, '');
+						attachHandler(node, self, eventName, self[attr.value]);
 					}
 				});
+			});
 		},
 
 		/**
