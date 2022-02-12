@@ -389,6 +389,10 @@
 		}
 	}
 
+	// private
+	/** @type {WeakMap<Node,Pepper>} */
+	var domToInstanceLookup = new WeakMap();
+
 	// Static methods and properties
 	assign(Pepper, {
 		uid: 1,
@@ -396,6 +400,26 @@
 			var id = 'view-' + Pepper.uid;
 			Pepper.uid += 1;
 			return id;
+		},
+
+		getHandlers: function(customElement) {
+			var handlers = {}, node = customElement;
+			while ((node = node.parentNode)) {
+				// search shouldn't go beyond component or outside static parts
+				if (isCustomElement(node) || node.getAttribute('static')) {
+					node = null;
+					break;
+				}
+				if (domToInstanceLookup.has(node)) break;
+			}
+			if (node) {
+				each(customElement.attributes, function (attr) {
+					if (attr.name.startsWith('on-')) {
+						handlers[attr.name.replace(/^on-/, '')] = domToInstanceLookup.get(node)[attr.value];
+					}
+				});
+			}
+			return handlers;
 		},
 
 		// a global store for Pepper views (it's like a singleton global redux store)
@@ -567,6 +591,7 @@
 			var data = assign(storeDataSubset, self.data);
 			var frag = parseAsFragment(self.getHtml(data));
 			var el = frag.firstElementChild;
+			domToInstanceLookup.add(el, self);
 
 			// Update existing DOM.
 			if (target) {
