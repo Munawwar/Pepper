@@ -1,4 +1,4 @@
-/*global window, $*/
+/*global window, jQuery, parseHtml*/
 
 (function (factory) {
 	if (typeof module === 'object' && module.exports) {
@@ -316,37 +316,33 @@
 	 * @param {(data: DataType) => String} config.getHtml
 	 * @param {Boolean} [config.mount=false]
 	 * @param {Boolean} [config.hydrate=false]
-	 * @param {String[]} config.connect
+	 * @param {String[]} [config.connect]
 	 */
 	var Pepper = function (config) {
-		this.id = Pepper.generateUId();
-		this._data = {};
-		var data = config.data;
-		if (data && typeof data === 'object') {
-			this._data = data;
-		}
+		var self = this;
+		self._data = (typeof config.data === 'object' && config.data) || {};
 		var mount = config.mount;
 		var hydrate = config.hydrate;
 		
 		delete config.data;
 		delete config.mount;
 		delete config.hydrate;
-		assign(this, config);
+		assign(self, config);
 
-		Object.defineProperty(this, 'data', {
+		Object.defineProperty(self, 'data', {
 			configurable: false,
 			set: function (data) {
-				this._data = data;
-				this.render();
+				self._data = data;
+				self.render();
 			},
 			get: function () {
-				return this._data;
+				return self._data;
 			}
 		});
 		if (hydrate) {
-			this.hydrate()
+			self.hydrate()
 		} else if (mount) {
-			this.mount();
+			self.mount();
 		}
 	};
 
@@ -390,70 +386,61 @@
 	}
 
 	// Static methods and properties
-	assign(Pepper, {
-		uid: 1,
-		generateUId: function () {
-			var id = 'view-' + Pepper.uid;
-			Pepper.uid += 1;
-			return id;
-		},
-
-		// a global store for Pepper views (it's like a singleton global redux store)
-		// it only does a shallow (i.e level 1) equality check of the store data properties
-		// for notifying relevant connected views to re-render
-		store: {
-			_data: {},
-			subscribers: [],
-			subscribe: function (func, propsToListenFor, context) {
-				if (typeof func !== 'function' || !Array.isArray(propsToListenFor)) {
-					return;
-				}
-				var alreadyAdded = this.subscribers.some(function (subscriber) {
-					return (subscriber.callback === func && (context === undefined || context === subscriber.context));
-				});
-				if (!alreadyAdded) {
-					this.subscribers.push({
-						callback: func,
-						props: propsToListenFor,
-						context: context
-					});
-				}
-			},
-			unsubscribe: function (func, context) {
-				this.subscribers = this.subscribers.filter(function (subscriber) {
-					return !(subscriber.callback === func && (context === undefined || context === subscriber.context));
-				});
-			},
-			assign: function (newData) {
-				if (typeof newData !== 'object') {
-					return;
-				}
-				var currentData = this._data;
-				var changedProps = Object.keys(newData).filter(function (prop) {
-					return currentData[prop] !== newData[prop];
-				});
-				assign(this._data, newData);
-				this.notify(changedProps);
-			},
-			notify: function (changedProps) {
-				var changedPropsLookup = changedProps.reduce(function (acc, prop) {
-					acc[prop] = 1;
-					return acc;
-				}, {});
-				this.subscribers.forEach(function (subscriber) {
-					var matches = subscriber.props.some(function (prop) {
-						if (typeof prop !== 'string') {
-							return false;
-						}
-						return changedPropsLookup[prop];
-					});
-					if (matches) {
-						subscriber.callback.call(subscriber.context);
-					}
+	// a global store for Pepper views (it's like a singleton global redux store)
+	// it only does a shallow (i.e level 1) equality check of the store data properties
+	// for notifying relevant connected views to re-render
+	Pepper.store = {
+		_data: {},
+		subscribers: [],
+		subscribe: function (func, propsToListenFor, context) {
+			if (typeof func !== 'function' || !Array.isArray(propsToListenFor)) {
+				return;
+			}
+			var alreadyAdded = this.subscribers.some(function (subscriber) {
+				return (subscriber.callback === func && (context === undefined || context === subscriber.context));
+			});
+			if (!alreadyAdded) {
+				this.subscribers.push({
+					callback: func,
+					props: propsToListenFor,
+					context: context
 				});
 			}
+		},
+		unsubscribe: function (func, context) {
+			this.subscribers = this.subscribers.filter(function (subscriber) {
+				return !(subscriber.callback === func && (context === undefined || context === subscriber.context));
+			});
+		},
+		assign: function (newData) {
+			if (typeof newData !== 'object') {
+				return;
+			}
+			var currentData = this._data;
+			var changedProps = Object.keys(newData).filter(function (prop) {
+				return currentData[prop] !== newData[prop];
+			});
+			assign(this._data, newData);
+			this.notify(changedProps);
+		},
+		notify: function (changedProps) {
+			var changedPropsLookup = changedProps.reduce(function (acc, prop) {
+				acc[prop] = 1;
+				return acc;
+			}, {});
+			this.subscribers.forEach(function (subscriber) {
+				var matches = subscriber.props.some(function (prop) {
+					if (typeof prop !== 'string') {
+						return false;
+					}
+					return changedPropsLookup[prop];
+				});
+				if (matches) {
+					subscriber.callback.call(subscriber.context);
+				}
+			});
 		}
-	});
+	};
 
 	Object.defineProperty(Pepper.store, 'data', {
 		configurable: false,
@@ -484,7 +471,7 @@
 		_data: null,
 
 		/**
-		 * (Optional) The elment to replace (on first render).
+		 * (Optional) The element to replace (on first render).
 		 */
 		target: null,
 
@@ -525,7 +512,7 @@
 
 		/**
 		 * Render view.
-		 * If this.target or node paramter is specified, then replaces that node and attaches the
+		 * If this.target or node parameter is specified, then replaces that node and attaches the
 		 * rendered DOM to document (or document fragment).
 		 *
 		 * @private
@@ -602,7 +589,7 @@
 			self.el.pepperInstance = self;
 
 			// Note: ref creates a reference to the node as property on the view.
-			traverseElements(target, function (node) {
+			traverseElements(self.el, function (node) {
 				var refVal = node.getAttribute('ref');
 				if (refVal) {
 					self[refVal] = node;
