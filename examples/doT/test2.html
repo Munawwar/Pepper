@@ -8,9 +8,9 @@
         <div id="myview2"></div>
         <div id="myview3"></div>
         <script>
-            Pepper.store.data = {
+            Pepper.store.assign({
                 counter: 1
-            };
+            });
             var view1 = new Pepper({
                 getHtml: window.doT.template(`<div><span>Counter = {{= it.counter }}</span></div>`),
                 connect: ['counter'],

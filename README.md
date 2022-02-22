@@ -71,7 +71,7 @@ Now you can use `this.btnEl` (inside a view method) or `view.btnEl` (from outsid
 One can do `rootElement.pepperInstance` to get access to the view object from the developer tools. It is only for
 debugging purposes. Never use it in code.
 
-### Pepper State Store - AKA performance improvement for large views
+### Pepper State Store - for managing cross-view states
 
 Pepper comes with a simplified global state store, so that you can have multiple views with common states stored in it. Updating the store data will re-render connected views automatically.
 
@@ -114,6 +114,23 @@ Also note; I have moved the code that manipulates the central store (data side e
 
 Important note: This is a performance optimization in disguise. You can naively put all your HTML within a single Pepper view and all the states within it.
 But that could take a hit on rendering performance. So Pepper Store gives you an option to make smaller views, while keeping the rest of the HTML static, and refresh only the views that needs a refresh (with some manual "connecting" from the developer's end).
+
+#### Run side effects on store properties change
+
+You can listen to store changes outside of Pepper views and run side effects.
+
+```js
+Pepper.store.subscribe(['property1', 'property2'], function effect(propertiesThatChanged) {
+    // if `property1` or `property2` (or both) changes this function is invoked
+    // `propertiesThatChanged` gives you the exact properties that changed (array of strings).
+
+    // do something here..
+    // like lazy load your other views and hydrate them or whatever
+
+    // optionally unsubscribe if you want to only run the effect once.
+    Pepper.store.unsubscribe(effect);
+}, /* (optional param) context / this */);
+```
 
 ### Server-side rendering
 

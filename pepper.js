@@ -16,9 +16,14 @@
 	function each(arrayLike, fn, context) {
 		return arrayProto.forEach.call(arrayLike, fn, context);
 	}
+	function keys(obj) {
+		return Object.keys(obj).filter(function (key) {
+			return key !== 'constructor';
+		});
+	}
 	function assign(target) {
 		from(arguments, 1).forEach(function (obj) {
-			Object.keys(obj).forEach(function (key) {
+			keys(obj).forEach(function (key) {
 				target[key] = obj[key];
 			});
 		});
@@ -32,7 +37,7 @@
 			if (!obj || typeof val !== 'object') {
 				continue;
 			}
-			var keys = Object.keys(obj);
+			var keys = keys(obj);
 			for (var keyIndex = 1; keyIndex < keys.length; keyIndex += 1) {
 				var key = keys[keyIndex];
 				var val = obj[key];
@@ -328,11 +333,11 @@
 		delete config.mount;
 		delete config.hydrate;
 		assign(self, config);
-
 		Object.defineProperty(self, 'data', {
 			configurable: false,
 			set: function (data) {
 				self._data = data;
+				// TODO: only render if there is a change
 				self.render();
 			},
 			get: function () {
@@ -389,76 +394,87 @@
 	// a global store for Pepper views (it's like a singleton global redux store)
 	// it only does a shallow (i.e level 1) equality check of the store data properties
 	// for notifying relevant connected views to re-render
-	Pepper.store = {
-		_data: {},
-		subscribers: [],
-		subscribe: function (func, propsToListenFor, context) {
-			if (typeof func !== 'function' || !Array.isArray(propsToListenFor)) {
-				return;
-			}
-			var alreadyAdded = this.subscribers.some(function (subscriber) {
-				return (subscriber.callback === func && (context === undefined || context === subscriber.context));
-			});
-			if (!alreadyAdded) {
-				this.subscribers.push({
-					callback: func,
-					props: propsToListenFor,
-					context: context
-				});
-			}
-		},
-		unsubscribe: function (func, context) {
-			this.subscribers = this.subscribers.filter(function (subscriber) {
-				return !(subscriber.callback === func && (context === undefined || context === subscriber.context));
-			});
-		},
-		assign: function (newData) {
-			if (typeof newData !== 'object') {
-				return;
-			}
-			var currentData = this._data;
-			var changedProps = Object.keys(newData).filter(function (prop) {
-				return currentData[prop] !== newData[prop];
-			});
-			assign(this._data, newData);
-			this.notify(changedProps);
-		},
-		notify: function (changedProps) {
+	Pepper.store = (function () {
+		var _data = {}, _subscribers = [];
+		function notify(changedProps) {
 			var changedPropsLookup = changedProps.reduce(function (acc, prop) {
 				acc[prop] = 1;
 				return acc;
 			}, {});
-			this.subscribers.forEach(function (subscriber) {
-				var matches = subscriber.props.some(function (prop) {
-					if (typeof prop !== 'string') {
-						return false;
-					}
+			_subscribers.forEach(function (subscriber) {
+				var propsChanged = subscriber.props.filter(function (prop) {
 					return changedPropsLookup[prop];
 				});
-				if (matches) {
-					subscriber.callback.call(subscriber.context);
+				if (propsChanged.length) {
+					subscriber.callback.call(subscriber.context, propsChanged);
 				}
 			});
 		}
-	};
-
-	Object.defineProperty(Pepper.store, 'data', {
-		configurable: false,
-		set: function (data) {
-			if (typeof data !== 'object') {
-				return;
+		var store = {
+			/**
+			 * Subscribe to changes in global store properties
+			 * @param {string[]} propsToListenFor
+			 * @param {() => undefined} func
+			 * @param {any} [context]
+			 * @returns 
+			 */
+			subscribe: function (propsToListenFor, func, context) {
+				if (typeof func !== 'function' || !Array.isArray(propsToListenFor)) {
+					return;
+				}
+				var alreadyAdded = _subscribers.some(function (subscriber) {
+					return (subscriber.callback === func && (context === undefined || context === subscriber.context));
+				});
+				if (!alreadyAdded) {
+					_subscribers.push({
+						props: propsToListenFor,
+						callback: func,
+						context: context
+					});
+				}
+			},
+			unsubscribe: function (func, context) {
+				_subscribers = _subscribers.filter(function (subscriber) {
+					return !(subscriber.callback === func && (context === undefined || context === subscriber.context));
+				});
+			},
+			assign: function (newData) {
+				if (typeof newData !== 'object') {
+					return;
+				}
+				var changedProps = keys(newData).filter(function (prop) {
+					return _data[prop] !== newData[prop];
+				});
+				assign(_data, newData);
+				notify(changedProps);
 			}
-			var currentData = this._data;
-			var changedProps = Object.keys(data).filter(function (prop) {
-				return currentData[prop] !== data[prop];
-			});
-			this._data = data;
-			this.notify(changedProps);
-		},
-		get: function () {
-			return this._data;
-		}
-	});
+		};
+
+		Object.defineProperty(store, 'data', {
+			configurable: false,
+			set: function (newData) {
+				if (typeof newData !== 'object') {
+					return;
+				}
+				var changedProps = [].concat(
+					// find props that were changed
+					keys(newData).filter(function (prop) {
+						return _data[prop] !== data[prop];
+					}),
+					// find props that got removed (i.e. not in new data)
+					keys(_data).filter(function (prop) {
+						return !(prop in newData);
+					})
+				);
+				_data = newData;
+				notify(changedProps);
+			},
+			get: function () {
+				return _data;
+			}
+		});
+		return store;
+	}());
 
 
 	// Methods and properties
@@ -495,6 +511,7 @@
 		assign: function () {
 			var args = from(arguments);
 			assign.apply(null, [this.data].concat(args));
+			// TODO: only render if there is a change
 			this.render();
 		},
 
@@ -503,6 +520,7 @@
 		 */
 		merge: function (data) {
 			merge(this.data, data);
+			// TODO: only render if there is a change
 			this.render();
 		},
 
@@ -610,7 +628,7 @@
 		 */
 		mount: function mount(hydrateOnly = false) {
 			if (this.connect) {
-				Pepper.store.subscribe(this.render, this.connect, this);
+				Pepper.store.subscribe(this.connect, this.render, this);
 			}
 
 			var node = this.target;
@@ -642,7 +660,7 @@
 
 		append: function append(node) {
 			if (this.connect) {
-				Pepper.store.subscribe(this.render, this.connect, this);
+				Pepper.store.subscribe(this.connect, this.render, this);
 			}
 
 			if (!this.el) {
@@ -652,7 +670,7 @@
 		},
 
 		unmount: function unmount() {
-			Pepper.store.unsubscribe(this.render, this.connect);
+			Pepper.store.unsubscribe(this.render, this);
 			this.el.parentNode.removeChild(this.el);
 		}
 	});
