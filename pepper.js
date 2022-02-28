@@ -124,12 +124,7 @@
 	}
 
 	function getCustomElementOuterHtml(el) {
-		var parts = ['<', el.nodeName];
-		each(el.attributes, function (attr) {
-			parts.push(' ', attr.name, '=', JSON.stringify(attr.value));
-		});
-		parts.push('/>');
-		return parts.join('');
+		return el.outerHTML.slice(0, -(el.innerHTML.length + el.tagName.length + 4)) + '/>';
 	}
 	/**
 	 * 
