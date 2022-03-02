@@ -1,8 +1,11 @@
-/*global window, jQuery, parseHtml*/
+/*global jQuery*/
+// jQuery is optional
 
 (function (factory) {
+	// eslint-disable-next-line no-undef
 	if (typeof module === 'object' && module.exports) {
 		// Node cjs
+		// eslint-disable-next-line no-undef
 		module.exports = factory();
 	} else {
 		window.Pepper = factory();
@@ -107,7 +110,7 @@
 	 * @param {Element} newNode
 	 * @param {Element} liveNode
 	 */
-	 function syncAttributes(newNode, liveNode) {
+	function syncAttributes(newNode, liveNode) {
 		// Remove any attributes from live node that is not in new node
 		each(liveNode.attributes, function (attr) {
 			if (!newNode.attributes.getNamedItem(attr.name)) {
@@ -305,7 +308,7 @@
 				parentNode.removeChild(node);
 			}
 		});
-	};
+	}
 	// -- end of dom-sync logic --
 
 	/**

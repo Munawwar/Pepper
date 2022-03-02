@@ -23,9 +23,21 @@
   "author": "Munawwar",
   "license": "MIT",
   "devDependencies": {
-    "nunjucks": "^3.0.0",
+    "eslint": "^8.10.0",
     "terser": "^5.7.1"
   },
   "repository": "github:Munawwar/pepper",
-  "dependencies": {}
+  "dependencies": {},
+  "eslintConfig": {
+    "env": {
+        "browser": true,
+        "es2021": true
+    },
+    "extends": "eslint:recommended",
+    "parserOptions": {
+        "ecmaVersion": "latest",
+        "sourceType": "script"
+    },
+    "rules": {}
+  }
 }
