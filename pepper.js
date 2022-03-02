@@ -397,11 +397,11 @@
 				return acc;
 			}, {});
 			_subscribers.forEach(function (subscriber) {
-				var propsChanged = subscriber.props.filter(function (prop) {
+				var changesPropsSubset = subscriber.props.filter(function (prop) {
 					return changedPropsLookup[prop];
 				});
-				if (propsChanged.length) {
-					subscriber.callback.call(subscriber.context, propsChanged);
+				if (changesPropsSubset.length) {
+					subscriber.callback.call(subscriber.context, changesPropsSubset);
 				}
 			});
 		}
@@ -454,7 +454,7 @@
 				var changedProps = [].concat(
 					// find props that were changed
 					keys(newData).filter(function (prop) {
-						return _data[prop] !== data[prop];
+						return _data[prop] !== newData[prop];
 					}),
 					// find props that got removed (i.e. not in new data)
 					keys(_data).filter(function (prop) {

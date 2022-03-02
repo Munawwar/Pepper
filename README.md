@@ -71,7 +71,7 @@ Now you can use `this.btnEl` (inside a view method) or `view.btnEl` (from outsid
 One can do `rootElement.pepperInstance` to get access to the view object from the developer tools. It is only for
 debugging purposes. Never use it in code.
 
-### Pepper State Store - for managing cross-view states
+### Pepper Store - for managing cross-view states
 
 Pepper comes with a simplified global state store, so that you can have multiple views with common states stored in it. Updating the store data will re-render connected views automatically.
 
