@@ -319,7 +319,7 @@
 	 * @param {(data: DataType) => String} config.getHtml
 	 * @param {Boolean} [config.mount=false]
 	 * @param {Boolean} [config.hydrate=false]
-	 * @param {String[]} [config.connect]
+	 * @param {{ store: Pepper.Store, props: String[] }} [config.connect]
 	 */
 	var Pepper = function (config) {
 		var self = this;
@@ -392,63 +392,18 @@
 	// a global store for Pepper views (it's like a singleton global redux store)
 	// it only does a shallow (i.e level 1) equality check of the store data properties
 	// for notifying relevant connected views to re-render
-	Pepper.store = (function () {
-		var _data = {}, _subscribers = [];
-		function notify(changedProps) {
-			var changedPropsLookup = changedProps.reduce(function (acc, prop) {
-				acc[prop] = 1;
-				return acc;
-			}, {});
-			_subscribers.forEach(function (subscriber) {
-				var changesPropsSubset = subscriber.props.filter(function (prop) {
-					return changedPropsLookup[prop];
-				});
-				if (changesPropsSubset.length) {
-					subscriber.callback.call(subscriber.context, changesPropsSubset);
-				}
-			});
-		}
-		var store = {
-			/**
-			 * Subscribe to changes in global store properties
-			 * @param {string[]} propsToListenFor
-			 * @param {() => undefined} func
-			 * @param {any} [context]
-			 * @returns 
-			 */
-			subscribe: function (propsToListenFor, func, context) {
-				if (typeof func !== 'function' || !Array.isArray(propsToListenFor)) {
-					return;
-				}
-				var alreadyAdded = _subscribers.some(function (subscriber) {
-					return (subscriber.callback === func && (context === undefined || context === subscriber.context));
-				});
-				if (!alreadyAdded) {
-					_subscribers.push({
-						props: propsToListenFor,
-						callback: func,
-						context: context
-					});
-				}
-			},
-			unsubscribe: function (func, context) {
-				_subscribers = _subscribers.filter(function (subscriber) {
-					return !(subscriber.callback === func && (context === undefined || context === subscriber.context));
-				});
-			},
-			assign: function (newData) {
-				if (typeof newData !== 'object') {
-					return;
-				}
-				var changedProps = keys(newData).filter(function (prop) {
-					return _data[prop] !== newData[prop];
-				});
-				assign(_data, newData);
-				notify(changedProps);
-			}
-		};
+	/**
+	 * @constructor
+	 * @param {Object} initialData
+	 */
+	Pepper.Store = function (initialData) {
+		var self = this;
+		/** @private */
+		self._data = initialData || {};
+		/** @private */
+		self._subscribers = [];
 
-		Object.defineProperty(store, 'data', {
+		Object.defineProperty(this, 'data', {
 			configurable: false,
 			set: function (newData) {
 				if (typeof newData !== 'object') {
@@ -457,26 +412,87 @@
 				var changedProps = [].concat(
 					// find props that were changed
 					keys(newData).filter(function (prop) {
-						return _data[prop] !== newData[prop];
+						return self._data[prop] !== newData[prop];
 					}),
 					// find props that got removed (i.e. not in new data)
-					keys(_data).filter(function (prop) {
+					keys(self._data).filter(function (prop) {
 						return !(prop in newData);
 					})
 				);
-				_data = newData;
-				notify(changedProps);
+				self._data = newData;
+				self.notify(changedProps);
 			},
 			get: function () {
-				return _data;
+				return self._data;
 			}
 		});
-		return store;
-	}());
-
+	}
+	
+	Pepper.Store.prototype = {
+		/**
+		 * Reactive data - Getter/Setter
+		 */
+		data: {},
+		/**
+		 * @private
+		 */
+		notify: function (changedProps) {
+			var changedPropsLookup = changedProps.reduce(function (acc, prop) {
+				acc[prop] = 1;
+				return acc;
+			}, {});
+			this._subscribers.forEach(function (subscriber) {
+				var changesPropsSubset = subscriber.props.filter(function (prop) {
+					return changedPropsLookup[prop];
+				});
+				if (changesPropsSubset.length) {
+					subscriber.callback.call(subscriber.context, changesPropsSubset);
+				}
+			});
+		},
+		/**
+		 * Subscribe to changes in global store properties
+		 * @param {string[]} propsToListenFor
+		 * @param {() => undefined} func
+		 * @param {any} [context]
+		 * @returns 
+		 */
+		subscribe: function (propsToListenFor, func, context) {
+			if (typeof func !== 'function' || !Array.isArray(propsToListenFor)) {
+				return;
+			}
+			var self = this;
+			var alreadyAdded = self._subscribers.some(function (subscriber) {
+				return (subscriber.callback === func && (context === undefined || context === subscriber.context));
+			});
+			if (!alreadyAdded) {
+				self._subscribers.push({
+					props: propsToListenFor,
+					callback: func,
+					context: context
+				});
+			}
+		},
+		unsubscribe: function (func, context) {
+			this._subscribers = this._subscribers.filter(function (subscriber) {
+				return !(subscriber.callback === func && (context === undefined || context === subscriber.context));
+			});
+		},
+		assign: function (newData) {
+			var self = this;
+			if (typeof newData !== 'object') {
+				return;
+			}
+			var changedProps = keys(newData).filter(function (prop) {
+				return self._data[prop] !== newData[prop];
+			});
+			assign(self._data, newData);
+			self.notify(changedProps);
+		}
+	};
 
 	// Methods and properties
-	assign(Pepper.prototype, {
+	Pepper.prototype = {
 		/**
 		 * The data object.
 		 * This is a private variable accessed through this.data
@@ -490,11 +506,17 @@
 		target: null,
 
 		/**
-		 * (Optional) An array of props to listen to from Pepper.store (it's a global state store)
-		 * This instance will re-render (when mounted) when the specified props change in the global store
+		 * (Optional) A Pepper store and array of props to listen to. The properties will be mixed with
+		 * `data` passed to this.getHtml() function (in case of collision local data takes precedence
+		 * over store data). This instance will re-render (when mounted) when the specified props change
+		 * in the global store
 		 * Example: ['cart', 'wishlist']
+		 * @type {{
+		 * 	store: Pepper.Store,
+		 *  props: string[]
+		 * }}
 		 */
-		connect: null,
+		connect: {},
 
 		/**
 		 * Function that returns component's html to be rendered
@@ -562,8 +584,9 @@
 			}
 
 			// Step 3: Render/Update UI
-			var storeData = Pepper.store._data;
-			var storeDataSubset = (self.connect || []).reduce(function (acc, prop) {
+			var connect = self.connect;
+			var storeData = (connect && connect.store && connect.store._data) || {};
+			var storeDataSubset = (connect.props || []).reduce(function (acc, prop) {
 				acc[prop] = storeData[prop];
 				return acc;
 			}, {});
@@ -625,26 +648,28 @@
 		 * @returns 
 		 */
 		mount: function mount(hydrateOnly = false) {
-			if (this.connect) {
-				Pepper.store.subscribe(this.connect, this.render, this);
+			var self = this;
+			var connect = self.connect;
+			if (connect && connect.store) {
+				connect.store.subscribe(connect.props, self.render, self);
 			}
 
-			var node = this.target;
+			var node = self.target;
 			if (typeof node === 'string') {
 				node = document.querySelector(node);
 			}
 
 			// Return if already mounted.
-			if (this.el && node === this.el) {
+			if (self.el && node === self.el) {
 				return;
 			}
 
 			if (node && node.parentNode) {
-				this.el = node;
+				self.el = node;
 				if (hydrateOnly) {
-					this.domHydrate();
+					self.domHydrate();
 				} else { // full render
-					this.render();
+					self.render();
 				}
 			}
 		},
@@ -657,21 +682,27 @@
 		},
 
 		append: function append(node) {
-			if (this.connect) {
-				Pepper.store.subscribe(this.connect, this.render, this);
+			var self = this;
+			var connect = self.connect;
+			if (connect && connect.store) {
+				connect.store.subscribe(connect.props, self.render, self);
 			}
 
-			if (!this.el) {
-				this.render();
+			if (!self.el) {
+				self.render();
 			}
-			node.appendChild(this.el);
+			node.appendChild(self.el);
 		},
 
 		unmount: function unmount() {
-			Pepper.store.unsubscribe(this.render, this);
-			this.el.parentNode.removeChild(this.el);
+			var self = this;
+			var connect = self.connect;
+			if (connect && connect.store) {
+				connect.store.unsubscribe(self.render, self);
+			}
+			self.el.parentNode.removeChild(self.el);
 		}
-	});
+	};
 
 	return Pepper;
 });

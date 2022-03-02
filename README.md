@@ -77,7 +77,7 @@ Pepper comes with a simplified global state store, so that you can have multiple
 
 ```js
 // initialize global store
-Pepper.store.assign({
+var store = new Pepper.Store({
     counter: 1
 });
 
@@ -86,14 +86,20 @@ var view1 = new Pepper({
     // if you want to be able to access a property from the store, then
     // you need to explicitly "connect" to that property. This is a performance
     // optimization (like redux).
-    connect: ['counter'],
+    connect: {
+        store: store,
+        props: ['counter']
+    },
     getHtml: data => `<div><span>Counter = ${ data.counter }</span></div>`,
     target: '#myview1',
     mount: true,
 });
 var view2 = new Pepper({
     getHtml: `<div><span>Counter = ${ data.counter }</span></div>`,
-    connect: ['counter'],
+    connect: {
+        store: store,
+        props: ['counter']
+    },
     target: '#myview2',
     mount: true,
 });
@@ -101,8 +107,8 @@ var view2 = new Pepper({
 // demonstrating how updating one data source, re-renders multiple views
 // so.. update counter
 var incrementCounterAction = function () {
-    Pepper.store.assign({
-        counter: Pepper.store.data.counter + 1
+    store.assign({
+        counter: store.data.counter + 1
     });
 };
 window.setInterval(incrementCounterAction, 1000);
@@ -120,7 +126,7 @@ But that could take a hit on rendering performance. So Pepper Store gives you an
 You can listen to store changes outside of Pepper views and run side effects.
 
 ```js
-Pepper.store.subscribe(['property1', 'property2'], function effect(propertiesThatChanged) {
+store.subscribe(['property1', 'property2'], function effect(propertiesThatChanged) {
     // if `property1` or `property2` (or both) changes this function is invoked
     // `propertiesThatChanged` gives you the exact properties that changed (array of strings).
 
@@ -128,7 +134,7 @@ Pepper.store.subscribe(['property1', 'property2'], function effect(propertiesTha
     // like lazy load your other views and hydrate them or whatever
 
     // optionally unsubscribe if you want to only run the effect once.
-    Pepper.store.unsubscribe(effect);
+    store.unsubscribe(effect);
 }, /* (optional param) context / this */);
 ```
 
