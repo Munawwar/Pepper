@@ -1,6 +1,6 @@
 {
   "name": "@pepper-js/pepper",
-  "version": "0.0.3",
+  "version": "0.0.4",
   "description": "Bring your server-side templates to life",
   "type": "commonjs",
   "main": "./pepper.js",
