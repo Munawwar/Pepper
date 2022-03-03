@@ -548,6 +548,18 @@
 			callHandler(this, event);
 		},
 
+		toString: function renderToString() {
+			var self = this;
+			var connect = self.connect;
+			var storeData = (connect && connect.store && connect.store._data) || {};
+			var storeDataSubset = ((connect && connect.props) || []).reduce(function (acc, prop) {
+				acc[prop] = storeData[prop];
+				return acc;
+			}, {});
+			var data = assign(storeDataSubset, self.data);
+			return self.getHtml(data);
+		},
+
 		/**
 		 * Render view.
 		 * If this.target or node parameter is specified, then replaces that node and attaches the
@@ -584,14 +596,7 @@
 			}
 
 			// Step 3: Render/Update UI
-			var connect = self.connect;
-			var storeData = (connect && connect.store && connect.store._data) || {};
-			var storeDataSubset = (connect.props || []).reduce(function (acc, prop) {
-				acc[prop] = storeData[prop];
-				return acc;
-			}, {});
-			var data = assign(storeDataSubset, self.data);
-			var frag = parseAsFragment(self.getHtml(data));
+			var frag = parseAsFragment(self.toString());
 			var el = frag.firstElementChild;
 
 			// Update existing DOM.

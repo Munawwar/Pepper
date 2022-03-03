@@ -1,24 +1,22 @@
 <html>
     <head>
         <script src="../../pepper.js"></script>
+        <script src="./page.js"></script>
     </head>
     <body>
-        <div id="myview"></div>
+        <div id="myview1"><span>Counter = 1</span></div>
+        <div id="myview2"><span>Counter = 1</span></div>
+        <script>window.initialState = {"counter":1};</script>
         <script>
-            new Pepper({
-                getHtml: (data) => (
-                    `<button on-click="onClick">
-                        <span ref="spanEl">${ data.text }</span>
-                    </button>`
-                ),
-                data: { text: 'Test' },
-                target: '#myview',
-                mount: true,
-                onClick: function () {
-                    console.log('Clicked!');
-                    this.assign({ text: 'Clicked' });
-                }
-            });
+            var page = initializePage(window.initialState);
+            page.view1.hydrate();
+            page.view2.hydrate();
+            // update counter
+            window.setInterval(function () {
+                page.store.assign({
+                    counter: page.store.data.counter + 1,
+                });
+            }, 1000);
         </script>
     </body>
 </html>
