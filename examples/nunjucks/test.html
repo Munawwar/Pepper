@@ -10,11 +10,11 @@
         <script>
             var view = new Pepper({
                 getHtml: (data) => window.nunjucks.render('myview', data),
-                data: {text: 'Test'},
+                data: {text: 'Click me'},
                 target: '#myview',
                 mount: true,
-                onClick: function () {
-                    console.log('Clicked!');
+                onClick() {
+                    this.assign({text: 'Clicked!'});
                 }
             });
             view.mount();

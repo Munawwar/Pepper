@@ -10,12 +10,11 @@
         <script>
             new Pepper({
                 getHtml: (data) => mustacheTemplates.button.render(data),
-                data: { text: 'Test' },
+                data: { text: 'Click me' },
                 target: '#myview',
                 mount: true,
 
-                onClick: function () {
-                    console.log('Clicked!');
+                onClick() {
                     this.assign({ text: 'Clicked' });
                 }
             });

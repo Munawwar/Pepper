@@ -4,8 +4,10 @@
         <script src="../../pepper.js"></script>
     </head>
     <body>
+        <div id="huge-view"></div>
+        <div id="small-view"></div>
         <script>
-            var hugeTemplate = `<div id="huge-view">
+            var hugeTemplate = `
                 <div id="content" class="mw-body" role="main">
                         <a id="top"></a>
                         <div id="siteNotice" class="mw-body-content"><div id="centralNotice"></div><!-- CentralNotice --></div>
@@ -3490,19 +3492,21 @@
                             
                         </div>
                     </div>            
-        </div>`;
+            `;
 
             var view1 = new Pepper({
                 getHtml: window.doT.template(hugeTemplate),
+                target: '#huge-view',
             });
             var view2 = new Pepper({
-                getHtml: window.doT.template('<div id="small-view">Refreshes: {{= it.counter }}</div>'),
+                getHtml: window.doT.template('<span>Refreshes: {{= it.counter }}</span>'),
+                target: '#small-view',
                 data: {
                     counter: 1
                 }
             });
-            view1.append(document.body);
-            view2.append(document.body);
+            view1.mount();
+            view2.mount();
 
             // update counter
             window.setInterval(function () {

@@ -1,13 +1,13 @@
 (function() {(window.nunjucksPrecompiled = window.nunjucksPrecompiled || {})["myview"] = (function() {
 function root(env, context, frame, runtime, cb) {
-var lineno = null;
-var colno = null;
+var lineno = 0;
+var colno = 0;
 var output = "";
 try {
 var parentTemplate = null;
-output += "<div on-click=\"onClick\">\n    <span ref=\"spanEl\">";
+output += "<button on-click=\"onClick\">\n    <span ref=\"spanEl\">";
 output += runtime.suppressValue(runtime.contextOrFrameLookup(context, frame, "text"), env.opts.autoescape);
-output += "</span>\n</div>\n";
+output += "</span>\n</button>\n";
 if(parentTemplate) {
 parentTemplate.rootRenderFunc(env, context, frame, runtime, cb);
 } else {

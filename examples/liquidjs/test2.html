@@ -16,7 +16,7 @@
                 data,
             );
             var view1 = new Pepper({
-                getHtml: renderTemplate(`<div><span>Counter = {{ counter }}</span></div>`),
+                getHtml: renderTemplate(`<span>Counter = {{ counter }}</span>`),
                 connect: {
                     store: store,
                     props: ['counter']
@@ -25,7 +25,7 @@
                 mount: true
             });
             var view2 = new Pepper({
-                getHtml: renderTemplate(`<div><span>Counter = {{ counter }}</span></div>`),
+                getHtml: renderTemplate(`<span>Counter = {{ counter }}</span>`),
                 connect: {
                     store: store,
                     props: ['counter']
@@ -34,7 +34,7 @@
                 mount: true
             });
             var view3 = new Pepper({
-                getHtml: renderTemplate(`<div><span>View 3 cant access global store's counter, because it isn't connected to it</span></div>`),
+                getHtml: renderTemplate(`<span>View 3 cant access global store's counter, because it isn't connected to it</span>`),
                 target: '#myview3',
                 mount: true
             });

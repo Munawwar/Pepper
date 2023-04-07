@@ -12,7 +12,7 @@
                 counter: 1
             });
             var view1 = new Pepper({
-                getHtml: window.doT.template(`<div><span>Counter = {{= it.counter }}</span></div>`),
+                getHtml: window.doT.template(`<span>Counter = {{= it.counter }}</span>`),
                 connect: {
                     store: store,
                     props: ['counter']
@@ -20,7 +20,7 @@
                 target: '#myview1'
             });
             var view2 = new Pepper({
-                getHtml: window.doT.template(`<div><span>Counter = {{= it.counter }}</span></div>`),
+                getHtml: window.doT.template(`<span>Counter = {{= it.counter }}</span>`),
                 connect: {
                     store: store,
                     props: ['counter']
@@ -28,7 +28,7 @@
                 target: '#myview2'
             });
             var view3 = new Pepper({
-                getHtml: window.doT.template(`<div><span>View 3 cant access global store's counter, because it isn't connected to it</span></div>`),
+                getHtml: window.doT.template(`<span>View 3 cant access global store's counter, because it isn't connected to it</span>`),
                 target: '#myview3'
             });
             view1.mount();

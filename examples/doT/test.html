@@ -12,10 +12,10 @@
                         <span ref="spanEl">{{= it.text }}</span>
                     </button>`
                 ),
-                data: {text: 'Test'},
+                data: {text: 'Click me'},
                 target: '#myview',
-                onClick: function () {
-                    console.log('Clicked!');
+                onClick() {
+                    this.assign({text: 'Clicked!'});
                 }
             });
             view.mount();

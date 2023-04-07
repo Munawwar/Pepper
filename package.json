@@ -1,6 +1,6 @@
 {
   "name": "@pepper-js/pepper",
-  "version": "0.0.4",
+  "version": "0.0.5",
   "description": "Bring your server-side templates to life",
   "type": "commonjs",
   "main": "./pepper.js",
@@ -27,16 +27,15 @@
     "terser": "^5.7.1"
   },
   "repository": "github:Munawwar/pepper",
-  "dependencies": {},
   "eslintConfig": {
     "env": {
-        "browser": true,
-        "es2021": true
+      "browser": true,
+      "es2021": true
     },
     "extends": "eslint:recommended",
     "parserOptions": {
-        "ecmaVersion": "latest",
-        "sourceType": "script"
+      "ecmaVersion": "latest",
+      "sourceType": "script"
     },
     "rules": {}
   }

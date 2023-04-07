@@ -19,10 +19,12 @@ Bundle size - pepper.js is 2.3 KB gzipped
         <script src="pepper.js"></script>
     </head>
     <body>
-        <button id="node-to-sync" on-click="onClick">Test</button>
+        <div id="node-to-sync">
+            <button on-click="onClick">Test</button>
+        </div>
         <script>
             var view = new Pepper({
-                getHtml: (data) => `<button id="node-to-sync" on-click="onClick">${data.text}</button>`,
+                getHtml: (data) => `<button on-click="onClick">${data.text}</button>`,
                 // or you can instead use a template library here
                 
                 data: { text: 'Test' },
@@ -35,7 +37,6 @@ Bundle size - pepper.js is 2.3 KB gzipped
             });
             // or you can call view.hydrate() here.
             // or call view.mount(), to create new DOM nodes
-            // or view.append(document.body), if no target specified
         </script>
     </body>
 </html>
@@ -90,12 +91,12 @@ var view1 = new Pepper({
         store: store,
         props: ['counter']
     },
-    getHtml: data => `<div><span>Counter = ${ data.counter }</span></div>`,
+    getHtml: data => `<span>Counter = ${ data.counter }</span>`,
     target: '#myview1',
     mount: true,
 });
 var view2 = new Pepper({
-    getHtml: `<div><span>Counter = ${ data.counter }</span></div>`,
+    getHtml: `<span>Counter = ${ data.counter }</span>`,
     connect: {
         store: store,
         props: ['counter']
@@ -153,8 +154,6 @@ import Pepper from '@pepper-js/pepper';
 
 ### Browser compatibility
 
-Supports every browser as GOV UK (2021) - https://www.gov.uk/service-manual/technology/designing-for-different-browsers-and-devices
+Supports every browser as GOV UK (2022) - https://www.gov.uk/service-manual/technology/designing-for-different-browsers-and-devices
 
-(currently includes IE 11, Safari 12 and Samsung Internet)
-
-*But* for IE 11, you either need to include jquery or [parseHtml() function](./parseHTML.js) (extracted out from jquery).
+(Safari 12+ and latest Chrome, Edge, Firefox, Samsung Internet)

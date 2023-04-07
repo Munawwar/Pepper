@@ -9,3 +9,4 @@ tsconfig.test.json
 node_modules/
 examples/
 playground/
+__ignore__/

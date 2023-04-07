@@ -9,7 +9,7 @@
 })(function (Pepper, initialState) {
   var store = new Pepper.Store(initialState);
   var view1 = new Pepper({
-      getHtml: data => `<div id="myview1"><span>Counter = ${data.counter}</span></div>`,
+      getHtml: data => `<span>Counter = ${data.counter}</span>`,
       connect: {
           store: store,
           props: ['counter']
@@ -17,7 +17,7 @@
       target: '#myview1'
   });
   var view2 = new Pepper({
-      getHtml: data => `<div id="myview2"><span>Counter = ${data.counter}</span></div>`,
+      getHtml: data => `<span>Counter = ${data.counter}</span>`,
       connect: {
           store: store,
           props: ['counter']

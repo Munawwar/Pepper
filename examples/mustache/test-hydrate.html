@@ -5,19 +5,20 @@
         <script src="./button.js"></script>
     </head>
     <body>
-        <button id="my-button" on-click="onClick">
-            <span ref="spanEl">Test</span>
-        </button>
+        <div id="my-view">
+            <button on-click="onClick">
+                <span ref="spanEl">Click me</span>
+            </button>
+        </div>
 
         <script>
             new Pepper({
                 getHtml: (data) => mustacheTemplates.button.render(data),
-                data: { text: 'Test' },
-                target: '#my-button',
+                data: { text: 'Click me' },
+                target: '#my-view',
                 hydrate: true,
 
-                onClick: function () {
-                    console.log('Clicked!');
+                onClick() {
                     this.assign({ text: 'Clicked' });
                     console.log(this.spanEl);
                 }

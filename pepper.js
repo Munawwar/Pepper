@@ -1,7 +1,4 @@
-/*global jQuery*/
-// jQuery is optional
-
-(function (factory) {
+((factory) => {
 	// eslint-disable-next-line no-undef
 	if (typeof module === 'object' && module.exports) {
 		// Node cjs
@@ -10,23 +7,20 @@
 	} else {
 		window.Pepper = factory();
 	}
-})(function () {
-	var arrayProto = Array.prototype;
+})(() => {
+	var from = Array.from;
 	// utils
-	function from(arrayLike, fromIndex) {
-		return arrayProto.slice.call(arrayLike, fromIndex);
-	}
-	function each(arrayLike, fn, context) {
-		return arrayProto.forEach.call(arrayLike, fn, context);
+	function each(arrayLike, fn) {
+		return Array.prototype.forEach.call(arrayLike, fn);
 	}
 	function keys(obj) {
-		return Object.keys(obj).filter(function (key) {
-			return key !== 'constructor';
-		});
+		return Object.keys(obj).filter(key => key !== 'constructor');
 	}
-	function assign(target) {
-		from(arguments, 1).forEach(function (obj) {
-			keys(obj).forEach(function (key) {
+	// Safer Object.assign
+	function objectAssign(target) {
+		from(arguments).forEach((obj, index) => {
+			if (!index) return;
+			keys(obj).forEach((key) => {
 				target[key] = obj[key];
 			});
 		});
@@ -58,21 +52,9 @@
 	 * @method dom
 	 */
 	function parseAsFragment(html) {
-		var supportsTemplate = 'content' in document.createElement('template');
-		var frag;
-		if (supportsTemplate) {
-			var templateTag = document.createElement('template');
-			templateTag.innerHTML = html;
-			frag = templateTag.content;
-		} else if (window.jQuery) { // IE 11 (jquery fallback)
-			frag = document.createDocumentFragment();
-			var nodes = jQuery.parseHTML(html);
-			nodes.forEach(function (node) {
-				frag.appendChild(node);
-			});
-		} else { // fallback to our parseHTML function which we extracted out from jquery
-			frag = window.parseHTML(html);
-		}
+		var templateTag = document.createElement('template');
+		templateTag.innerHTML = html;
+		var frag = templateTag.content;
 		// remove script tags
 		var toRemove = frag.querySelectorAll('script');
 		for (var i = 0; i < toRemove.length; i += 1) {
@@ -93,7 +75,7 @@
 	 */
 	function traverseElements(parentNode, onNextNode) {
 		var treeWalker = document.createTreeWalker(parentNode, NodeFilter.SHOW_ELEMENT),
-				node = treeWalker.currentNode;
+				node = treeWalker.nextNode();
 		while (node) {
 			// dont touch the inner nodes of custom elements
 			if (isCustomElement(node)) {
@@ -112,14 +94,14 @@
 	 */
 	function syncAttributes(newNode, liveNode) {
 		// Remove any attributes from live node that is not in new node
-		each(liveNode.attributes, function (attr) {
+		each(liveNode.attributes, (attr) => {
 			if (!newNode.attributes.getNamedItem(attr.name)) {
 				liveNode.attributes.removeNamedItem(attr.name);
 			}
 		});
 
 		// update the rest
-		each(newNode.attributes, function (attr) {
+		each(newNode.attributes, (attr) => {
 			if (liveNode.getAttribute(attr.name) !== attr.value) {
 				liveNode.setAttribute(attr.name, attr.value);
 			}
@@ -187,7 +169,7 @@
 		 * @type {Record<string, DomInfo>}
 		 */
 		var domLookup = {};
-		newNodes.forEach(function (newNode) {
+		newNodes.forEach((newNode) => {
 			var hash = hashNode(newNode, nodeHashCache);
 			domLookup[hash] = domLookup[hash] || {
 				u: [],
@@ -202,7 +184,7 @@
 		 * @type {Record<string, Element[]>}
 		 */
 		var salvagableElements = {};
-		liveNodes.forEach(function (liveNode) {
+		liveNodes.forEach((liveNode) => {
 			var hash = hashNode(liveNode, nodeHashCache);
 			var entry = domLookup[hash];
 			var matched = false;
@@ -245,7 +227,7 @@
 
 		// re-ordering
 		// we now look at new nodes top-to-bottom and order them exactly at it's final index
-		newNodes.forEach(function (newNode, index) {
+		newNodes.forEach((newNode, index) => {
 			// check for exact match live node
 			var hash = hashNode(newNode, nodeHashCache);
 			var existingLiveNode = domLookup[hash].n2l.get(newNode);
@@ -303,7 +285,7 @@
 		});
 
 		// now remove any element not in newLiveNodes
-		liveNodes.forEach(function (node) {
+		liveNodes.forEach((node) => {
 			if (!newLiveNodes.has(node)) {
 				parentNode.removeChild(node);
 			}
@@ -321,7 +303,7 @@
 	 * @param {Boolean} [config.hydrate=false]
 	 * @param {{ store: Pepper.Store, props: String[] }} [config.connect]
 	 */
-	var Pepper = function (config) {
+	function Pepper(config) {
 		var self = this;
 		self._data = (typeof config.data === 'object' && config.data) || {};
 		var mount = config.mount;
@@ -330,15 +312,15 @@
 		delete config.data;
 		delete config.mount;
 		delete config.hydrate;
-		assign(self, config);
+		objectAssign(self, config);
 		Object.defineProperty(self, 'data', {
 			configurable: false,
-			set: function (data) {
+			set(data) {
 				self._data = data;
 				// TODO: only render if there is a change
 				self.render();
 			},
-			get: function () {
+			get() {
 				return self._data;
 			}
 		});
@@ -347,7 +329,7 @@
 		} else if (mount) {
 			self.mount();
 		}
-	};
+	}
 
 	// private
 	var handlerMap = new WeakMap();
@@ -396,7 +378,7 @@
 	 * @constructor
 	 * @param {Object} initialData
 	 */
-	Pepper.Store = function (initialData) {
+	Pepper.Store = function PepperStore(initialData) {
 		var self = this;
 		/** @private */
 		self._data = initialData || {};
@@ -405,24 +387,20 @@
 
 		Object.defineProperty(this, 'data', {
 			configurable: false,
-			set: function (newData) {
+			set(newData) {
 				if (typeof newData !== 'object') {
 					return;
 				}
 				var changedProps = [].concat(
 					// find props that were changed
-					keys(newData).filter(function (prop) {
-						return self._data[prop] !== newData[prop];
-					}),
+					keys(newData).filter((prop) => self._data[prop] !== newData[prop]),
 					// find props that got removed (i.e. not in new data)
-					keys(self._data).filter(function (prop) {
-						return !(prop in newData);
-					})
+					keys(self._data).filter((prop) => !(prop in newData))
 				);
 				self._data = newData;
 				self.notify(changedProps);
 			},
-			get: function () {
+			get() {
 				return self._data;
 			}
 		});
@@ -436,15 +414,13 @@
 		/**
 		 * @private
 		 */
-		notify: function (changedProps) {
-			var changedPropsLookup = changedProps.reduce(function (acc, prop) {
+		notify(changedProps) {
+			var changedPropsLookup = changedProps.reduce((acc, prop) => {
 				acc[prop] = 1;
 				return acc;
 			}, {});
-			this._subscribers.forEach(function (subscriber) {
-				var changesPropsSubset = subscriber.props.filter(function (prop) {
-					return changedPropsLookup[prop];
-				});
+			this._subscribers.forEach((subscriber) => {
+				var changesPropsSubset = subscriber.props.filter((prop) => changedPropsLookup[prop]);
 				if (changesPropsSubset.length) {
 					subscriber.callback.call(subscriber.context, changesPropsSubset);
 				}
@@ -457,14 +433,14 @@
 		 * @param {any} [context]
 		 * @returns 
 		 */
-		subscribe: function (propsToListenFor, func, context) {
+		subscribe(propsToListenFor, func, context) {
 			if (typeof func !== 'function' || !Array.isArray(propsToListenFor)) {
 				return;
 			}
 			var self = this;
-			var alreadyAdded = self._subscribers.some(function (subscriber) {
-				return (subscriber.callback === func && (context === undefined || context === subscriber.context));
-			});
+			var alreadyAdded = self._subscribers.some((subscriber) => (
+				subscriber.callback === func && (context === undefined || context === subscriber.context)
+			));
 			if (!alreadyAdded) {
 				self._subscribers.push({
 					props: propsToListenFor,
@@ -473,20 +449,18 @@
 				});
 			}
 		},
-		unsubscribe: function (func, context) {
-			this._subscribers = this._subscribers.filter(function (subscriber) {
-				return !(subscriber.callback === func && (context === undefined || context === subscriber.context));
-			});
+		unsubscribe(func, context) {
+			this._subscribers = this._subscribers.filter((subscriber) => !(
+				subscriber.callback === func && (context === undefined || context === subscriber.context)
+			));
 		},
-		assign: function (newData) {
+		assign(newData) {
 			var self = this;
 			if (typeof newData !== 'object') {
 				return;
 			}
-			var changedProps = keys(newData).filter(function (prop) {
-				return self._data[prop] !== newData[prop];
-			});
-			assign(self._data, newData);
+			var changedProps = keys(newData).filter((prop) => self._data[prop] !== newData[prop]);
+			objectAssign(self._data, newData);
 			self.notify(changedProps);
 		}
 	};
@@ -523,14 +497,14 @@
 		 * @param {any} data combined data from this.data and connected pepper store data
 		 * @returns {string}
 		 */
-		getHtml: function () { return ''; },
+		getHtml() { return ''; },
 		
 		/**
 		 * Set data on this.data (using Object.assign), and re-render.
 		 */
-		assign: function () {
+		assign() {
 			var args = from(arguments);
-			assign.apply(null, [this.data].concat(args));
+			objectAssign.apply(null, [this.data].concat(args));
 			// TODO: only render if there is a change
 			this.render();
 		},
@@ -538,13 +512,13 @@
 		/**
 		 * Deep merge data with this.data, and re-render.
 		 */
-		merge: function (data) {
+		merge(data) {
 			merge(this.data, data);
 			// TODO: only render if there is a change
 			this.render();
 		},
 
-		handleEvent: function handleEvent(event) {
+		handleEvent(event) {
 			callHandler(this, event);
 		},
 
@@ -552,11 +526,11 @@
 			var self = this;
 			var connect = self.connect;
 			var storeData = (connect && connect.store && connect.store._data) || {};
-			var storeDataSubset = ((connect && connect.props) || []).reduce(function (acc, prop) {
+			var storeDataSubset = ((connect && connect.props) || []).reduce((acc, prop) => {
 				acc[prop] = storeData[prop];
 				return acc;
 			}, {});
-			var data = assign(storeDataSubset, self.data);
+			var data = objectAssign(storeDataSubset, self.data);
 			return self.getHtml(data);
 		},
 
@@ -567,7 +541,7 @@
 		 *
 		 * @private
 		 */
-		render: function render() {
+		render() {
 			// Step 1: Remove event listeners and refs
 			// Step 2: Note the currently focused element
 			// Step 3: Render/Update UI.
@@ -584,7 +558,7 @@
 
 			// Step 2: Remove event listeners and refs before patch.
 			if (target) {
-				traverseElements(target, function (node) {
+				traverseElements(target, (node) => {
 					var refVal = node.getAttribute('ref');
 					if (refVal && self[refVal] instanceof Node) {
 						delete self[refVal];
@@ -597,16 +571,13 @@
 
 			// Step 3: Render/Update UI
 			var frag = parseAsFragment(self.toString());
-			var el = frag.firstElementChild;
+			var els = from(frag.childNodes)
+			// var el = frag.firstElementChild;
 
 			// Update existing DOM.
 			if (target) {
-				var parent = target.parentNode,
-						childIndex = from(parent.childNodes).indexOf(target);
-				patchDom([el], [target], parent, target.previousSibling);
-				self.el = parent.childNodes[childIndex];
-			} else {
-				self.el = el;
+				var live = from(target.childNodes);
+				patchDom(els, live, target);
 			}
 
 			// Step 4: Re-focus
@@ -623,7 +594,7 @@
 		/**
 		 * @private
 		 */
-		domHydrate: function domHydrate() {
+		domHydrate() {
 			// Doing step 5 and 6 from render() function
 			// Step 5: Resolve refs
 			// Step 6: Attach event listeners
@@ -633,12 +604,12 @@
 			self.el.pepperInstance = self;
 
 			// Note: ref creates a reference to the node as property on the view.
-			traverseElements(self.el, function (node) {
+			traverseElements(self.el, (node) => {
 				var refVal = node.getAttribute('ref');
 				if (refVal) {
 					self[refVal] = node;
 				}
-				each(node.attributes, function (attr) {
+				each(node.attributes, (attr) => {
 					if (attr.name.startsWith('on-')) {
 						var eventName = attr.name.replace(/on-/, '');
 						attachHandler(node, self, eventName, self[attr.value]);
@@ -652,7 +623,7 @@
 		 * attaches event listeners and resolves refs.
 		 * @returns 
 		 */
-		mount: function mount(hydrateOnly = false) {
+		mount(hydrateOnly = false) {
 			var self = this;
 			var connect = self.connect;
 			if (connect && connect.store) {
@@ -666,46 +637,35 @@
 
 			// Return if already mounted.
 			if (self.el && node === self.el) {
-				return;
+				return false;
 			}
 
-			if (node && node.parentNode) {
+			if (node) {
 				self.el = node;
 				if (hydrateOnly) {
 					self.domHydrate();
 				} else { // full render
 					self.render();
 				}
+				return true;
 			}
+			return false;
 		},
 
-		hydrate: function hydrate(data) {
+		hydrate(data) {
 			if (arguments.length > 0 && data && typeof data === 'object') {
 				this._data = data;
 			}
 			this.mount(true);
 		},
 
-		append: function append(node) {
-			var self = this;
-			var connect = self.connect;
-			if (connect && connect.store) {
-				connect.store.subscribe(connect.props, self.render, self);
-			}
-
-			if (!self.el) {
-				self.render();
-			}
-			node.appendChild(self.el);
-		},
-
-		unmount: function unmount() {
+		unmount() {
 			var self = this;
 			var connect = self.connect;
 			if (connect && connect.store) {
 				connect.store.unsubscribe(self.render, self);
 			}
-			self.el.parentNode.removeChild(self.el);
+			self.el.replaceChildren(); // empty replaceChildren removes all child elements
 		}
 	};
 
