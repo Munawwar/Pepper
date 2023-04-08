@@ -15,8 +15,7 @@
   },
   "scripts": {
     "build": "./build.sh",
-    "demo": " browser-sync start --server --port 3005 --startPath=examples/plain/test.html --watch --files=pepper.js,examples",
-    "publish": "npm publish --access public"
+    "demo": " browser-sync start --server --port 3005 --startPath=examples/plain/test.html --watch --files=pepper.js,examples"
   },
   "keywords": [
     "sprinkle some js"
