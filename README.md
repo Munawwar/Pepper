@@ -17,7 +17,7 @@ Bundle size - pepper.js is 2.2 KB gzipped
         </div>
         <script type="module">
             import Pepper from 'https://unpkg.com/@pepper-js/pepper';
-            var view = new Pepper({
+            const view = new Pepper({
                 getHtml(data) {
                     return /* html */ `<button on-click="onClick">${data.text}</button>`;
                     // or you can instead use a template library here
@@ -85,12 +85,12 @@ Pepper comes with a simplified global state store, so that you can have multiple
 
 ```js
 // initialize global store
-var store = new Pepper.Store({
+const store = new Pepper.Store({
     counter: 1
 });
 
 // create some views that use the store data.
-var view1 = new Pepper({
+const view1 = new Pepper({
     // if you want to be able to access a property from the store, then
     // you need to explicitly "connect" to that property. This is a performance
     // optimization (like redux).
@@ -102,7 +102,7 @@ var view1 = new Pepper({
     target: '#myview1',
     mount: true,
 });
-var view2 = new Pepper({
+const view2 = new Pepper({
     getHtml: `<span>Counter = ${ data.counter }</span>`,
     connect: {
         store: store,
@@ -114,7 +114,7 @@ var view2 = new Pepper({
 
 // demonstrating how updating one data source, re-renders multiple views
 // so.. update counter
-var incrementCounterAction = function () {
+const incrementCounterAction = function () {
     store.assign({
         counter: store.data.counter + 1
     });

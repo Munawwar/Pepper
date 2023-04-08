@@ -1,8 +1,8 @@
 import Pepper from '../../index.js';
 
 export default function initializePage(initialState) {
-  var store = new Pepper.Store(initialState);
-  var view1 = new Pepper({
+  const store = new Pepper.Store(initialState);
+  const view1 = new Pepper({
       getHtml: data => `<span>Counter = ${data.counter}</span>`,
       connect: {
           store: store,
@@ -10,7 +10,7 @@ export default function initializePage(initialState) {
       },
       target: '#myview1'
   });
-  var view2 = new Pepper({
+  const view2 = new Pepper({
       getHtml: data => `<span>Counter = ${data.counter}</span>`,
       connect: {
           store: store,
