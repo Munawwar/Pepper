@@ -10,6 +10,19 @@ Benefit of mustache/handlebars is that it runs on several server-side languages,
 
 Bundle size - pepper.js is 2.3 KB gzipped
 
+### Import from CDN
+
+```html
+<!-- Module import -->
+<script type="module">
+    import Pepper from 'https://unpkg.com/@pepper-js/pepper';
+</script>
+
+<!-- Global import -->
+<script src="https://unpkg.com/@pepper-js/pepper/dist/browser/global/index.js"></script>
+<script>const Pepper = PepperModule.default</script>
+```
+
 ### Example
 
 ```html

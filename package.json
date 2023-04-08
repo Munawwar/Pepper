@@ -1,14 +1,15 @@
 {
   "name": "@pepper-js/pepper",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Bring your server-side templates to life",
-  "source": "./pepper.js",
+  "source": "./index.js",
   "type": "module",
+  "unpkg": "./dist/browser/esm/index.min.js",
   "exports": {
-    "default": "./pepper.js",
-    "import": "./pepper.js",
-    "browser": "./dist/browser/pepper.min.js",
-    "require": "./pepper/cjs/pepper.js"
+    "default": "./index.js",
+    "import": "./index.js",
+    "browser": "./dist/browser/esm/index.min.js",
+    "require": "./dist/cjs/index.cjs"
   },
   "directories": {
     "test": "test"

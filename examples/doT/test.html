@@ -1,11 +1,12 @@
 <html>
     <head>
         <script src="./doT.min.js"></script>
-        <script src="../../pepper.js"></script>
+        <script src="../../dist/browser/global/index.min.js"></script>
     </head>
     <body>
         <div id="myview"></div>
         <script>
+            var Pepper = PepperModule.default;
             var view = new Pepper({
                 getHtml: window.doT.template(
                     `<button on-click="onClick">

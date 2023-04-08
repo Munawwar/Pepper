@@ -8,7 +8,7 @@ function renderPage() {
   return /* html */ `
     <html>
         <head>
-            <link rel="modulepreload" href="../../pepper.js" />
+            <link rel="modulepreload" href="../../index.js" />
             <link rel="modulepreload" href="./page.js" />
         </head>
         <body>

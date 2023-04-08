@@ -1,4 +1,4 @@
-import Pepper from '../../pepper.js';
+import Pepper from '../../index.js';
 
 export default function initializePage(initialState) {
   var store = new Pepper.Store(initialState);

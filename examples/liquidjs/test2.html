@@ -1,13 +1,14 @@
 <html>
     <head>
         <script src="./liquid.min.js"></script>
-        <script src="../../pepper.js"></script>
+        <script src="../../dist/browser/global/index.min.js"></script>
     </head>
     <body>
         <div id="myview1"></div>
         <div id="myview2"></div>
         <div id="myview3"></div>
         <script>
+            var Pepper = PepperModule.default;
             var store = new Pepper.Store({
                 counter: 1
             });
