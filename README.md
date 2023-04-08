@@ -44,8 +44,6 @@ Bundle size - pepper.js is 2.3 KB gzipped
 
 You can find examples for several templating language in the [examples directory](./examples).
 
-**Important note**: The template HTML should be wrapped inside a single HTML tag. In other words, Pepper assumes the template has a single root element. If not, then Pepper would take the first element (as root) and ignore the rest.
-
 ### Update data and view
 
 ```js
@@ -69,7 +67,7 @@ Now you can use `this.btnEl` (inside a view method) or `view.btnEl` (from outsid
 
 ### Debug access
 
-One can do `rootElement.pepperInstance` to get access to the view object from the developer tools. It is only for
+One can do `targetElement.pepperInstance` to get access to the view object from the developer tools. It is only for
 debugging purposes. Never use it in code.
 
 ### Pepper Store - for managing cross-view states
@@ -146,10 +144,10 @@ If you use a template engine then that's your server-side rendering :)
 But if you used no template engine, but hand-wrote getHtml(), then you can import Pepper and your views with node.js
 
 ```js
-// CJS
-const Pepper = require('@pepper-js/pepper')
 // ESM
 import Pepper from '@pepper-js/pepper';
+// CJS
+const { default: Pepper } = require('@pepper-js/pepper')
 ```
 
 ### Browser compatibility

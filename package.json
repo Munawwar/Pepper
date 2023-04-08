@@ -1,20 +1,21 @@
 {
   "name": "@pepper-js/pepper",
-  "version": "0.0.5",
+  "version": "0.1.0",
   "description": "Bring your server-side templates to life",
-  "type": "commonjs",
-  "main": "./pepper.js",
-  "module": "./pepper.mjs",
   "source": "./pepper.js",
+  "type": "module",
   "exports": {
-    "require": "./pepper.js",
-    "import": "./pepper.mjs"
+    "default": "./pepper.js",
+    "import": "./pepper.js",
+    "browser": "./dist/browser/pepper.min.js",
+    "require": "./pepper/cjs/pepper.js"
   },
   "directories": {
     "test": "test"
   },
   "scripts": {
-    "dist": "terser pepper.js -mc -o dist/pepper.min.js --source-map",
+    "build": "./build.sh",
+    "demo": " browser-sync start --server --port 3005 --startPath=examples/plain/test.html --watch --files=pepper.js,examples",
     "publish": "npm publish --access public"
   },
   "keywords": [
@@ -23,8 +24,9 @@
   "author": "Munawwar",
   "license": "MIT",
   "devDependencies": {
-    "eslint": "^8.10.0",
-    "terser": "^5.7.1"
+    "browser-sync": "^2.29.1",
+    "esbuild": "^0.17.15",
+    "eslint": "^8.10.0"
   },
   "repository": "github:Munawwar/pepper",
   "eslintConfig": {
@@ -35,7 +37,7 @@
     "extends": "eslint:recommended",
     "parserOptions": {
       "ecmaVersion": "latest",
-      "sourceType": "script"
+      "sourceType": "module"
     },
     "rules": {}
   }

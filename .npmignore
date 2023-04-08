@@ -10,3 +10,4 @@ node_modules/
 examples/
 playground/
 __ignore__/
+build.sh
