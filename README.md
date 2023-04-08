@@ -28,14 +28,12 @@ Bundle size - pepper.js is 2.3 KB gzipped
 ```html
 <!DOCTYPE html>
 <html>
-    <head>
-        <script src="pepper.js"></script>
-    </head>
     <body>
         <div id="node-to-sync">
             <button on-click="onClick">Test</button>
         </div>
-        <script>
+        <script type="module">
+            import Pepper from 'https://unpkg.com/@pepper-js/pepper';
             var view = new Pepper({
                 getHtml: (data) => `<button on-click="onClick">${data.text}</button>`,
                 // or you can instead use a template library here
