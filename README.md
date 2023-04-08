@@ -2,26 +2,9 @@
 
 NOTE: Project is still a work-in-progress
 
-Reuse your server side templates on the client side. Pepper some client-side JS after serving the HTML.
+Build interactive [islands](https://jasonformat.com/islands-architecture/) with plain HTML and a touch of JS.
 
-Use template libraries like mustache, handlebars, jade.. (any that can compile to JS)
-
-Benefit of mustache/handlebars is that it runs on several server-side languages, making SSR more possible if you don't want to or cannot use JS on server-side.
-
-Bundle size - pepper.js is 2.3 KB gzipped
-
-### Import from CDN
-
-```html
-<!-- Module import -->
-<script type="module">
-    import Pepper from 'https://unpkg.com/@pepper-js/pepper';
-</script>
-
-<!-- Global import -->
-<script src="https://unpkg.com/@pepper-js/pepper/dist/browser/global/index.min.js"></script>
-<script>const Pepper = PepperModule.default</script>
-```
+Bundle size - pepper.js is 2.2 KB gzipped
 
 ### Example
 
@@ -35,15 +18,17 @@ Bundle size - pepper.js is 2.3 KB gzipped
         <script type="module">
             import Pepper from 'https://unpkg.com/@pepper-js/pepper';
             var view = new Pepper({
-                getHtml: (data) => `<button on-click="onClick">${data.text}</button>`,
-                // or you can instead use a template library here
+                getHtml(data) {
+                    return /* html */ `<button on-click="onClick">${data.text}</button>`;
+                    // or you can instead use a template library here
+                },
                 
                 data: { text: 'Test' },
-                target: '#node-to-sync', // optional
+                target: '#node-to-sync',
                 hydrate: true, // optional
                 
-                onClick: function () {
-                    console.log('Clicked!');
+                onClick() {
+                    this.data = { text: 'Clicked!' }; // this automatically updates the DOM
                 }
             });
             // or you can call view.hydrate() here.
@@ -54,6 +39,19 @@ Bundle size - pepper.js is 2.3 KB gzipped
 ```
 
 You can find examples for several templating language in the [examples directory](./examples).
+
+### Import from CDN
+
+```html
+<!-- Module import -->
+<script type="module">
+    import Pepper from 'https://unpkg.com/@pepper-js/pepper';
+</script>
+
+<!-- Global import -->
+<script src="https://unpkg.com/@pepper-js/pepper/dist/browser/global/index.min.js"></script>
+<script>const Pepper = PepperModule.default</script>
+```
 
 ### Update data and view
 
@@ -126,10 +124,8 @@ window.setInterval(incrementCounterAction, 1000);
 
 Note that if you don't "connect" your view to specific properties from the Pepper store, then you cannot access those property at all.
 
-Also note; I have moved the code that manipulates the central store (data side effects) to separate function(s) (i.e action). Even though this is completely optional, I would recommended always doing it that way, since it is later easier to find out what's manipulating the central store. If you put this code in the view it would be harder to find later.
-
-Important note: This is a performance optimization in disguise. You can naively put all your HTML within a single Pepper view and all the states within it.
-But that could take a hit on rendering performance. So Pepper Store gives you an option to make smaller views, while keeping the rest of the HTML static, and refresh only the views that needs a refresh (with some manual "connecting" from the developer's end).
+Note that stores feature is meant for render performance improvement. You can naively put all your HTML within a single Pepper view and all the states within it. But that could take a hit on rendering performance.
+So Pepper Store gives you an option to make smaller views / islands, while sharing some states, keeping the rest of the HTML static and refreshing only the views that needs a refresh (with some manual "connecting" from the developer's end).
 
 #### Run side effects on store properties change
 
@@ -159,6 +155,10 @@ But if you used no template engine, but hand-wrote getHtml(), then you can impor
 import Pepper from '@pepper-js/pepper';
 // CJS
 const { default: Pepper } = require('@pepper-js/pepper')
+
+// const pepperView = new Pepper(...)
+const html = pepperView.toString();
+// or html = `${pepperView}`
 ```
 
 ### Browser compatibility
