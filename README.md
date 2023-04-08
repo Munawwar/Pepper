@@ -19,7 +19,7 @@ Bundle size - pepper.js is 2.3 KB gzipped
 </script>
 
 <!-- Global import -->
-<script src="https://unpkg.com/@pepper-js/pepper/dist/browser/global/index.js"></script>
+<script src="https://unpkg.com/@pepper-js/pepper/dist/browser/global/index.min.js"></script>
 <script>const Pepper = PepperModule.default</script>
 ```
 
