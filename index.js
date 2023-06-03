@@ -224,7 +224,7 @@ function patchDom(newNodes, liveNodes, parentNode, after) {
 		var nodeAtPosition = parentNode.childNodes[insertAt + index];
 		if (existingLiveNode) {
 			newLiveNodes.add(existingLiveNode);
-			// put it at the position. If nodeAtPosition is undefined, then inserts to end
+			// place it at the position. If nodeAtPosition is undefined, then inserts to end
 			if (nodeAtPosition !== existingLiveNode) {
 				parentNode.insertBefore(existingLiveNode, nodeAtPosition);
 			}
@@ -244,34 +244,35 @@ function patchDom(newNodes, liveNodes, parentNode, after) {
 
 		var newNodeName = newNode.nodeName;
 		if (
-			newNode.nodeType !== 1
-			|| !salvagableElements[newNodeName]
-			|| !salvagableElements[newNodeName].length
+			newNode.nodeType === 1
+			&& (salvagableElements[newNodeName] && salvagableElements[newNodeName].length)
 		) {
-			newLiveNodes.add(newNode);
-			parentNode.insertBefore(newNode, nodeAtPosition);
+			// at this point we have an element that doesn't have an exact matching node.
+			// but we do have an existing element of same nodeType that can be re-used
+			var newEl = /** @type {Element} */ (newNode); // gah, typescript!
+			var aLiveNode = salvagableElements[newNode.nodeName].shift(); // pick first one
+			newLiveNodes.add(aLiveNode);
+			// place it at where the new node should be
+			if (nodeAtPosition !== aLiveNode) {
+				parentNode.insertBefore(aLiveNode, nodeAtPosition);
+			}
+			syncAttributes(newEl, aLiveNode);
+			// recursively sync children, except for custom elements (because encapsulation
+			// - reactivity with CE is via attributes only)
+			if (!isCustomElement(newEl)) {
+				patchDom(
+					from(newEl.childNodes),
+					from(aLiveNode.childNodes),
+					aLiveNode,
+				);
+			}
 			return;
 		}
 		
-		// at this point we have an element that doesn't have an exact matching node.
-		// but we do have an existing element of same nodeType that can be re-used
-		var newEl = /** @type {Element} */ (newNode); // gah, typescript!
-		var aLiveNode = salvagableElements[newNode.nodeName].shift(); // pick first one
-		newLiveNodes.add(aLiveNode);
-		// place it at where the new node should be
-		if (nodeAtPosition !== aLiveNode) {
-			parentNode.insertBefore(aLiveNode, nodeAtPosition);
-		}
-		syncAttributes(newEl, aLiveNode);
-		// recursively sync children, except for custom elements (because encapsulation
-		// - reactivity with CE is via attributes only)
-		if (!isCustomElement(newEl)) {
-			patchDom(
-				from(newEl.childNodes),
-				from(aLiveNode.childNodes),
-				aLiveNode,
-			);
-		}
+		// At this point the node is either a text node, comment node or
+		// an element that cant re-use another element.
+		newLiveNodes.add(newNode);
+		parentNode.insertBefore(newNode, nodeAtPosition);
 	});
 
 	// now remove any element not in newLiveNodes
