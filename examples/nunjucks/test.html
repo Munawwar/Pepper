@@ -8,7 +8,7 @@
     <body>
         <div id="myview"></div>
         <script>
-            var Pepper = PepperModule.default;
+            var { Pepper } = PepperModule;
             var view = new Pepper({
                 getHtml: (data) => window.nunjucks.render('myview', data),
                 data: {text: 'Click me'},

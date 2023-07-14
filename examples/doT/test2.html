@@ -8,8 +8,8 @@
         <div id="myview2"></div>
         <div id="myview3"></div>
         <script>
-            var Pepper = PepperModule.default;
-            var store = new Pepper.Store({
+            var { Pepper, Store } = PepperModule;
+            var store = new Store({
                 counter: 1
             });
             var view1 = new Pepper({

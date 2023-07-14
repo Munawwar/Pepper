@@ -16,10 +16,10 @@ Bundle size - pepper.js is 2.2 KB gzipped
             <button on-click="onClick">Test</button>
         </div>
         <script type="module">
-            import Pepper from 'https://unpkg.com/@pepper-js/pepper';
+            import { Pepper, html } from 'https://unpkg.com/@pepper-js/pepper';
             const view = new Pepper({
                 getHtml(data) {
-                    return /* html */ `<button on-click="onClick">${data.text}</button>`;
+                    return html`<button on-click="onClick">${data.text}</button>`;
                     // or you can instead use a template library here
                 },
                 
@@ -98,12 +98,12 @@ const view1 = new Pepper({
         store: store,
         props: ['counter']
     },
-    getHtml: data => `<span>Counter = ${ data.counter }</span>`,
+    getHtml: data => html`<span>Counter = ${ data.counter }</span>`,
     target: '#myview1',
     mount: true,
 });
 const view2 = new Pepper({
-    getHtml: `<span>Counter = ${ data.counter }</span>`,
+    getHtml: html`<span>Counter = ${ data.counter }</span>`,
     connect: {
         store: store,
         props: ['counter']
@@ -152,9 +152,9 @@ But if you used no template engine, but hand-wrote getHtml(), then you can impor
 
 ```js
 // ESM
-import Pepper from '@pepper-js/pepper';
+import { Pepper, Store, html } from '@pepper-js/pepper';
 // CJS
-const { default: Pepper } = require('@pepper-js/pepper')
+const { Pepper, Store, html } = require('@pepper-js/pepper')
 
 // const pepperView = new Pepper(...)
 const html = pepperView.toString();

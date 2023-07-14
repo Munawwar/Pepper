@@ -8,7 +8,7 @@
         <div id="myview"></div>
 
         <script>
-            var Pepper = PepperModule.default;
+            var { Pepper } = PepperModule;
             new Pepper({
                 getHtml: (data) => mustacheTemplates.button.render(data),
                 data: { text: 'Click me' },
