@@ -10,21 +10,25 @@
         <script>
             var { Pepper, Store } = PepperModule;
             var store = new Store({
-                counter: 1
+                count: 1
             });
             var view1 = new Pepper({
-                getHtml: window.doT.template(`<span>Counter = {{= it.counter }}</span>`),
-                connect: {
-                    store: store,
-                    props: ['counter']
+                getHtml: window.doT.template(`<span>Counter = {{= it.stores.counter.count }}</span>`),
+                stores: {
+                    counter: {
+                        store: store,
+                        props: ['count']
+                    }
                 },
                 target: '#myview1'
             });
             var view2 = new Pepper({
-                getHtml: window.doT.template(`<span>Counter = {{= it.counter }}</span>`),
-                connect: {
-                    store: store,
-                    props: ['counter']
+                getHtml: window.doT.template(`<span>Counter = {{= it.stores.counter.count }}</span>`),
+                stores: {
+                    counter: {
+                        store: store,
+                        props: ['count']
+                    }
                 },
                 target: '#myview2'
             });
@@ -36,10 +40,10 @@
             view2.mount();
             view3.mount();
 
-            // update counter
+            // update count
             window.setInterval(function () {
                 store.assign({
-                    counter: store.data.counter + 1,
+                    count: store.data.count + 1,
                 });
             }, 1000);
         </script>

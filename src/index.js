@@ -3,7 +3,8 @@ import {
 	from,
 	objectAssign,
 	each,
-	isCustomElement
+	isCustomElement,
+	keys
 } from './utils.js';
 import { patchDom } from './dom-diff.js';
 import { Store } from './store.js';
@@ -67,7 +68,7 @@ function traverseElements(parentNode, onNextNode) {
  * @param {(data: DataType) => String} config.getHtml
  * @param {Boolean} [config.mount=false]
  * @param {Boolean} [config.hydrate=false]
- * @param {{ store: Store, props: String[] }} [config.connect]
+ * @param {{ [storeKey: string]: { store: Store, props: String[] } }|null} [config.stores]
  */
 function Pepper(config) {
 	var self = this;
@@ -157,15 +158,17 @@ Pepper.prototype = {
 	 * in the global store
 	 * Example: ['cart', 'wishlist']
 	 * @type {{
-	 * 	store: Pepper.Store,
-	 *  props: string[]
-	 * }}
+	 * 	[storeKey: string]: {
+	 * 	  store: Store,
+	 *    props: string[]
+	 *  }
+	 * }|null}
 	 */
-	connect: {},
+	stores: null,
 
 	/**
 	 * Function that returns component's html to be rendered
-	 * @param {any} data combined data from this.data and connected pepper store data
+	 * @param {any} data combined data from this.data and subscribed stores
 	 * @returns {string}
 	 */
 	getHtml() { return ''; },
@@ -195,13 +198,17 @@ Pepper.prototype = {
 
 	toString: function renderToString() {
 		var self = this;
-		var connect = self.connect;
-		var storeData = (connect && connect.store && connect.store._data) || {};
-		var storeDataSubset = ((connect && connect.props) || []).reduce((acc, prop) => {
-			acc[prop] = storeData[prop];
+		var stores = self.stores;
+		const storeData = keys(stores).reduce((acc, storeKey) => {
+			var { store, props } = stores[storeKey];
+			var storeData = (store && store._data) || {};
+			acc[storeKey] = (props || []).reduce((acc2, prop) => {
+				acc2[prop] = storeData[prop];
+				return acc2;
+			}, {});
 			return acc;
 		}, {});
-		var data = objectAssign(storeDataSubset, self.data);
+		var data = objectAssign({ stores: storeData }, self.data);
 		return self.getHtml(data);
 	},
 
@@ -295,9 +302,12 @@ Pepper.prototype = {
 	 */
 	mount(hydrateOnly = false) {
 		var self = this;
-		var connect = self.connect;
-		if (connect && connect.store) {
-			connect.store.subscribe(connect.props, self.render, self);
+		var stores = self.stores;
+		if (stores) {
+			keys(stores).forEach((storeKey) => {
+				const { store, props } = stores[storeKey];
+				store.subscribe(props, self.render, self);
+			});
 		}
 
 		var node = self.target;
@@ -331,9 +341,11 @@ Pepper.prototype = {
 
 	unmount() {
 		var self = this;
-		var connect = self.connect;
-		if (connect && connect.store) {
-			connect.store.unsubscribe(self.render, self);
+		var stores = self.stores;
+		if (stores) {
+			keys(stores).forEach((storeKey) => {
+				stores[storeKey].store.unsubscribe(self.render, self);
+			});
 		}
 		self.el.replaceChildren(); // empty replaceChildren removes all child elements
 	}

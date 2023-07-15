@@ -11,6 +11,7 @@ function isCustomElement(element) {
 }
 
 function keys(obj) {
+  if (!obj) return [];
 	return Object.keys(obj).filter(key => key !== 'constructor');
 }
 // Safer Object.assign
