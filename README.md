@@ -20,6 +20,11 @@ Bundle size - pepper.js is 2.2 KB gzipped
             const view = new Pepper({
                 getHtml(data) {
                     return html`<button on-click="onClick">${data.text}</button>`;
+                    // html tagged template literal escapes ${} interpolations and returns a string
+                    // so that script tags or the like doesn't get executed.
+                    // if the value is safe, then you can prefix interpolation by a $ sign,
+                    // e.g.html`<div>$${'<img src="x" onerror="alert(1)">'}`.
+                    //
                     // or you can instead use a template library here
                 },
                 
