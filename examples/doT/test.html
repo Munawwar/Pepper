@@ -6,7 +6,7 @@
     <body>
         <div id="myview"></div>
         <script>
-            var Pepper = PepperModule.default;
+            var { Pepper } = PepperModule;
             var view = new Pepper({
                 getHtml: window.doT.template(
                     `<button on-click="onClick">

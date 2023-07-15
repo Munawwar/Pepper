@@ -6,7 +6,7 @@
     <body>
         <div id="myview"></div>
         <script>
-            var Pepper = PepperModule.default;
+            var { Pepper } = PepperModule;
             var view = new Pepper({
                 getHtml: (data) => (new liquidjs.Liquid()).parseAndRenderSync(
                     `<button on-click="onClick">

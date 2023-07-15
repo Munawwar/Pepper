@@ -15,16 +15,30 @@ var __copyProps = (to, from2, except, desc) => {
   return to;
 };
 var __toCommonJS = (mod) => __copyProps(__defProp({}, "__esModule", { value: true }), mod);
-var pepper_exports = {};
-__export(pepper_exports, {
-  default: () => pepper_default
+
+// src/index.js
+var src_exports = {};
+__export(src_exports, {
+  Pepper: () => Pepper,
+  Store: () => Store,
+  html: () => html
 });
-module.exports = __toCommonJS(pepper_exports);
+module.exports = __toCommonJS(src_exports);
+
+// src/utils.js
 var from = Array.from;
 function each(arrayLike, fn) {
   return Array.prototype.forEach.call(arrayLike, fn);
 }
+function isCustomElement(element) {
+  if (element.tagName.indexOf("-") > 0)
+    return true;
+  var attr = element.getAttribute("is");
+  return attr && attr.indexOf("-") > 0;
+}
 function keys(obj) {
+  if (!obj)
+    return [];
   return Object.keys(obj).filter((key) => key !== "constructor");
 }
 function objectAssign(target) {
@@ -37,50 +51,9 @@ function objectAssign(target) {
   });
   return target;
 }
-function merge(out) {
-  out = out || {};
-  for (var argIndex = 1; argIndex < arguments.length; argIndex += 1) {
-    var obj = arguments[argIndex];
-    if (!obj || typeof val !== "object") {
-      continue;
-    }
-    var keys2 = keys2(obj);
-    for (var keyIndex = 1; keyIndex < keys2.length; keyIndex += 1) {
-      var key = keys2[keyIndex];
-      var val = obj[key];
-      out[key] = typeof val === "object" && val !== null ? merge(out[key], val) : val;
-    }
-  }
-  return out;
-}
-function parseAsFragment(html) {
-  var templateTag = document.createElement("template");
-  templateTag.innerHTML = html;
-  var frag = templateTag.content;
-  var toRemove = frag.querySelectorAll("script");
-  for (var i = 0; i < toRemove.length; i += 1) {
-    frag.removeChild(toRemove[i]);
-  }
-  return frag;
-}
-function isCustomElement(element) {
-  if (element.tagName.indexOf("-") > 0)
-    return true;
-  var attr = element.getAttribute("is");
-  return attr && attr.indexOf("-") > 0;
-}
-function traverseElements(parentNode, onNextNode) {
-  var treeWalker = document.createTreeWalker(parentNode, NodeFilter.SHOW_ELEMENT), node = treeWalker.nextNode();
-  while (node) {
-    if (isCustomElement(node)) {
-      node = treeWalker.nextSibling();
-      continue;
-    }
-    onNextNode(node);
-    node = treeWalker.nextNode();
-  }
-}
-function syncAttributes(newNode, liveNode) {
+
+// src/dom-diff.js
+function syncNode(newNode, liveNode) {
   each(liveNode.attributes, (attr) => {
     if (!newNode.attributes.getNamedItem(attr.name)) {
       liveNode.attributes.removeNamedItem(attr.name);
@@ -91,164 +64,152 @@ function syncAttributes(newNode, liveNode) {
       liveNode.setAttribute(attr.name, attr.value);
     }
   });
+  if (!isCustomElement(newNode) && newNode.innerHTML != liveNode.innerHTML) {
+    patchDom(
+      liveNode,
+      from(newNode.childNodes)
+    );
+  }
 }
 function getCustomElementOuterHtml(el) {
   return el.outerHTML.slice(0, -(el.innerHTML.length + el.tagName.length + 4)) + "/>";
 }
-function hashNode(node, cache) {
-  var hash = cache.get(node);
-  if (!hash) {
-    hash = node.nodeType + ":" + (node.nodeType === 1 ? isCustomElement(node) ? getCustomElementOuterHtml(node) : (
-      /** @type {Element} */
-      node.outerHTML
-    ) : (
-      // comment, text, cdata node
-      node.nodeValue
-    ));
-    cache.set(node, hash);
-  }
-  return hash;
+function hashNode(node) {
+  return node.nodeType + ":" + (node.nodeType === 1 ? isCustomElement(node) ? getCustomElementOuterHtml(node) : (
+    /** @type {Element} */
+    node.outerHTML
+  ) : (
+    // comment, text, cdata node
+    node.nodeValue
+  ));
 }
-function patchDom(newNodes, liveNodes, parentNode, after) {
-  if (!newNodes.length) {
-    liveNodes.forEach((node) => parentNode.removeChild(node));
-    return;
-  }
-  var nodeHashCache = /* @__PURE__ */ new WeakMap();
+function matchNodes(a, aStart, aEnd, b, bStart, bEnd) {
   var domLookup = {};
-  newNodes.forEach((newNode) => {
-    var hash2 = hashNode(newNode, nodeHashCache);
-    domLookup[hash2] = domLookup[hash2] || {
-      u: [],
-      n2l: /* @__PURE__ */ new Map(),
-      l2n: /* @__PURE__ */ new Map()
-    };
-    domLookup[hash2].u.push(newNode);
-  });
-  var numberOfMatches = 0;
+  var newNodeToLiveNodeMatch = /* @__PURE__ */ new Map();
+  var i, hash;
+  for (i = bStart; i < bEnd; i++) {
+    hash = hashNode(b[i]);
+    if (!domLookup[hash])
+      domLookup[hash] = [];
+    domLookup[hash].push(b[i]);
+  }
   var salvagableElements = {};
-  liveNodes.forEach((liveNode2) => {
-    var hash2 = hashNode(liveNode2, nodeHashCache);
-    var entry = domLookup[hash2];
+  var salvagableElementsById = {};
+  var newNode;
+  for (i = aStart; i < aEnd; i++) {
+    var liveNode = a[i];
+    hash = hashNode(liveNode);
+    var entry = domLookup[hash];
     var matched = false;
     if (entry) {
-      var newNode = entry.u.shift();
+      newNode = entry.shift();
       if (newNode) {
-        entry.n2l.set(newNode, liveNode2);
-        entry.l2n.set(liveNode2, newNode);
+        newNodeToLiveNodeMatch.set(newNode, liveNode);
         matched = true;
-        numberOfMatches++;
       }
     }
-    if (!matched && liveNode2.nodeType === 1) {
-      salvagableElements[liveNode2.nodeName] = salvagableElements[liveNode2.nodeName] || [];
-      salvagableElements[liveNode2.nodeName].push(
+    if (!matched && liveNode.nodeType === 1) {
+      if (liveNode.id)
+        salvagableElementsById[liveNode.id] = liveNode;
+      if (!salvagableElements[liveNode.nodeName])
+        salvagableElements[liveNode.nodeName] = [];
+      salvagableElements[liveNode.nodeName].push(
         /** @type {Element} */
-        liveNode2
+        liveNode
       );
     }
-  });
-  if (numberOfMatches === newNodes.length && liveNodes.length > newNodes.length) {
-    for (var i = liveNodes.length - 1; i >= 0; i--) {
-      var liveNode = liveNodes[i];
-      var hash = hashNode(liveNode, nodeHashCache);
-      if (!domLookup[hash] || !domLookup[hash].l2n.has(liveNode)) {
-        parentNode.removeChild(liveNode);
-        liveNodes.splice(i, 1);
-      }
-    }
   }
-  var insertAt = from(parentNode.childNodes).indexOf(after) + 1;
-  var newLiveNodes = /* @__PURE__ */ new Set();
-  newNodes.forEach((newNode, index) => {
-    var hash2 = hashNode(newNode, nodeHashCache);
-    var existingLiveNode = domLookup[hash2].n2l.get(newNode);
-    var nodeAtPosition = parentNode.childNodes[insertAt + index];
-    if (existingLiveNode) {
-      newLiveNodes.add(existingLiveNode);
-      if (nodeAtPosition !== existingLiveNode) {
-        parentNode.insertBefore(existingLiveNode, nodeAtPosition);
-      }
-      return;
-    }
-    var newNodeName = newNode.nodeName;
-    if (newNode.nodeType !== 1 || !salvagableElements[newNodeName] || !salvagableElements[newNodeName].length) {
-      newLiveNodes.add(newNode);
-      parentNode.insertBefore(newNode, nodeAtPosition);
-      return;
-    }
-    var newEl = (
-      /** @type {Element} */
-      newNode
-    );
-    var aLiveNode = salvagableElements[newNode.nodeName].shift();
-    newLiveNodes.add(aLiveNode);
-    if (nodeAtPosition !== aLiveNode) {
-      parentNode.insertBefore(aLiveNode, nodeAtPosition);
-    }
-    syncAttributes(newEl, aLiveNode);
-    if (!isCustomElement(newEl)) {
-      patchDom(
-        from(newEl.childNodes),
-        from(aLiveNode.childNodes),
-        aLiveNode
+  var aLiveNode;
+  for (i = bStart; i < bEnd; i++) {
+    newNode = b[i];
+    if (newNodeToLiveNodeMatch.get(newNode))
+      continue;
+    var id = newNode.id;
+    aLiveNode = id && salvagableElementsById[id];
+    if (aLiveNode) {
+      syncNode(newNode, aLiveNode);
+      newNodeToLiveNodeMatch.set(newNode, aLiveNode);
+      salvagableElements[newNode.nodeName].splice(
+        salvagableElements[newNode.nodeName].indexOf(aLiveNode),
+        1
       );
+      salvagableElementsById[id] = null;
     }
-  });
-  liveNodes.forEach((node) => {
-    if (!newLiveNodes.has(node)) {
-      parentNode.removeChild(node);
+  }
+  for (i = bStart; i < bEnd; i++) {
+    newNode = b[i];
+    if (newNodeToLiveNodeMatch.get(newNode))
+      continue;
+    if (newNode.nodeType === 1 && (aLiveNode = salvagableElements[newNode.nodeName]?.shift())) {
+      syncNode(newNode, aLiveNode);
+      newNodeToLiveNodeMatch.set(newNode, aLiveNode);
     }
-  });
+  }
+  return newNodeToLiveNodeMatch;
 }
-function Pepper(config) {
-  var self = this;
-  self._data = typeof config.data === "object" && config.data || {};
-  var mount = config.mount;
-  var hydrate = config.hydrate;
-  delete config.data;
-  delete config.mount;
-  delete config.hydrate;
-  objectAssign(self, config);
-  Object.defineProperty(self, "data", {
-    configurable: false,
-    set(data) {
-      self._data = data;
-      self.render();
-    },
-    get() {
-      return self._data;
+function patchDom(parentNode, newNodes) {
+  var a = parentNode.childNodes;
+  var aStart = 0;
+  var aEnd = a.length;
+  var b = newNodes;
+  var bStart = 0;
+  var bEnd = b.length;
+  while (aStart < aEnd || bStart < bEnd) {
+    if (aEnd === aStart) {
+      var insertBefore = parentNode.childNodes[aEnd];
+      while (bStart < bEnd) {
+        parentNode.insertBefore(b[bStart++], insertBefore);
+      }
+    } else if (bEnd === bStart) {
+      if (!b.length) {
+        parentNode.replaceChildren();
+      } else {
+        while (aStart < aEnd) {
+          a[--aEnd].remove();
+        }
+      }
+    } else if (a[aStart].isEqualNode(b[bStart])) {
+      aStart++;
+      bStart++;
+    } else if (a[aEnd - 1].isEqualNode(b[bEnd - 1])) {
+      aEnd--;
+      bEnd--;
+    } else if (aStart < aEnd - 1 && bStart < bEnd - 1 && a[aStart].isEqualNode(b[bEnd - 1]) && b[bStart].isEqualNode(a[aEnd - 1])) {
+      --aEnd;
+      bStart++;
+      --bEnd;
+      var oldStartNode = a[aStart++];
+      var oldEndNode = a[aEnd];
+      var startInsertBefore = oldStartNode.nextSibling;
+      parentNode.insertBefore(oldStartNode, oldEndNode.nextSibling);
+      if (startInsertBefore !== oldEndNode) {
+        parentNode.insertBefore(oldEndNode, startInsertBefore);
+      }
+    } else {
+      var newNodeToLiveNodeMatch = matchNodes(a, aStart, aEnd, b, bStart, bEnd);
+      var i, newNode;
+      for (i = bStart; i < bEnd; i++) {
+        newNode = b[i];
+        var existingLiveNode = newNodeToLiveNodeMatch.get(newNode);
+        var nodeAtPosition = parentNode.childNodes[i];
+        if (existingLiveNode) {
+          if (nodeAtPosition !== existingLiveNode) {
+            parentNode.insertBefore(existingLiveNode, nodeAtPosition);
+          }
+        } else {
+          parentNode.insertBefore(newNode, nodeAtPosition);
+        }
+      }
+      while (a.length > b.length) {
+        a[bEnd].remove();
+      }
+      break;
     }
-  });
-  if (hydrate) {
-    self.hydrate();
-  } else if (mount) {
-    self.mount();
   }
 }
-var handlerMap = /* @__PURE__ */ new WeakMap();
-function attachHandler(node, context, eventName, func) {
-  if (!func)
-    return;
-  var newMap = handlerMap.get(node) || {};
-  newMap[eventName] = func;
-  handlerMap.set(node, newMap);
-  node.addEventListener(eventName, context);
-}
-function removeAllHandlers(node, context) {
-  Object.keys(handlerMap.get(node) || {}).forEach(function(eventName) {
-    node.removeEventListener(eventName, context);
-  });
-  handlerMap.delete(node);
-}
-function callHandler(context, event) {
-  var node = event.currentTarget;
-  var func = (handlerMap.get(node) || {})[event.type];
-  if (func) {
-    func.call(context, event);
-  }
-}
-Pepper.Store = function PepperStore(initialData) {
+
+// src/store.js
+function Store(initialData) {
   var self = this;
   self._data = initialData || {};
   self._subscribers = [];
@@ -271,8 +232,8 @@ Pepper.Store = function PepperStore(initialData) {
       return self._data;
     }
   });
-};
-Pepper.Store.prototype = {
+}
+Store.prototype = {
   /**
    * Reactive data - Getter/Setter
    */
@@ -326,6 +287,112 @@ Pepper.Store.prototype = {
     self.notify(changedProps);
   }
 };
+
+// src/html.js
+var characterEntitiesMapping = {
+  "<": "&lt;",
+  ">": "&gt;",
+  "&": "&amp;",
+  "'": "&apos;",
+  '"': "&quot;"
+};
+function escape(text) {
+  if (!text)
+    return text;
+  return text.replace(/[<>&'"]/g, (character) => characterEntitiesMapping[character]);
+}
+function html(strings, ...values) {
+  return strings.reduce((acc, string, index) => {
+    let value = String(values[index - 1]);
+    if ((strings[index - 1] || "").endsWith("$")) {
+      acc = acc.slice(0, -1);
+    } else {
+      value = escape(value);
+    }
+    return acc + value + string;
+  });
+}
+
+// src/index.js
+function merge(out) {
+  out = out || {};
+  for (var argIndex = 1; argIndex < arguments.length; argIndex++) {
+    var obj = arguments[argIndex];
+    if (!obj || typeof val !== "object") {
+      continue;
+    }
+    var keys2 = keys2(obj);
+    for (var keyIndex = 1; keyIndex < keys2.length; keyIndex++) {
+      var key = keys2[keyIndex];
+      var val = obj[key];
+      out[key] = typeof val === "object" && val !== null ? merge(out[key], val) : val;
+    }
+  }
+  return out;
+}
+function parseAsFragment(html2) {
+  var templateTag = document.createElement("template");
+  templateTag.innerHTML = html2;
+  return templateTag.content;
+}
+function traverseElements(parentNode, onNextNode) {
+  var treeWalker = document.createTreeWalker(parentNode, NodeFilter.SHOW_ELEMENT), node = treeWalker.nextNode();
+  while (node) {
+    if (isCustomElement(node)) {
+      node = treeWalker.nextSibling();
+      continue;
+    }
+    onNextNode(node);
+    node = treeWalker.nextNode();
+  }
+}
+function Pepper(config) {
+  var self = this;
+  self._data = typeof config.data === "object" && config.data || {};
+  var mount = config.mount;
+  var hydrate = config.hydrate;
+  delete config.data;
+  delete config.mount;
+  delete config.hydrate;
+  objectAssign(self, config);
+  Object.defineProperty(self, "data", {
+    configurable: false,
+    set(data) {
+      self._data = data;
+      self.render();
+    },
+    get() {
+      return self._data;
+    }
+  });
+  if (hydrate) {
+    self.hydrate();
+  } else if (mount) {
+    self.mount();
+  }
+}
+var handlerMap = /* @__PURE__ */ new WeakMap();
+function attachHandler(node, context, eventName, func) {
+  if (!func)
+    return;
+  var newMap = handlerMap.get(node) || {};
+  newMap[eventName] = func;
+  handlerMap.set(node, newMap);
+  node.addEventListener(eventName, context);
+}
+function removeAllHandlers(node, context) {
+  Object.keys(handlerMap.get(node) || {}).forEach(function(eventName) {
+    node.removeEventListener(eventName, context);
+  });
+  handlerMap.delete(node);
+}
+function callHandler(context, event) {
+  var node = event.currentTarget;
+  var func = (handlerMap.get(node) || {})[event.type];
+  if (func) {
+    func.call(context, event);
+  }
+}
 Pepper.prototype = {
   /**
    * The data object.
@@ -344,14 +411,16 @@ Pepper.prototype = {
    * in the global store
    * Example: ['cart', 'wishlist']
    * @type {{
-   * 	store: Pepper.Store,
-   *  props: string[]
-   * }}
+   * 	[storeKey: string]: {
+   * 	  store: Store,
+   *    props: string[]
+   *  }
+   * }|null}
    */
-  connect: {},
+  stores: null,
   /**
    * Function that returns component's html to be rendered
-   * @param {any} data combined data from this.data and connected pepper store data
+   * @param {any} data combined data from this.data and subscribed stores
    * @returns {string}
    */
   getHtml() {
@@ -377,13 +446,17 @@ Pepper.prototype = {
   },
   toString: function renderToString() {
     var self = this;
-    var connect = self.connect;
-    var storeData = connect && connect.store && connect.store._data || {};
-    var storeDataSubset = (connect && connect.props || []).reduce((acc, prop) => {
-      acc[prop] = storeData[prop];
+    var stores = self.stores;
+    const storeData = keys(stores).reduce((acc, storeKey) => {
+      var { store, props } = stores[storeKey];
+      var storeData2 = store && store._data || {};
+      acc[storeKey] = (props || []).reduce((acc2, prop) => {
+        acc2[prop] = storeData2[prop];
+        return acc2;
+      }, {});
       return acc;
     }, {});
-    var data = objectAssign(storeDataSubset, self.data);
+    var data = objectAssign({ stores: storeData }, self.data);
     return self.getHtml(data);
   },
   /**
@@ -411,8 +484,7 @@ Pepper.prototype = {
     var frag = parseAsFragment(self.toString());
     var els = from(frag.childNodes);
     if (target) {
-      var live = from(target.childNodes);
-      patchDom(els, live, target);
+      patchDom(target, els);
     }
     if (focusId) {
       var focusEl = document.getElementById(focusId);
@@ -448,9 +520,12 @@ Pepper.prototype = {
    */
   mount(hydrateOnly = false) {
     var self = this;
-    var connect = self.connect;
-    if (connect && connect.store) {
-      connect.store.subscribe(connect.props, self.render, self);
+    var stores = self.stores;
+    if (stores) {
+      keys(stores).forEach((storeKey) => {
+        const { store, props } = stores[storeKey];
+        store.subscribe(props, self.render, self);
+      });
     }
     var node = self.target;
     if (typeof node === "string") {
@@ -478,11 +553,13 @@ Pepper.prototype = {
   },
   unmount() {
     var self = this;
-    var connect = self.connect;
-    if (connect && connect.store) {
-      connect.store.unsubscribe(self.render, self);
+    var stores = self.stores;
+    if (stores) {
+      keys(stores).forEach((storeKey) => {
+        stores[storeKey].store.unsubscribe(self.render, self);
+      });
     }
     self.el.replaceChildren();
   }
 };
-var pepper_default = Pepper;
+//# sourceMappingURL=index.cjs.map

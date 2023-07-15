@@ -16,10 +16,15 @@ Bundle size - pepper.js is 2.2 KB gzipped
             <button on-click="onClick">Test</button>
         </div>
         <script type="module">
-            import Pepper from 'https://unpkg.com/@pepper-js/pepper';
+            import { Pepper, html } from 'https://unpkg.com/@pepper-js/pepper';
             const view = new Pepper({
                 getHtml(data) {
-                    return /* html */ `<button on-click="onClick">${data.text}</button>`;
+                    return html`<button on-click="onClick">${data.text}</button>`;
+                    // html tagged template literal escapes ${} interpolations and returns a string
+                    // so that script tags or the like doesn't get executed.
+                    // if the value is safe, then you can prefix interpolation by a $ sign,
+                    // e.g.html`<div>$${'<img src="x" onerror="alert(1)">'}`.
+                    //
                     // or you can instead use a template library here
                 },
                 
@@ -84,29 +89,35 @@ debugging purposes. Never use it in code.
 Pepper comes with a simplified global state store, so that you can have multiple views with common states stored in it. Updating the store data will re-render connected views automatically.
 
 ```js
+import { Store } from 'https://unpkg.com/@pepper-js/pepper';
+
 // initialize global store
-const store = new Pepper.Store({
-    counter: 1
+const store = new Store({
+    count: 1
 });
 
 // create some views that use the store data.
 const view1 = new Pepper({
     // if you want to be able to access a property from the store, then
-    // you need to explicitly "connect" to that property. This is a performance
+    // you need to explicitly subscribe for that store property. This is a performance
     // optimization (like redux).
-    connect: {
-        store: store,
-        props: ['counter']
+    stores: {
+        counter: {
+            store: store,
+            props: ['count']
+        }
     },
-    getHtml: data => `<span>Counter = ${ data.counter }</span>`,
+    getHtml: data => html`<span>Counter = ${ data.stores.counter.count }</span>`,
     target: '#myview1',
     mount: true,
 });
 const view2 = new Pepper({
-    getHtml: `<span>Counter = ${ data.counter }</span>`,
-    connect: {
-        store: store,
-        props: ['counter']
+    getHtml: html`<span>Counter = ${ data.stores.counter.count }</span>`,
+    stores: {
+        counter: {
+            store: store,
+            props: ['count']
+        }
     },
     target: '#myview2',
     mount: true,
@@ -116,7 +127,7 @@ const view2 = new Pepper({
 // so.. update counter
 const incrementCounterAction = function () {
     store.assign({
-        counter: store.data.counter + 1
+        count: store.data.count + 1
     });
 };
 window.setInterval(incrementCounterAction, 1000);
@@ -152,9 +163,9 @@ But if you used no template engine, but hand-wrote getHtml(), then you can impor
 
 ```js
 // ESM
-import Pepper from '@pepper-js/pepper';
+import { Pepper, Store, html } from '@pepper-js/pepper';
 // CJS
-const { default: Pepper } = require('@pepper-js/pepper')
+const { Pepper, Store, html } = require('@pepper-js/pepper')
 
 // const pepperView = new Pepper(...)
 const html = pepperView.toString();

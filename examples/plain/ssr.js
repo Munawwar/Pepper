@@ -3,7 +3,7 @@ import initializePage from './page.js';
 function renderPage() {
   // Each page can different initial state that maybe specific to the request
   // e.g. like user specific data - user's first name or last name etc.
-  const initialState = { counter: 1 };
+  const initialState = { count: 1 };
   const page = initializePage(initialState);
   return /* html */ `
     <html>
@@ -20,10 +20,10 @@ function renderPage() {
                 const page = initializePage(window.initialState);
                 page.view1.hydrate();
                 page.view2.hydrate();
-                // update counter
+                // update count
                 window.setInterval(function () {
                     page.store.assign({
-                        counter: page.store.data.counter + 1,
+                        count: page.store.data.count + 1,
                     });
                 }, 1000);
             </script>
