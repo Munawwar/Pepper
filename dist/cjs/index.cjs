@@ -51,7 +51,7 @@ function objectAssign(target) {
 }
 
 // src/dom-diff.js
-function syncAttributes(newNode, liveNode) {
+function syncNode(newNode, liveNode) {
   each(liveNode.attributes, (attr) => {
     if (!newNode.attributes.getNamedItem(attr.name)) {
       liveNode.attributes.removeNamedItem(attr.name);
@@ -62,101 +62,148 @@ function syncAttributes(newNode, liveNode) {
       liveNode.setAttribute(attr.name, attr.value);
     }
   });
+  if (!isCustomElement(newNode) && newNode.innerHTML != liveNode.innerHTML) {
+    patchDom(
+      liveNode,
+      from(newNode.childNodes)
+    );
+  }
 }
 function getCustomElementOuterHtml(el) {
   return el.outerHTML.slice(0, -(el.innerHTML.length + el.tagName.length + 4)) + "/>";
 }
-function hashNode(node, cache) {
-  var hash = cache.get(node);
-  if (!hash) {
-    hash = node.nodeType + ":" + (node.nodeType === 1 ? isCustomElement(node) ? getCustomElementOuterHtml(node) : (
-      /** @type {Element} */
-      node.outerHTML
-    ) : (
-      // comment, text, cdata node
-      node.nodeValue
-    ));
-    cache.set(node, hash);
-  }
-  return hash;
+function hashNode(node) {
+  return node.nodeType + ":" + (node.nodeType === 1 ? isCustomElement(node) ? getCustomElementOuterHtml(node) : (
+    /** @type {Element} */
+    node.outerHTML
+  ) : (
+    // comment, text, cdata node
+    node.nodeValue
+  ));
 }
-function patchDom(newNodes, liveNodes, parentNode, after) {
-  if (!newNodes.length) {
-    liveNodes.forEach((node) => parentNode.removeChild(node));
-    return;
-  }
-  var nodeHashCache = /* @__PURE__ */ new Map();
+function matchNodes(a, aStart, aEnd, b, bStart, bEnd) {
   var domLookup = {};
-  newNodes.forEach((newNode) => {
-    var hash = hashNode(newNode, nodeHashCache);
-    domLookup[hash] = domLookup[hash] || {
-      u: [],
-      n2l: /* @__PURE__ */ new Map()
-    };
-    domLookup[hash].u.push(newNode);
-  });
+  var newNodeToLiveNodeMatch = /* @__PURE__ */ new Map();
+  var i, hash;
+  for (i = bStart; i < bEnd; i++) {
+    hash = hashNode(b[i]);
+    if (!domLookup[hash])
+      domLookup[hash] = [];
+    domLookup[hash].push(b[i]);
+  }
   var salvagableElements = {};
-  liveNodes.forEach((liveNode) => {
-    var hash = hashNode(liveNode, nodeHashCache);
+  var salvagableElementsById = {};
+  var newNode;
+  for (i = aStart; i < aEnd; i++) {
+    var liveNode = a[i];
+    hash = hashNode(liveNode);
     var entry = domLookup[hash];
     var matched = false;
     if (entry) {
-      var newNode = entry.u.shift();
+      newNode = entry.shift();
       if (newNode) {
-        entry.n2l.set(newNode, liveNode);
+        newNodeToLiveNodeMatch.set(newNode, liveNode);
         matched = true;
       }
     }
     if (!matched && liveNode.nodeType === 1) {
-      salvagableElements[liveNode.nodeName] = salvagableElements[liveNode.nodeName] || [];
+      if (liveNode.id)
+        salvagableElementsById[liveNode.id] = liveNode;
+      if (!salvagableElements[liveNode.nodeName])
+        salvagableElements[liveNode.nodeName] = [];
       salvagableElements[liveNode.nodeName].push(
         /** @type {Element} */
         liveNode
       );
     }
-  });
-  var insertAt = from(parentNode.childNodes).indexOf(after) + 1;
-  var newLiveNodes = /* @__PURE__ */ new Set();
-  newNodes.forEach((newNode, index) => {
-    var hash = hashNode(newNode, nodeHashCache);
-    var existingLiveNode = domLookup[hash].n2l.get(newNode);
-    var nodeAtPosition = parentNode.childNodes[insertAt + index];
-    if (existingLiveNode) {
-      newLiveNodes.add(existingLiveNode);
-      if (nodeAtPosition !== existingLiveNode) {
-        parentNode.insertBefore(existingLiveNode, nodeAtPosition);
-      }
-      return;
-    }
-    var newNodeName = newNode.nodeName;
-    if (newNode.nodeType === 1 && (salvagableElements[newNodeName] && salvagableElements[newNodeName].length)) {
-      var newEl = (
-        /** @type {Element} */
-        newNode
+  }
+  var aLiveNode;
+  for (i = bStart; i < bEnd; i++) {
+    newNode = b[i];
+    if (newNodeToLiveNodeMatch.get(newNode))
+      continue;
+    var id = newNode.id;
+    aLiveNode = id && salvagableElementsById[id];
+    if (aLiveNode) {
+      syncNode(newNode, aLiveNode);
+      newNodeToLiveNodeMatch.set(newNode, aLiveNode);
+      salvagableElements[newNode.nodeName].splice(
+        salvagableElements[newNode.nodeName].indexOf(aLiveNode),
+        1
       );
-      var aLiveNode = salvagableElements[newNode.nodeName].shift();
-      newLiveNodes.add(aLiveNode);
-      if (nodeAtPosition !== aLiveNode) {
-        parentNode.insertBefore(aLiveNode, nodeAtPosition);
-      }
-      syncAttributes(newEl, aLiveNode);
-      if (!isCustomElement(newEl) && newEl.innerHTML != aLiveNode.innerHTML) {
-        patchDom(
-          from(newEl.childNodes),
-          from(aLiveNode.childNodes),
-          aLiveNode
-        );
-      }
-      return;
+      salvagableElementsById[id] = null;
     }
-    newLiveNodes.add(newNode);
-    parentNode.insertBefore(newNode, nodeAtPosition);
-  });
-  liveNodes.forEach((node) => {
-    if (!newLiveNodes.has(node)) {
-      parentNode.removeChild(node);
+  }
+  for (i = bStart; i < bEnd; i++) {
+    newNode = b[i];
+    if (newNodeToLiveNodeMatch.get(newNode))
+      continue;
+    if (newNode.nodeType === 1 && (aLiveNode = salvagableElements[newNode.nodeName]?.shift())) {
+      syncNode(newNode, aLiveNode);
+      newNodeToLiveNodeMatch.set(newNode, aLiveNode);
     }
-  });
+  }
+  return newNodeToLiveNodeMatch;
+}
+function patchDom(parentNode, newNodes) {
+  var a = parentNode.childNodes;
+  var aStart = 0;
+  var aEnd = a.length;
+  var b = newNodes;
+  var bStart = 0;
+  var bEnd = b.length;
+  while (aStart < aEnd || bStart < bEnd) {
+    if (aEnd === aStart) {
+      var insertBefore = parentNode.childNodes[aEnd];
+      while (bStart < bEnd) {
+        parentNode.insertBefore(b[bStart++], insertBefore);
+      }
+    } else if (bEnd === bStart) {
+      if (!b.length) {
+        parentNode.replaceChildren();
+      } else {
+        while (aStart < aEnd) {
+          a[--aEnd].remove();
+        }
+      }
+    } else if (a[aStart].isEqualNode(b[bStart])) {
+      aStart++;
+      bStart++;
+    } else if (a[aEnd - 1].isEqualNode(b[bEnd - 1])) {
+      aEnd--;
+      bEnd--;
+    } else if (aStart < aEnd - 1 && bStart < bEnd - 1 && a[aStart].isEqualNode(b[bEnd - 1]) && b[bStart].isEqualNode(a[aEnd - 1])) {
+      --aEnd;
+      bStart++;
+      --bEnd;
+      var oldStartNode = a[aStart++];
+      var oldEndNode = a[aEnd];
+      var startInsertBefore = oldStartNode.nextSibling;
+      parentNode.insertBefore(oldStartNode, oldEndNode.nextSibling);
+      if (startInsertBefore !== oldEndNode) {
+        parentNode.insertBefore(oldEndNode, startInsertBefore);
+      }
+    } else {
+      var newNodeToLiveNodeMatch = matchNodes(a, aStart, aEnd, b, bStart, bEnd);
+      var i, newNode;
+      for (i = bStart; i < bEnd; i++) {
+        newNode = b[i];
+        var existingLiveNode = newNodeToLiveNodeMatch.get(newNode);
+        var nodeAtPosition = parentNode.childNodes[i];
+        if (existingLiveNode) {
+          if (nodeAtPosition !== existingLiveNode) {
+            parentNode.insertBefore(existingLiveNode, nodeAtPosition);
+          }
+        } else {
+          parentNode.insertBefore(newNode, nodeAtPosition);
+        }
+      }
+      while (a.length > b.length) {
+        a[bEnd].remove();
+      }
+      break;
+    }
+  }
 }
 
 // src/store.js
@@ -429,8 +476,7 @@ Pepper.prototype = {
     var frag = parseAsFragment(self.toString());
     var els = from(frag.childNodes);
     if (target) {
-      var live = from(target.childNodes);
-      patchDom(els, live, target);
+      patchDom(target, els);
     }
     if (focusId) {
       var focusEl = document.getElementById(focusId);

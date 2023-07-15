@@ -247,8 +247,7 @@ Pepper.prototype = {
 
 		// Update existing DOM.
 		if (target) {
-			var live = from(target.childNodes);
-			patchDom(els, live, target);
+			patchDom(target, els);
 		}
 
 		// Step 4: Re-focus
