@@ -177,3 +177,7 @@ const html = pepperView.toString();
 Supports every browser as GOV UK (2022) - https://www.gov.uk/service-manual/technology/designing-for-different-browsers-and-devices
 
 (Safari 12+ and latest Chrome, Edge, Firefox, Samsung Internet)
+
+### Credits
+
+To <a href="https://github.com/WebReflection/udomdiff">udomdiff</a> for dom diff fast path inspiration.

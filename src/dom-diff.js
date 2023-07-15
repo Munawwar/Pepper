@@ -149,6 +149,7 @@ function patchDom(parentNode, newNodes) {
   var bStart = 0;
   var bEnd = b.length;
 
+  // Thanks to https://github.com/WebReflection/udomdiff for the fast path inspiration.
   while (aStart < aEnd || bStart < bEnd) {
     // fast path to append head or tail
     if (aEnd === aStart) {

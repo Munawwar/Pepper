@@ -1,6 +1,6 @@
 {
   "name": "@pepper-js/pepper",
-  "version": "0.1.5",
+  "version": "0.2.0",
   "description": "Bring your server-side templates to life",
   "source": "./src/index.js",
   "type": "module",
