@@ -4,7 +4,7 @@ NOTE: Project is still a work-in-progress
 
 Build interactive [islands](https://jasonformat.com/islands-architecture/) with plain HTML and a touch of JS.
 
-Bundle size - pepper.js is 2.2 KB gzipped
+Bundle size - pepper.js is 2.4 KB gzipped
 
 ### Example
 
