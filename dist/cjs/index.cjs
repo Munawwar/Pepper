@@ -381,7 +381,7 @@ function attachHandler(node, context, eventName, func) {
   node.addEventListener(eventName, context);
 }
 function removeAllHandlers(node, context) {
-  Object.keys(handlerMap.get(node) || {}).forEach(function(eventName) {
+  Object.keys(handlerMap.get(node) || {}).forEach((eventName) => {
     node.removeEventListener(eventName, context);
   });
   handlerMap.delete(node);
@@ -405,10 +405,9 @@ Pepper.prototype = {
    */
   target: null,
   /**
-   * (Optional) A Pepper store and array of props to listen to. The properties will be mixed with
-   * `data` passed to this.getHtml() function (in case of collision local data takes precedence
-   * over store data). This instance will re-render (when mounted) when the specified props change
-   * in the global store
+   * (Optional) A Pepper store and array of props to listen to. The properties will be added to
+   * `data.stores` passed to this.getHtml() function.
+   * This instance will re-render (when mounted) when the specified props change in the store
    * Example: ['cart', 'wishlist']
    * @type {{
    * 	[storeKey: string]: {

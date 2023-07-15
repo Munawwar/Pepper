@@ -125,7 +125,7 @@ const view2 = new Pepper({
 
 // demonstrating how updating one data source, re-renders multiple views
 // so.. update counter
-const incrementCounterAction = function () {
+const incrementCounterAction = () => {
     store.assign({
         count: store.data.count + 1
     });

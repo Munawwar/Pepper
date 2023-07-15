@@ -21,7 +21,7 @@ function renderPage() {
                 page.view1.hydrate();
                 page.view2.hydrate();
                 // update count
-                window.setInterval(function () {
+                window.setInterval(() => {
                     page.store.assign({
                         count: page.store.data.count + 1,
                     });

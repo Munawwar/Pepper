@@ -3510,7 +3510,7 @@
             view2.mount();
 
             // update counter
-            window.setInterval(function () {
+            window.setInterval(() => {
                 var start = Date.now();
                 view2.assign({ counter: view2.data.counter + 1});
                 console.log('Time taken to render = ', Date.now() - start);
