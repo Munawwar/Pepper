@@ -50,12 +50,12 @@ You can find examples for several templating language in the [examples directory
 ```html
 <!-- Module import -->
 <script type="module">
-    import Pepper from 'https://unpkg.com/@pepper-js/pepper';
+    import { Pepper } from 'https://unpkg.com/@pepper-js/pepper';
 </script>
 
 <!-- Global import -->
 <script src="https://unpkg.com/@pepper-js/pepper/dist/browser/global/index.min.js"></script>
-<script>const Pepper = PepperModule.default</script>
+<script>const { Pepper } = PepperModule</script>
 ```
 
 ### Update data and view
