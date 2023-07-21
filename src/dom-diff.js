@@ -128,7 +128,7 @@ function matchNodes(a, aStart, aEnd, b, bStart, bEnd) {
     newNode = b[i];
     if (newNodeToLiveNodeMatch.get(newNode)) continue;
 
-    if (newNode.nodeType === 1 && (aLiveNode = salvagableElements[newNode.nodeName]?.shift())) {
+    if (newNode.nodeType === 1 && (aLiveNode = (salvagableElements[newNode.nodeName] || []).shift())) {
       syncNode(newNode, aLiveNode);
       newNodeToLiveNodeMatch.set(newNode, aLiveNode);
     }
@@ -142,7 +142,7 @@ function matchNodes(a, aStart, aEnd, b, bStart, bEnd) {
  * @param {Node[]} newNodes
  */
 function patchDom(parentNode, newNodes) {
-  var a = parentNode.childNodes;
+  var a = Array.from(parentNode.childNodes);
   var aStart = 0;
   var aEnd = a.length;
   var b = newNodes;
@@ -162,6 +162,7 @@ function patchDom(parentNode, newNodes) {
       // fast path to remove all nodes
       if (!b.length) {
         parentNode.replaceChildren();
+        aEnd = aStart;
       } else {
         while (aStart < aEnd) {
           a[--aEnd].remove();
@@ -206,7 +207,7 @@ function patchDom(parentNode, newNodes) {
         newNode = b[i];
         // check for exact match live node
         var existingLiveNode = newNodeToLiveNodeMatch.get(newNode);
-        var nodeAtPosition = parentNode.childNodes[i];
+        var nodeAtPosition = nodeAtPosition ? nodeAtPosition.nextSibling : a[i];
         if (existingLiveNode) {
           // place it at the position. If nodeAtPosition is undefined, then inserts to end
           if (nodeAtPosition !== existingLiveNode) {
@@ -221,8 +222,11 @@ function patchDom(parentNode, newNodes) {
       }
     
       // now if live nodes length > new nodes length, keep discarding node from bEnd position
-      while (a.length > b.length) {
-        a[bEnd].remove();
+      var nodeBefore;
+      var len = parentNode.childNodes.length;
+      while (len-- > b.length) {
+        if (!nodeBefore) nodeBefore = parentNode.childNodes[bEnd].previousSibling;
+        nodeBefore.nextSibling.remove();
       }
       break;
     }
