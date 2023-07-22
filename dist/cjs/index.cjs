@@ -140,7 +140,7 @@ function matchNodes(a, aStart, aEnd, b, bStart, bEnd) {
     newNode = b[i];
     if (newNodeToLiveNodeMatch.get(newNode))
       continue;
-    if (newNode.nodeType === 1 && (aLiveNode = salvagableElements[newNode.nodeName]?.shift())) {
+    if (newNode.nodeType === 1 && (aLiveNode = (salvagableElements[newNode.nodeName] || []).shift())) {
       syncNode(newNode, aLiveNode);
       newNodeToLiveNodeMatch.set(newNode, aLiveNode);
     }
@@ -148,7 +148,7 @@ function matchNodes(a, aStart, aEnd, b, bStart, bEnd) {
   return newNodeToLiveNodeMatch;
 }
 function patchDom(parentNode, newNodes) {
-  var a = parentNode.childNodes;
+  var a = Array.from(parentNode.childNodes);
   var aStart = 0;
   var aEnd = a.length;
   var b = newNodes;
@@ -163,6 +163,7 @@ function patchDom(parentNode, newNodes) {
     } else if (bEnd === bStart) {
       if (!b.length) {
         parentNode.replaceChildren();
+        aEnd = aStart;
       } else {
         while (aStart < aEnd) {
           a[--aEnd].remove();
@@ -191,7 +192,7 @@ function patchDom(parentNode, newNodes) {
       for (i = bStart; i < bEnd; i++) {
         newNode = b[i];
         var existingLiveNode = newNodeToLiveNodeMatch.get(newNode);
-        var nodeAtPosition = parentNode.childNodes[i];
+        var nodeAtPosition = nodeAtPosition ? nodeAtPosition.nextSibling : a[i];
         if (existingLiveNode) {
           if (nodeAtPosition !== existingLiveNode) {
             parentNode.insertBefore(existingLiveNode, nodeAtPosition);
@@ -200,8 +201,12 @@ function patchDom(parentNode, newNodes) {
           parentNode.insertBefore(newNode, nodeAtPosition);
         }
       }
-      while (a.length > b.length) {
-        a[bEnd].remove();
+      var nodeBefore;
+      var len = parentNode.childNodes.length;
+      while (len-- > b.length) {
+        if (!nodeBefore)
+          nodeBefore = parentNode.childNodes[bEnd].previousSibling;
+        nodeBefore.nextSibling.remove();
       }
       break;
     }
