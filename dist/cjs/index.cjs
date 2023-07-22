@@ -53,6 +53,13 @@ function objectAssign(target) {
 }
 
 // src/dom-diff.js
+function getChildNodes(el) {
+  var l = [];
+  for (var node = el.firstChild; node; node = node.nextSibling) {
+    l.push(node);
+  }
+  return l;
+}
 function syncNode(newNode, liveNode) {
   each(liveNode.attributes, (attr) => {
     if (!newNode.attributes.getNamedItem(attr.name)) {
@@ -67,7 +74,7 @@ function syncNode(newNode, liveNode) {
   if (!isCustomElement(newNode) && newNode.innerHTML != liveNode.innerHTML) {
     patchDom(
       liveNode,
-      from(newNode.childNodes)
+      getChildNodes(newNode)
     );
   }
 }
@@ -148,15 +155,16 @@ function matchNodes(a, aStart, aEnd, b, bStart, bEnd) {
   return newNodeToLiveNodeMatch;
 }
 function patchDom(parentNode, newNodes) {
-  var a = Array.from(parentNode.childNodes);
+  var a = getChildNodes(parentNode);
+  var aLen = a.length;
   var aStart = 0;
-  var aEnd = a.length;
+  var aEnd = aLen;
   var b = newNodes;
   var bStart = 0;
   var bEnd = b.length;
   while (aStart < aEnd || bStart < bEnd) {
     if (aEnd === aStart) {
-      var insertBefore = parentNode.childNodes[aEnd];
+      var insertBefore = a[aEnd];
       while (bStart < bEnd) {
         parentNode.insertBefore(b[bStart++], insertBefore);
       }
@@ -188,25 +196,24 @@ function patchDom(parentNode, newNodes) {
       }
     } else {
       var newNodeToLiveNodeMatch = matchNodes(a, aStart, aEnd, b, bStart, bEnd);
-      var i, newNode;
+      var i, newNode, nodeAtPosition;
       for (i = bStart; i < bEnd; i++) {
         newNode = b[i];
         var existingLiveNode = newNodeToLiveNodeMatch.get(newNode);
-        var nodeAtPosition = nodeAtPosition ? nodeAtPosition.nextSibling : a[i];
+        nodeAtPosition = nodeAtPosition ? nodeAtPosition.nextSibling : a[i];
         if (existingLiveNode) {
           if (nodeAtPosition !== existingLiveNode) {
             parentNode.insertBefore(existingLiveNode, nodeAtPosition);
+            nodeAtPosition = existingLiveNode;
           }
         } else {
           parentNode.insertBefore(newNode, nodeAtPosition);
+          nodeAtPosition = newNode;
+          aLen++;
         }
       }
-      var nodeBefore;
-      var len = parentNode.childNodes.length;
-      while (len-- > b.length) {
-        if (!nodeBefore)
-          nodeBefore = parentNode.childNodes[bEnd].previousSibling;
-        nodeBefore.nextSibling.remove();
+      while (aLen-- > b.length) {
+        nodeAtPosition.nextSibling.remove();
       }
       break;
     }

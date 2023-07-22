@@ -1,4 +1,13 @@
-import { from, each, isCustomElement } from './utils.js';
+import { each, isCustomElement } from './utils.js';
+
+// This implementation is faster than Array.from(el.childNodes)
+function getChildNodes(el) {
+  var l = [];
+  for (var node = el.firstChild; node; node = node.nextSibling) {
+    l.push(node);
+  }
+  return l;
+}
 
 /**
  * @param {Element} newNode
@@ -24,7 +33,7 @@ function syncNode(newNode, liveNode) {
   if (!isCustomElement(newNode) && newNode.innerHTML != liveNode.innerHTML) {
     patchDom(
       liveNode,
-      from(newNode.childNodes),
+      getChildNodes(newNode),
     );
   }
 }
@@ -52,10 +61,10 @@ function hashNode(node) {
 }
 
 /**
- * @param {NodeList} a 'a' is live childNodes of parentNode
+ * @param {Node[]} a live nodes
  * @param {number} aStart 
  * @param {number} aEnd 
- * @param {Node[]} b 'b' is an array of new nodes
+ * @param {Node[]} b new nodes
  * @param {number} bStart 
  * @param {number} bEnd
  * @returns 
@@ -142,9 +151,10 @@ function matchNodes(a, aStart, aEnd, b, bStart, bEnd) {
  * @param {Node[]} newNodes
  */
 function patchDom(parentNode, newNodes) {
-  var a = Array.from(parentNode.childNodes);
+  var a = getChildNodes(parentNode);
+  var aLen = a.length;
   var aStart = 0;
-  var aEnd = a.length;
+  var aEnd = aLen;
   var b = newNodes;
   var bStart = 0;
   var bEnd = b.length;
@@ -153,7 +163,7 @@ function patchDom(parentNode, newNodes) {
   while (aStart < aEnd || bStart < bEnd) {
     // fast path to append head or tail
     if (aEnd === aStart) {
-      var insertBefore = parentNode.childNodes[aEnd];
+      var insertBefore = a[aEnd];
       while (bStart < bEnd) {
         parentNode.insertBefore(b[bStart++], insertBefore);
       }
@@ -202,31 +212,32 @@ function patchDom(parentNode, newNodes) {
       var newNodeToLiveNodeMatch = matchNodes(a, aStart, aEnd, b, bStart, bEnd);
     
       // insert the future nodes into position
-      var i, newNode;
+      var i, newNode, nodeAtPosition;
       for (i = bStart; i < bEnd; i++) {
         newNode = b[i];
         // check for exact match live node
         var existingLiveNode = newNodeToLiveNodeMatch.get(newNode);
-        var nodeAtPosition = nodeAtPosition ? nodeAtPosition.nextSibling : a[i];
+        nodeAtPosition = nodeAtPosition ? nodeAtPosition.nextSibling : a[i];
         if (existingLiveNode) {
           // place it at the position. If nodeAtPosition is undefined, then inserts to end
           if (nodeAtPosition !== existingLiveNode) {
             parentNode.insertBefore(existingLiveNode, nodeAtPosition);
+            nodeAtPosition = existingLiveNode;
           }
           // else nothing to do if exact match is already at the right position
         } else {
           // At this point the node is either a text node, comment node or
           // an element that cant re-use another element.
           parentNode.insertBefore(newNode, nodeAtPosition);
+          nodeAtPosition = newNode;
+          aLen++; // keep track of actual child nodes length (to be used in removal loop later)
         }
       }
     
-      // now if live nodes length > new nodes length, keep discarding node from bEnd position
-      var nodeBefore;
-      var len = parentNode.childNodes.length;
-      while (len-- > b.length) {
-        if (!nodeBefore) nodeBefore = parentNode.childNodes[bEnd].previousSibling;
-        nodeBefore.nextSibling.remove();
+      // now if live nodes length > new nodes length, keep discarding node
+      // from bEnd position (newNode.nextSibling)
+      while (aLen-- > b.length) {
+        nodeAtPosition.nextSibling.remove();
       }
       break;
     }
