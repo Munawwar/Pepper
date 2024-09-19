@@ -15,9 +15,8 @@ function keys(obj) {
 	return Object.keys(obj).filter(key => key !== 'constructor');
 }
 // Safer Object.assign
-function objectAssign(target) {
-	from(arguments).forEach((obj, index) => {
-		if (!index) return;
+function objectAssign(target, ...args) {
+	args.forEach((obj) => {
 		keys(obj).forEach((key) => {
 			target[key] = obj[key];
 		});

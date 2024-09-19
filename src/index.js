@@ -11,18 +11,18 @@ import { Store } from './store.js';
 import { html } from './html.js';
 
 // Deep merge helper
-function merge(out) {
+function merge(out, ...args) {
 	out = out || {};
-	for (var argIndex = 1; argIndex < arguments.length; argIndex++) {
-		var obj = arguments[argIndex];
-		if (!obj || typeof val !== 'object') {
+	for (let argIndex = 0; argIndex < args.length; argIndex++) {
+		let obj = args[argIndex];
+		if (!obj || typeof obj !== 'object') {
 			continue;
 		}
-		var keys = keys(obj);
-		for (var keyIndex = 1; keyIndex < keys.length; keyIndex++) {
-			var key = keys[keyIndex];
-			var val = obj[key];
-			out[key] = (typeof val === 'object' && val !== null)
+		let objectKeys = keys(obj);
+		for (let keyIndex = 0; keyIndex < objectKeys.length; keyIndex++) {
+			let key = objectKeys[keyIndex];
+			let val = obj[key];
+			out[key] = (val && typeof val === 'object')
 				? merge(out[key], val)
 				: val;
 		}
@@ -175,9 +175,8 @@ Pepper.prototype = {
 	/**
 	 * Set data on this.data (using Object.assign), and re-render.
 	 */
-	assign() {
-		var args = from(arguments);
-		objectAssign.apply(null, [this.data].concat(args));
+	assign(...args) {
+		objectAssign(this.data, ...args);
 		// TODO: only render if there is a change
 		this.render();
 	},
@@ -332,7 +331,7 @@ Pepper.prototype = {
 	},
 
 	hydrate(data) {
-		if (arguments.length > 0 && data && typeof data === 'object') {
+		if (data && typeof data === 'object') {
 			this._data = data;
 		}
 		this.mount(true);

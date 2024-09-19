@@ -174,9 +174,9 @@ const html = pepperView.toString();
 
 ### Browser compatibility
 
-Supports every browser as GOV UK (2022) - https://www.gov.uk/service-manual/technology/designing-for-different-browsers-and-devices
+Supports every browser as GOV UK (2024) - https://www.gov.uk/service-manual/technology/designing-for-different-browsers-and-devices
 
-(Safari 12+ and latest Chrome, Edge, Firefox, Samsung Internet)
+(Safari 15.6+ and latest Chrome, Edge, Firefox, Samsung Internet)
 
 ### Credits
 
