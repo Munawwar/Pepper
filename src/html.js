@@ -10,7 +10,12 @@ const characterEntitiesMapping = {
 const findRegex = /[<>&'"]/g;
 const replaceFunc = character => characterEntitiesMapping[character];
 
-// Utility for users not using a template library
+/**
+ * Utility for users not using a template library
+ * @params {string[]} strings
+ * @params {any[]} values
+ * @returns {string}
+ */
 function html(strings, ...values) {
   let acc = strings[0];
   for (let index = 1; index < strings.length; index++) {
