@@ -4,6 +4,8 @@ const characterEntitiesMapping = {
   '&': '&amp;',
   "'": '&apos;',
   '"': '&quot;',
+  // prevent attacks like html`<img src="x" onerror="html\`\${alert(1)}\`" />`
+  '`': '&#x60;',
 };
 const findRegex = /[<>&'"]/g;
 const replaceFunc = character => characterEntitiesMapping[character];
