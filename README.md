@@ -86,12 +86,12 @@ debugging purposes. Never use it in code.
 
 ### Pepper Store - for managing cross-view states
 
-Pepper comes with a simplified global state store, so that you can have multiple views with common states stored in it. Updating the store data will re-render connected views automatically.
+Pepper comes with a simplified data store, so that you can have multiple views with common states stored in it. Updating the store data will re-render connected views automatically.
 
 ```js
 import { Store } from 'https://unpkg.com/@pepper-js/pepper';
 
-// initialize global store
+// initialize store
 const store = new Store({
     count: 1
 });
@@ -112,13 +112,13 @@ const view1 = new Pepper({
     mount: true,
 });
 const view2 = new Pepper({
-    getHtml: html`<span>Counter = ${ data.stores.counter.count }</span>`,
     stores: {
         counter: {
             store: store,
             props: ['count']
         }
     },
+    getHtml: data => html`<span>Counter = ${ data.stores.counter.count }</span>`,
     target: '#myview2',
     mount: true,
 });
