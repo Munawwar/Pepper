@@ -1,10 +1,24 @@
 ## Pepper
 
-NOTE: Project is still a work-in-progress
+NOTE: Project is still a work-in-progress.
 
-Build interactive [islands](https://jasonformat.com/islands-architecture/) with Pepper-rendered HTML and a touch of JS.
+Build interactive [islands](https://jasonformat.com/islands-architecture/) with plain function components, server-rendered HTML, and client hydration.
 
-Bundle size - pepper.js is 2.4 KB gzipped
+Bundle size - pepper.js is about 2.4 KB gzipped
+
+### Root API
+
+```js
+import { hydrate, render, renderToString } from '@pepper-js/pepper';
+
+render(Component, container, props);
+hydrate(Component, container, props);
+renderToString(Component, props);
+```
+
+- `render()` mounts or updates a component into a DOM container.
+- `hydrate()` attaches a component to matching server-rendered HTML already in the container.
+- `renderToString()` returns an HTML string for SSR.
 
 ### Example
 
@@ -12,165 +26,195 @@ Bundle size - pepper.js is 2.4 KB gzipped
 <!DOCTYPE html>
 <html>
     <body>
-        <div id="node-to-sync"><button>Test</button></div>
+        <div id="app"><button on-click=0>Increase</button><span>Count = 1</span></div>
+        <script>
+            window.initialProps = { initialCount: 1 };
+        </script>
         <script type="module">
-            import { Pepper } from 'https://unpkg.com/@pepper-js/pepper';
-            const view = new Pepper({
-                getHtml(html, data) {
-                    return html`<button on-click=${this.onClick.bind(this)}>${data.text}</button>`;
-                    // html tagged template literal escapes ${} interpolations and returns a string
-                    // so that script tags or the like doesn't get executed.
-                    // if the value is safe, then you can prefix interpolation by a $ sign,
-                    // e.g.html`<div>$${'<img src="x" onerror="alert(1)">'}`.
-                },
-                
-                data: { text: 'Test' },
-                target: '#node-to-sync',
-                hydrate: true, // optional
-                
-                onClick() {
-                    this.data = { text: 'Clicked!' }; // this automatically updates the DOM
-                }
-            });
-            // or you can call view.hydrate() here.
-            // or call view.mount(), to create new DOM nodes
+            import { hydrate, state } from 'https://unpkg.com/@pepper-js/pepper';
+
+            function Counter({ getProps }) {
+                const [getCount, setCount] = state(getProps().initialCount);
+                const onClick = () => setCount(getCount() + 1);
+
+                return function render(html) {
+                    return html`
+                        <button on-click=${onClick}>Increase</button>
+                        <span>Count = ${getCount()}</span>
+                    `;
+                };
+            }
+
+            hydrate(Counter, '#app', window.initialProps);
         </script>
     </body>
 </html>
 ```
 
-Pepper only hydrates event handlers produced by its own render-bound `html` tag. External string template engines are not supported for interactive hydration.
+### Component Model
 
-Event handlers are invoked as plain functions, so if a handler relies on the Pepper instance as `this`, pass it as `on-click=${this.someMethod.bind(this)}`.
+Pepper components are plain functions.
 
-### Import from CDN
+The setup function receives:
 
-```html
-<!-- Module import -->
-<script type="module">
-    import { Pepper } from 'https://unpkg.com/@pepper-js/pepper';
-</script>
+- `getProps()`
+- `onProps(handler)`
+- `onMount(handler)`
+- `update(callback?)`
 
-<!-- Global import -->
-<script src="https://unpkg.com/@pepper-js/pepper/dist/browser/global/index.min.js"></script>
-<script>const { Pepper } = PepperModule</script>
-```
-
-### Update data and view
+State and refs are direct imports:
 
 ```js
-view.data = { text: 'Test 2' }; // uses setter to detect change
+import { ref, state } from '@pepper-js/pepper';
 ```
-Or use `view.assign()` to not overwrite existing props
 
-`view.assign`'s signature is exactly like `Object.assign()`.
-
-**Note**: Updating states updates the DOM immediately (synchronous/blocking call). So it is generally a good idea to reduce state changes to a single call per user action.. for example a click action would call `view.assign()` only once. You can use temporary objects if needed to reduce calls.
-
-### Refs to DOM nodes
+`state(initialValue, comparator?)` returns a getter/setter pair:
 
 ```js
-getHtml(html, data) {
-    return html`
-        <button ref="btnEl" on-click=${this.onClick.bind(this)}>
-            ${data.text}
-        </button>
-    `;
+const [getCount, setCount] = state(0);
+const [getValue, setValue] = state(initialValue, Object.is);
+```
+
+- the default comparator is deep equality
+- state and `update()` rerenders are batched into a single microtask flush
+- `setState(nextValueOrUpdater, false)` updates without scheduling a rerender
+- `setState(nextValueOrUpdater, callback)` runs `callback` after the render flush
+
+`ref()` returns an object ref:
+
+```js
+const buttonRef = ref();
+```
+
+Use it from render:
+
+```js
+function Counter() {
+    const buttonRef = ref();
+
+    return function render(html) {
+        return html`<button ref=${buttonRef}>Click me</button>`;
+    };
 }
 ```
 
-Now you can use `this.btnEl` (inside a view method) or `view.btnEl` (from outside) to access the span element.
+The component setup may return either:
 
-### Debug access
+- a render function
+- an object with a `render(html)` method
 
-One can do `targetElement.pepperInstance` to get access to the view object from the developer tools. It is only for
-debugging purposes. Never use it in code.
-
-### Pepper Store - for managing cross-view states
-
-Pepper comes with a simplified data store, so that you can have multiple views with common states stored in it. Updating the store data will re-render connected views automatically.
+Both are supported:
 
 ```js
-import { Pepper, Store } from 'https://unpkg.com/@pepper-js/pepper';
+function Counter({ getProps }) {
+    const [getCount, setCount] = state(0);
+    const onClick = () => setCount(getCount() + 1);
 
-// initialize store
-const store = new Store({
-    count: 1
-});
+    return function render(html) {
+        return html`
+            <button on-click=${onClick}>
+                ${getProps().label}: ${getCount()}
+            </button>
+        `;
+    };
+}
+```
 
-// create some views that use the store data.
-const view1 = new Pepper({
-    // if you want to be able to access a property from the store, then
-    // you need to explicitly subscribe for that store property. This is a performance
-    // optimization (like redux).
-    stores: {
-        counter: {
-            store: store,
-            props: ['count']
+```js
+function Counter({ getProps }) {
+    const [getCount, setCount] = state(0);
+
+    return {
+        increment() {
+            setCount(getCount() + 1);
+        },
+
+        render(html) {
+            return html`
+                <button on-click=${this.increment.bind(this)}>
+                    ${getProps().label}: ${getCount()}
+                </button>
+            `;
+        },
+    };
+}
+```
+
+Event handlers are invoked as plain functions. If a handler depends on model `this`, bind it explicitly.
+
+### Props And Effects
+
+`getProps()` always returns the latest props, which avoids stale closures.
+
+```js
+function Counter({ getProps, onMount, onProps }) {
+    const [getCount, setCount] = state(getProps().initialCount);
+
+    onProps((changedProps, oldProps) => {
+        if (changedProps.includes('resetKey')) {
+            setCount(getProps().initialCount, false);
         }
-    },
-    getHtml: (html, data) => html`<span>Counter = ${ data.stores.counter.count }</span>`,
-    target: '#myview1',
-    mount: true,
-});
-const view2 = new Pepper({
-    stores: {
-        counter: {
-            store: store,
-            props: ['count']
-        }
-    },
-    getHtml: (html, data) => html`<span>Counter = ${ data.stores.counter.count }</span>`,
-    target: '#myview2',
-    mount: true,
-});
-
-// demonstrating how updating one data source, re-renders multiple views
-// so.. update counter
-const incrementCounterAction = () => {
-    store.assign({
-        count: store.data.count + 1
     });
-};
-window.setInterval(incrementCounterAction, 1000);
+
+    onMount(() => {
+        console.log('mounted with', getProps());
+        return () => {
+            console.log('cleanup');
+        };
+    });
+
+    return function render(html) {
+        return html`<span>${getCount()}</span>`;
+    };
+}
 ```
 
-Note that if you don't "connect" your view to specific properties from the Pepper store, then you cannot access those property at all.
+### Pepper Store
 
-Note that stores feature is meant for render performance improvement. You can naively put all your HTML within a single Pepper view and all the states within it. But that could take a hit on rendering performance.
-So Pepper Store gives you an option to make smaller views / islands, while sharing some states, keeping the rest of the HTML static and refreshing only the views that needs a refresh (with some manual "connecting" from the developer's end).
-
-#### Run side effects on store properties change
-
-You can listen to store changes outside of Pepper views and run side effects.
+`Store` is still available, but it is no longer wired into component render data automatically. Pass store instances in through props.
 
 ```js
-store.subscribe(['property1', 'property2'], function effect(propertiesThatChanged) {
-    // if `property1` or `property2` (or both) changes this function is invoked
-    // `propertiesThatChanged` gives you the exact properties that changed (array of strings).
+import { Store, render } from '@pepper-js/pepper';
 
-    // do something here..
-    // like lazy load your other views and hydrate them or whatever
+const store = new Store({ count: 1 });
 
-    // optionally unsubscribe if you want to only run the effect once.
-    store.unsubscribe(effect);
-}, /* (optional param) context / this */);
+function Counter({ getProps, onMount, update }) {
+    onMount(() => {
+        const rerender = () => update();
+        getProps().store.subscribe(['count'], rerender);
+        return () => getProps().store.unsubscribe(rerender);
+    });
+
+    return function render(html) {
+        return html`<span>Count = ${getProps().store.data.count}</span>`;
+    };
+}
+
+render(Counter, '#app', { store });
 ```
 
-### Server-side rendering
+For SSR, create the store per request and pass it through `props` on both `renderToString()` and `hydrate()`.
 
-If you hand-write `getHtml(html, data)`, then you can import Pepper and your views with node.js
+### Server-side Rendering
 
 ```js
-// ESM
-import { Pepper, Store } from '@pepper-js/pepper';
-// CJS
-const { Pepper, Store } = require('@pepper-js/pepper')
+import { renderToString, state } from '@pepper-js/pepper';
 
-// const pepperView = new Pepper(...)
-const html = pepperView.toString();
-// or html = `${pepperView}`
+function Counter({ getProps }) {
+    const [getCount] = state(getProps().initialCount);
+    return function render(html) {
+        return html`<span>Count = ${getCount()}</span>`;
+    };
+}
+
+const html = renderToString(Counter, { initialCount: 1 });
 ```
+
+Pepper only hydrates event handlers and refs produced by its render-bound `html` tag. External string template engines are not supported for interactive hydration.
+
+### Current Limitation
+
+Nested Pepper components are not supported yet. Today the root APIs work with a single component tree rendered as HTML strings.
 
 ### Browser compatibility
 

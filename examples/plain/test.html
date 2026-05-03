@@ -40,15 +40,13 @@
         <main class="demo">
             <h1>Pepper Hydration Demo</h1>
             <p>Click the button to confirm the server-rendered event handler hydrates correctly.</p>
-            <div id="myview1"><div class="counter-block"><div>Interactive counter</div><div class="counter-row"><button on-click=0>Increase</button><span>Counter = 1</span></div></div></div>
-            <div id="myview2"><div class="counter-block"><div>Mirrored counter</div><span>Counter = 1</span></div></div>
+            <div id="app"><div class="counter-block"><div>Hydrated counter</div><div class="counter-row"><button on-click=0>Increase</button><span>Counter = 1</span></div></div><div class="counter-block"><div>Mirrored value</div><span>Counter = 1</span></div></div>
         </main>
-        <script>window.initialState = {"count":1};</script>
+        <script>window.initialProps = {"initialCount":1};</script>
         <script type="module">
-            import initializePage from './page.js';
-            const page = initializePage(window.initialState);
-            page.view1.hydrate();
-            page.view2.hydrate();
+            import { hydrate } from '../../src/index.js';
+            import CounterDemo from './page.js';
+            hydrate(CounterDemo, '#app', window.initialProps);
         </script>
     </body>
 </html>

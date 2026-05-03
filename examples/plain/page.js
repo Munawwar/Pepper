@@ -1,48 +1,21 @@
-import { Pepper, Store } from '../../src/index.js';
+import { state } from '../../src/index.js';
 
-export default function initializePage(initialState) {
-  const store = new Store(initialState);
-  const view1 = new Pepper({
-    getHtml(html, data) {
-      return html`
-        <div class="counter-block">
-          <div>Interactive counter</div>
-          <div class="counter-row">
-            <button on-click=${this.onIncrementClick}>Increase</button>
-            <span>Counter = ${data.stores.counter.count}</span>
-          </div>
-        </div>
-      `;
-    },
-    onIncrementClick: () => store.assign({
-      count: store.data.count + 1,
-    }),
-    stores: {
-      counter: {
-        store: store,
-        props: ['count']
-      }
-    },
-    target: '#myview1'
-  });
-  const view2 = new Pepper({
-    getHtml: (html, data) => html`
+export default function CounterDemo({ getProps }) {
+  const [getCount, setCount] = state(getProps().initialCount);
+  const onIncrementClick = () => setCount(getCount() + 1);
+  return function render(html) {
+    return html`
       <div class="counter-block">
-        <div>Mirrored counter</div>
-        <span>Counter = ${data.stores.counter.count}</span>
+        <div>Hydrated counter</div>
+        <div class="counter-row">
+          <button on-click=${onIncrementClick}>Increase</button>
+          <span>Counter = ${getCount()}</span>
+        </div>
       </div>
-    `,
-    stores: {
-      counter: {
-        store: store,
-        props: ['count']
-      }
-    },
-    target: '#myview2'
-  });
-  return {
-    store,
-    view1,
-    view2,
+      <div class="counter-block">
+        <div>Mirrored value</div>
+        <span>Counter = ${getCount()}</span>
+      </div>
+    `;
   };
 }

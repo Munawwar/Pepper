@@ -24,10 +24,44 @@ function objectAssign(target, ...args) {
 	return target;
 }
 
+function isEqual(value1, value2) {
+	if (Object.is(value1, value2)) return true;
+	if (
+		value1 === null
+		|| value2 === null
+		|| typeof value1 !== 'object'
+		|| typeof value2 !== 'object'
+	) {
+		return value1 === value2;
+	}
+
+	var prototype = Object.getPrototypeOf(value1);
+	if (prototype !== Object.getPrototypeOf(value2)) {
+		return false;
+	}
+	if (Array.isArray(value1)) {
+		return value1.length === value2.length && value1.every((item, index) => isEqual(item, value2[index]));
+	}
+	if (value1 instanceof Date) {
+		return value1.getTime() === value2.getTime();
+	}
+	if (value1 instanceof RegExp) {
+		return value1.toString() === value2.toString();
+	}
+	if (prototype !== Object.prototype && prototype !== null) {
+		return false;
+	}
+
+	var objectKeys = keys(value1);
+	return objectKeys.length === keys(value2).length
+		&& objectKeys.every((key) => key in value2 && isEqual(value1[key], value2[key]));
+}
+
 export {
   each,
   isCustomElement,
   from,
   keys,
   objectAssign,
+  isEqual,
 };

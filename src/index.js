@@ -1,350 +1,377 @@
-// utils
 import {
 	from,
-	objectAssign,
 	each,
 	isCustomElement,
-	keys
+	isEqual,
+	keys,
 } from './utils.js';
 import { patchDom } from './dom-diff.js';
 import { Store } from './store.js';
 import { createHtml, html } from './html.js';
 
-// Deep merge helper
-function merge(out, ...args) {
-	out = out || {};
-	for (let argIndex = 0; argIndex < args.length; argIndex++) {
-		let obj = args[argIndex];
-		if (!obj || typeof obj !== 'object') {
-			continue;
-		}
-		let objectKeys = keys(obj);
-		for (let keyIndex = 0; keyIndex < objectKeys.length; keyIndex++) {
-			let key = objectKeys[keyIndex];
-			let val = obj[key];
-			out[key] = (val && typeof val === 'object')
-				? merge(out[key], val)
-				: val;
-		}
-	}
-	return out;
-}
+const rootMap = new WeakMap();
+const handlerMap = new WeakMap();
+const scheduleMicrotask = typeof queueMicrotask === 'function'
+	? queueMicrotask
+	: (callback) => Promise.resolve().then(callback);
+let currentSetupRuntime = null;
+
 /**
  * Converts html string to a document fragment.
- * @param {String} html
+ * @param {String} htmlString
  * @return {DocumentFragment}
- * @method dom
  */
-function parseAsFragment(html) {
-	var templateTag = document.createElement('template');
-	templateTag.innerHTML = html;
+function parseAsFragment(htmlString) {
+	const templateTag = document.createElement('template');
+	templateTag.innerHTML = htmlString;
 	return templateTag.content;
 }
 
 /**
- * Traverse elements of a tree in order of visibility (pre-order traversal)
+ * Traverse elements of a tree in order of visibility (pre-order traversal).
  * @param {Node} parentNode
- * @param {(Node) => void} onNextNode
+ * @param {(node: Element) => void} onNextNode
  */
 function traverseElements(parentNode, onNextNode) {
-	var treeWalker = document.createTreeWalker(parentNode, NodeFilter.SHOW_ELEMENT),
-			node = treeWalker.nextNode();
+	const treeWalker = document.createTreeWalker(parentNode, NodeFilter.SHOW_ELEMENT);
+	let node = treeWalker.nextNode();
 	while (node) {
-		// dont touch the inner nodes of custom elements
 		if (isCustomElement(node)) {
 			node = treeWalker.nextSibling();
 			continue;
 		}
-		onNextNode(node);
+		onNextNode(/** @type {Element} */ (node));
 		node = treeWalker.nextNode();
 	}
 }
 
-/**
- * @template DataType
- * @param {Object} config 
- * @param {HTMLElement} config.target
- * @param {DataType} config.data
- * @param {(html: typeof import('./html.js').html, data: DataType) => String} config.getHtml
- * @param {Boolean} [config.mount=false]
- * @param {Boolean} [config.hydrate=false]
- * @param {{ [storeKey: string]: { store: Store, props: String[] } }|null} [config.stores]
- */
-function Pepper(config) {
-	var self = this;
-	self._data = (typeof config.data === 'object' && config.data) || {};
-	var mount = config.mount;
-	var hydrate = config.hydrate;
-	
-	delete config.data;
-	delete config.mount;
-	delete config.hydrate;
-	objectAssign(self, config);
-	Object.defineProperty(self, 'data', {
-		configurable: false,
-		set(data) {
-			self._data = data;
-			// TODO: only render if there is a change
-			self.render();
+function state(initialValue, comparator = isEqual) {
+	const runtime = currentSetupRuntime;
+	if (!runtime) {
+		throw new Error('state() can only be used while creating a Pepper component.');
+	}
+	let value = initialValue;
+	return [
+		() => value,
+		(valueOrSetter, callback) => {
+			const nextValue = typeof valueOrSetter === 'function'
+				? valueOrSetter(value)
+				: valueOrSetter;
+			if (comparator(nextValue, value)) {
+				return;
+			}
+			value = nextValue;
+			if (callback !== false) {
+				scheduleRender(runtime, callback);
+			}
 		},
-		get() {
-			return self._data;
+	];
+}
+
+function ref() {
+	const runtime = currentSetupRuntime;
+	if (!runtime) {
+		throw new Error('ref() can only be used while creating a Pepper component.');
+	}
+	const refObject = { current: null };
+	runtime.refObjects.push(refObject);
+	return refObject;
+}
+
+function scheduleRenderFlush(runtime) {
+	if (runtime.flushScheduled) {
+		return;
+	}
+	runtime.flushScheduled = true;
+	scheduleMicrotask(() => {
+		runtime.flushScheduled = false;
+		if (
+			!runtime.pendingRender
+			|| runtime.isInitializing
+			|| runtime.isRendering
+			|| runtime.isRunningMountHandlers
+		) {
+			return;
 		}
+		runtime.pendingRender = false;
+		runComponent(runtime);
 	});
-	if (hydrate) {
-		self.hydrate()
-	} else if (mount) {
-		self.mount();
+}
+
+function scheduleRender(runtime, callback) {
+	if (typeof callback === 'function') {
+		runtime.pendingCallbacks.push(callback);
+	}
+	runtime.pendingRender = true;
+	if (runtime.isServerRender) {
+		return;
+	}
+	scheduleRenderFlush(runtime);
+}
+
+function syncProps(runtime, nextProps) {
+	const oldProps = runtime.props;
+	const normalizedProps = {};
+	const changedProps = [];
+	const allKeys = new Set(keys(oldProps).concat(keys(nextProps)));
+	allKeys.forEach((key) => {
+		if (!(key in nextProps)) {
+			changedProps.push(key);
+			return;
+		}
+		const nextValue = nextProps[key];
+		if (key in oldProps && isEqual(oldProps[key], nextValue)) {
+			normalizedProps[key] = oldProps[key];
+			return;
+		}
+		normalizedProps[key] = nextValue;
+		changedProps.push(key);
+	});
+	runtime.props = normalizedProps;
+	return { changedProps, oldProps };
+}
+
+function clearDomBindings(runtime) {
+	runtime.refObjects.forEach((refObject) => {
+		refObject.current = null;
+	});
+	if (!runtime.container) {
+		return;
+	}
+	traverseElements(runtime.container, (node) => {
+		const handlers = handlerMap.get(node);
+		if (!handlers) {
+			return;
+		}
+		keys(handlers).forEach((eventName) => {
+			node.removeEventListener(eventName, runtime);
+		});
+		handlerMap.delete(node);
+	});
+}
+
+function bindDomRuntime(runtime) {
+	runtime.container.pepperComponent = runtime.model;
+	traverseElements(runtime.container, (node) => {
+		each(node.attributes, (attr) => {
+			if (attr.name === 'ref') {
+				const refObject = runtime.renderRefs && runtime.renderRefs[attr.value];
+				if (refObject) {
+					refObject.current = node;
+				}
+				return;
+			}
+			if (!attr.name.startsWith('on-')) {
+				return;
+			}
+			const func = runtime.renderHandlers && runtime.renderHandlers[attr.value];
+			if (!func) {
+				return;
+			}
+			const eventName = attr.name.slice(3);
+			const nodeHandlers = handlerMap.get(node) || {};
+			nodeHandlers[eventName] = func;
+			handlerMap.set(node, nodeHandlers);
+			node.addEventListener(eventName, runtime);
+		});
+	});
+}
+
+function runMountHandlers(runtime) {
+	runtime.isRunningMountHandlers = true;
+	try {
+		runtime.mountHandlers.forEach((handler) => {
+			const cleanup = handler();
+			if (typeof cleanup === 'function') {
+				runtime.mountCleanups.push(cleanup);
+			}
+		});
+	} finally {
+		runtime.isRunningMountHandlers = false;
+	}
+	if (runtime.pendingRender) {
+		scheduleRenderFlush(runtime);
 	}
 }
 
-// private
-var handlerMap = new WeakMap();
-/**
- * Helper to attach handleEvent object event listener to element.
- * @param {HTMLElement} node
- * @param {Object} context
- * @param {String} eventName
- * @param {Function} func
- */
-function attachHandler(node, context, eventName, func) {
-	if (!func) return;
-	var newMap = handlerMap.get(node) || {};
-	newMap[eventName] = func;
-	handlerMap.set(node, newMap);
-	node.addEventListener(eventName, context);
-}
-/**
- * Removes all event handlers on node. Ensure same context is passed as it
- * was for attachHandler() function, else the event listeners wont get removed.
- */
-function removeAllHandlers(node, context) {
-	Object.keys(handlerMap.get(node) || {}).forEach((eventName) => {
-		node.removeEventListener(eventName, context);
+function flushCallbacks(runtime) {
+	const callbacks = runtime.pendingCallbacks.splice(0);
+	callbacks.forEach((callback) => {
+		callback();
 	});
-	handlerMap.delete(node);
 }
-// Methods and properties
-Pepper.prototype = {
-	/**
-	 * The data object.
-	 * This is a private variable accessed through this.data
-	 * setter/getter.
-	 */
-	_data: null,
 
-	/**
-	 * (Optional) The element to replace (on first render).
-	 */
-	target: null,
-
-	/**
-	 * (Optional) A Pepper store and array of props to listen to. The properties will be added to
-	 * `data.stores` passed to this.getHtml() function.
-	 * This instance will re-render (when mounted) when the specified props change in the store
-	 * Example: ['cart', 'wishlist']
-	 * @type {{
-	 * 	[storeKey: string]: {
-	 * 	  store: Store,
-	 *    props: string[]
-	 *  }
-	 * }|null}
-	 */
-	stores: null,
-
-	/**
-	 * Function that returns component's html to be rendered
-	 * @param {typeof import('./html.js').html} html render-bound html template tag
-	 * @param {any} data combined data from this.data and subscribed stores
-	 * @returns {string}
-	 */
-	getHtml() { return ''; },
-	
-	/**
-	 * Set data on this.data (using Object.assign), and re-render.
-	 */
-	assign(...args) {
-		objectAssign(this.data, ...args);
-		// TODO: only render if there is a change
-		this.render();
-	},
-
-	/**
-	 * Deep merge data with this.data, and re-render.
-	 */
-	merge(data) {
-		merge(this.data, data);
-		// TODO: only render if there is a change
-		this.render();
-	},
-
-	handleEvent(event) {
-		var func = (handlerMap.get(event.currentTarget) || {})[event.type];
-		if (func) {
-			func(event);
-		}
-	},
-
-	toString: function renderToString(isServerRender = typeof window === 'undefined' || typeof document === 'undefined') {
-		var self = this;
-		var stores = self.stores;
-		const storeData = keys(stores).reduce((acc, storeKey) => {
-			var { store, props } = stores[storeKey];
-			var storeData = (store && store._data) || {};
-			acc[storeKey] = (props || []).reduce((acc2, prop) => {
-				acc2[prop] = storeData[prop];
-				return acc2;
-			}, {});
-			return acc;
-		}, {});
-		var data = objectAssign({ stores: storeData }, self.data);
-		var renderContext = {
-			handlerIndex: 0,
-			handlers: isServerRender ? null : []
-		};
-		self._renderHandlers = renderContext.handlers;
-		return self.getHtml(createHtml(renderContext), data);
-	},
-
-	/**
-	 * Render view.
-	 * If this.target or node parameter is specified, then replaces that node and attaches the
-	 * rendered DOM to document (or document fragment).
-	 *
-	 * @private
-	 */
-	render() {
-		// Step 1: Remove event listeners and refs
-		// Step 2: Note the currently focused element
-		// Step 3: Render/Update UI.
-		// Step 4: Resolve references
-		// Step 5: Re-focus
-		// Step 6: Re-attach listeners
-		
-		var self = this;
-		var target = self.el;
-
-		// Step 1: Find input field focus, remember it's id attribute, so that it
-		// can be refocused later.
-		var focusId = document.activeElement.id;
-
-		// Step 2: Remove event listeners and refs before patch.
-		if (target) {
-			traverseElements(target, (node) => {
-				var refVal = node.getAttribute('ref');
-				if (refVal && self[refVal] instanceof Node) {
-					delete self[refVal];
-				}
-				if (handlerMap.has(node)) {
-					removeAllHandlers(node, self);
-				}
+function runComponent(runtime, hydrateOnly = false, isServerRender = typeof window === 'undefined' || typeof document === 'undefined', changedProps = runtime.pendingChangedProps, oldProps = runtime.pendingOldProps) {
+	runtime.isServerRender = isServerRender;
+	runtime.pendingChangedProps = [];
+	runtime.pendingOldProps = runtime.props;
+	runtime.isRendering = true;
+	const renderContext = {
+		handlerIndex: 0,
+		handlers: isServerRender ? null : [],
+		refIndex: 0,
+		refs: isServerRender ? null : [],
+	};
+	let htmlString;
+	try {
+		if (changedProps.length) {
+			runtime.propHandlers.forEach((handler) => {
+				handler(changedProps, oldProps);
 			});
 		}
+		runtime.renderHandlers = renderContext.handlers;
+		runtime.renderRefs = renderContext.refs;
+		htmlString = runtime.model.render.call(runtime.model, createHtml(renderContext));
+	} finally {
+		runtime.isRendering = false;
+	}
+	if (isServerRender) {
+		flushCallbacks(runtime);
+		return runtime.pendingRender
+			? (runtime.pendingRender = false, runComponent(runtime, false, true, [], runtime.props))
+			: htmlString;
+	}
 
-		// Step 3: Render/Update UI
-		var frag = parseAsFragment(self.toString(false));
-		var els = from(frag.childNodes)
-		// var el = frag.firstElementChild;
-
-		// Update existing DOM.
-		if (target) {
-			patchDom(target, els);
-		}
-
-		// Step 4: Re-focus
+	const firstMount = !runtime.mounted;
+	const focusId = document.activeElement && document.activeElement.id;
+	clearDomBindings(runtime);
+	if (!hydrateOnly) {
+		patchDom(runtime.container, from(parseAsFragment(htmlString).childNodes));
 		if (focusId) {
-			var focusEl = document.getElementById(focusId);
+			const focusEl = document.getElementById(focusId);
 			if (focusEl) {
 				focusEl.focus();
 			}
 		}
-
-		self.domHydrate();
-	},
-
-	/**
-	 * @private
-	 */
-	domHydrate() {
-		// Doing step 5 and 6 from render() function
-		// Step 5: Resolve refs
-		// Step 6: Attach event listeners
-
-		var self = this;
-		// TODO: only set this on debug mode
-		self.el.pepperInstance = self;
-
-		// Note: ref creates a reference to the node as property on the view.
-		traverseElements(self.el, (node) => {
-			var refVal = node.getAttribute('ref');
-			if (refVal) {
-				self[refVal] = node;
-			}
-			each(node.attributes, (attr) => {
-				if (attr.name.startsWith('on-')) {
-					var eventName = attr.name.replace(/on-/, '');
-					var func = (self._renderHandlers || [])[attr.value];
-					attachHandler(node, self, eventName, func);
-				}
-			});
-		});
-	},
-
-	/**
-	 * @param {Boolean} [hydrateOnly=false] does a full render by default. 'Hydration' only
-	 * attaches event listeners and resolves refs.
-	 * @returns 
-	 */
-	mount(hydrateOnly = false) {
-		var self = this;
-		var stores = self.stores;
-		if (stores) {
-			keys(stores).forEach((storeKey) => {
-				const { store, props } = stores[storeKey];
-				store.subscribe(props, self.render, self);
-			});
-		}
-
-		var node = self.target;
-		if (typeof node === 'string') {
-			node = document.querySelector(node);
-		}
-
-		// Return if already mounted.
-		if (self.el && node === self.el) {
-			return false;
-		}
-
-		if (node) {
-			self.el = node;
-			if (hydrateOnly) {
-				self.toString(false);
-				self.domHydrate();
-			} else { // full render
-				self.render();
-			}
-			return true;
-		}
-		return false;
-	},
-
-	hydrate(data) {
-		if (data && typeof data === 'object') {
-			this._data = data;
-		}
-		this.mount(true);
-	},
-
-	unmount() {
-		var self = this;
-		var stores = self.stores;
-		if (stores) {
-			keys(stores).forEach((storeKey) => {
-				stores[storeKey].store.unsubscribe(self.render, self);
-			});
-		}
-		self.el.replaceChildren(); // empty replaceChildren removes all child elements
 	}
-};
+	bindDomRuntime(runtime);
+	runtime.mounted = true;
+	if (firstMount) {
+		runMountHandlers(runtime);
+	}
+	flushCallbacks(runtime);
+	if (runtime.pendingRender) {
+		scheduleRenderFlush(runtime);
+	}
+	return runtime.model;
+}
 
-export { Pepper, Store, html };
+function createRuntime(Component, props = {}) {
+	const runtime = {
+		Component,
+		container: null,
+		flushScheduled: false,
+		isInitializing: true,
+		isRendering: false,
+		isRunningMountHandlers: false,
+		isServerRender: false,
+		mounted: false,
+		mountCleanups: [],
+		mountHandlers: [],
+		model: null,
+		pendingCallbacks: [],
+		pendingChangedProps: [],
+		pendingOldProps: {},
+		pendingRender: false,
+		propHandlers: [],
+		props: {},
+		refObjects: [],
+		renderHandlers: null,
+		renderRefs: null,
+		getProps() {
+			return runtime.props;
+		},
+		handleEvent(event) {
+			const func = (handlerMap.get(event.currentTarget) || {})[event.type];
+			if (func) {
+				func(event);
+			}
+		},
+		onMount(handler) {
+			runtime.mountHandlers.push(handler);
+		},
+		onProps(handler) {
+			runtime.propHandlers.push(handler);
+		},
+		update(callback) {
+			scheduleRender(runtime, callback);
+		},
+	};
+	const initialProps = syncProps(runtime, props);
+	runtime.pendingChangedProps = initialProps.changedProps;
+	runtime.pendingOldProps = initialProps.oldProps;
+	const prevRuntime = currentSetupRuntime;
+	currentSetupRuntime = runtime;
+	try {
+		const model = Component({
+			getProps: runtime.getProps,
+			onMount: runtime.onMount,
+			onProps: runtime.onProps,
+			update: runtime.update,
+		});
+		runtime.model = typeof model === 'function' ? { render: model } : model;
+		if (!runtime.model || typeof runtime.model.render !== 'function') {
+			throw new Error('Pepper components must return a render function or an object with a render(html) method.');
+		}
+	} finally {
+		runtime.isInitializing = false;
+		currentSetupRuntime = prevRuntime;
+	}
+	return runtime;
+}
+
+function destroyRuntime(runtime) {
+	clearDomBindings(runtime);
+	runtime.mountCleanups.splice(0).forEach((cleanup) => {
+		cleanup();
+	});
+	if (runtime.container) {
+		delete runtime.container.pepperComponent;
+		rootMap.delete(runtime.container);
+	}
+}
+
+function resolveContainer(container) {
+	return typeof container === 'string' ? document.querySelector(container) : container;
+}
+
+function mountRoot(Component, container, props = {}, hydrateOnly = false) {
+	const target = resolveContainer(container);
+	if (!(target instanceof Element)) {
+		throw new Error('Pepper render/hydrate target must be a DOM element or selector.');
+	}
+	let runtime = rootMap.get(target);
+	if (!runtime || runtime.Component !== Component) {
+		if (runtime) {
+			destroyRuntime(runtime);
+		}
+		runtime = createRuntime(Component, props);
+		runtime.container = target;
+		rootMap.set(target, runtime);
+		return runComponent(runtime, hydrateOnly);
+	}
+	const propChanges = syncProps(runtime, props);
+	runtime.pendingChangedProps = propChanges.changedProps;
+	runtime.pendingOldProps = propChanges.oldProps;
+	if (hydrateOnly && !runtime.mounted) {
+		return runComponent(runtime, true);
+	}
+	if (!propChanges.changedProps.length) {
+		return runtime.model;
+	}
+	return runComponent(runtime);
+}
+
+function render(Component, container, props = {}) {
+	return mountRoot(Component, container, props, false);
+}
+
+function hydrate(Component, container, props = {}) {
+	return mountRoot(Component, container, props, true);
+}
+
+function renderToString(Component, props = {}) {
+	return runComponent(createRuntime(Component, props), false, true);
+}
+
+export { Store, html, hydrate, ref, render, renderToString, state };

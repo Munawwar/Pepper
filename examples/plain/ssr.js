@@ -1,14 +1,12 @@
-import initializePage from './page.js';
+import { renderToString } from '../../src/index.js';
+import CounterDemo from './page.js';
 
 function renderPage() {
-  // Each page can different initial state that maybe specific to the request
-  // e.g. like user specific data - user's first name or last name etc.
-  const initialState = { count: 1 };
-  const page = initializePage(initialState);
+  const initialProps = { initialCount: 1 };
   return /* html */ `
     <html>
         <head>
-            <link rel="modulepreload" href="../../index.js" />
+            <link rel="modulepreload" href="../../src/index.js" />
             <link rel="modulepreload" href="./page.js" />
             <style>
                 body {
@@ -48,15 +46,13 @@ function renderPage() {
             <main class="demo">
                 <h1>Pepper Hydration Demo</h1>
                 <p>Click the button to confirm the server-rendered event handler hydrates correctly.</p>
-                <div id="myview1">${page.view1}</div>
-                <div id="myview2">${page.view2}</div>
+                <div id="app">${renderToString(CounterDemo, initialProps)}</div>
             </main>
-            <script>window.initialState = ${JSON.stringify(page.store.data)};</script>
+            <script>window.initialProps = ${JSON.stringify(initialProps)};</script>
             <script type="module">
-                import initializePage from './page.js';
-                const page = initializePage(window.initialState);
-                page.view1.hydrate();
-                page.view2.hydrate();
+                import { hydrate } from '../../src/index.js';
+                import CounterDemo from './page.js';
+                hydrate(CounterDemo, '#app', window.initialProps);
             </script>
         </body>
     </html>

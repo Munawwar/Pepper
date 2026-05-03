@@ -9,11 +9,12 @@ const characterEntitiesMapping = {
 };
 const findRegex = /[<>&'"]/g;
 const eventAttrRegex = /(on-[^\s"'<>/=]+)=["']?$/;
+const refAttrRegex = /ref=["']?$/;
 const replaceFunc = character => characterEntitiesMapping[character];
 
 /**
  * Creates an html tagged template literal with optional Pepper render context.
- * @param {{ handlerIndex: number, handlers: Function[]|null }|null} [renderContext=null]
+ * @param {{ handlerIndex: number, handlers: Function[]|null, refIndex: number, refs: { current: Node|null }[]|null }|null} [renderContext=null]
  * @returns {(strings: string[], ...values: any[]) => string}
  */
 function createHtml(renderContext = null) {
@@ -33,11 +34,25 @@ function createHtml(renderContext = null) {
           throw new Error('Pepper event attributes only support function values, e.g. on-click=${handler}.');
         }
         if (!renderContext) {
-          throw new Error('Pepper event handlers require the render-bound html passed to getHtml(html, data).');
+          throw new Error('Pepper event handlers require the render-bound html passed to render(html).');
         }
         acc += renderContext.handlerIndex++;
         if (renderContext.handlers) {
           renderContext.handlers.push(value);
+        }
+        acc += strings[index];
+        continue;
+      }
+      if (refAttrRegex.test(prevString)) {
+        if (!value || typeof value !== 'object' || !('current' in value)) {
+          throw new Error('Pepper refs only support ref() values, e.g. ref=${buttonRef}.');
+        }
+        if (!renderContext) {
+          throw new Error('Pepper refs require the render-bound html passed to render(html).');
+        }
+        acc += renderContext.refIndex++;
+        if (renderContext.refs) {
+          renderContext.refs.push(value);
         }
         acc += strings[index];
         continue;
