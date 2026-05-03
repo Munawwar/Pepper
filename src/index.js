@@ -11,9 +11,6 @@ import { createHtml } from './html.js';
 
 const rootMap = new WeakMap();
 const handlerMap = new WeakMap();
-const scheduleMicrotask = typeof queueMicrotask === 'function'
-	? queueMicrotask
-	: (callback) => Promise.resolve().then(callback);
 let currentSetupRuntime = null;
 
 /**
@@ -83,7 +80,7 @@ function scheduleRenderFlush(runtime) {
 		return;
 	}
 	runtime.flushScheduled = true;
-	scheduleMicrotask(() => {
+	queueMicrotask(() => {
 		runtime.flushScheduled = false;
 		if (
 			!runtime.pendingRender

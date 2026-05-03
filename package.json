@@ -2,20 +2,16 @@
   "name": "@pepper-js/pepper",
   "version": "0.2.5",
   "description": "Bring your server-side templates to life",
-  "source": "./src/index.js",
   "type": "module",
-  "unpkg": "./dist/browser/esm/index.min.js",
+  "main": "./dist/index.js",
   "exports": {
-    "default": "./src/index.js",
-    "import": "./src/index.js",
-    "browser": "./dist/browser/esm/index.min.js",
-    "require": "./dist/cjs/index.cjs"
+    ".": "./dist/index.js"
   },
   "directories": {
     "test": "test"
   },
   "scripts": {
-    "build": "./build.sh",
+    "build": "rm -fr dist && mkdir -p dist && esbuild src/index.js --outfile=dist/index.js --bundle --target=es2022 --format=esm --sourcemap",
     "demo": " browser-sync start --server --port 3005 --startPath=examples/plain/test.html --watch --files=pepper.js,examples",
     "lint": "npx oxlint@^1.62.0 src examples",
     "lint:fix": "npx oxlint@^1.62.0 --fix src examples"

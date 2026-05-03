@@ -31,7 +31,7 @@ renderToString(Component, props);
             window.initialProps = { initialCount: 1 };
         </script>
         <script type="module">
-            import { hydrate, state } from 'https://unpkg.com/@pepper-js/pepper';
+            import { hydrate, state } from 'https://unpkg.com/@pepper-js/pepper/dist/index.js';
 
             function Counter({ getProps }) {
                 const [getCount, setCount] = state(getProps().initialCount);

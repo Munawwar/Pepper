@@ -1,33 +1,3 @@
-var __defProp = Object.defineProperty;
-var __getOwnPropDesc = Object.getOwnPropertyDescriptor;
-var __getOwnPropNames = Object.getOwnPropertyNames;
-var __hasOwnProp = Object.prototype.hasOwnProperty;
-var __export = (target, all) => {
-  for (var name in all)
-    __defProp(target, name, { get: all[name], enumerable: true });
-};
-var __copyProps = (to, from2, except, desc) => {
-  if (from2 && typeof from2 === "object" || typeof from2 === "function") {
-    for (let key of __getOwnPropNames(from2))
-      if (!__hasOwnProp.call(to, key) && key !== except)
-        __defProp(to, key, { get: () => from2[key], enumerable: !(desc = __getOwnPropDesc(from2, key)) || desc.enumerable });
-  }
-  return to;
-};
-var __toCommonJS = (mod) => __copyProps(__defProp({}, "__esModule", { value: true }), mod);
-
-// src/index.js
-var index_exports = {};
-__export(index_exports, {
-  Store: () => Store,
-  hydrate: () => hydrate,
-  ref: () => ref,
-  render: () => render,
-  renderToString: () => renderToString,
-  state: () => state
-});
-module.exports = __toCommonJS(index_exports);
-
 // src/utils.js
 var from = Array.from;
 function each(arrayLike, fn) {
@@ -376,7 +346,6 @@ function createHtml(renderContext = null) {
 // src/index.js
 var rootMap = /* @__PURE__ */ new WeakMap();
 var handlerMap = /* @__PURE__ */ new WeakMap();
-var scheduleMicrotask = typeof queueMicrotask === "function" ? queueMicrotask : (callback) => Promise.resolve().then(callback);
 var currentSetupRuntime = null;
 function parseAsFragment(htmlString) {
   const templateTag = document.createElement("template");
@@ -432,7 +401,7 @@ function scheduleRenderFlush(runtime) {
     return;
   }
   runtime.flushScheduled = true;
-  scheduleMicrotask(() => {
+  queueMicrotask(() => {
     runtime.flushScheduled = false;
     if (!runtime.pendingRender || runtime.isInitializing || runtime.isRendering || runtime.isRunningMountHandlers) {
       return;
@@ -702,4 +671,12 @@ function hydrate(Component, container, props = {}) {
 function renderToString(Component, props = {}) {
   return runComponent(createRuntime(Component, props), false, true);
 }
-//# sourceMappingURL=index.cjs.map
+export {
+  Store,
+  hydrate,
+  ref,
+  render,
+  renderToString,
+  state
+};
+//# sourceMappingURL=index.js.map
