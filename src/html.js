@@ -8,28 +8,51 @@ const characterEntitiesMapping = {
   '`': '&#x60;',
 };
 const findRegex = /[<>&'"]/g;
+const eventAttrRegex = /(on-[^\s"'<>/=]+)=["']?$/;
 const replaceFunc = character => characterEntitiesMapping[character];
 
 /**
- * Utility for users not using a template library
- * @params {string[]} strings
- * @params {any[]} values
- * @returns {string}
+ * Creates an html tagged template literal with optional Pepper render context.
+ * @param {{ handlerIndex: number, handlers: Function[]|null }|null} [renderContext=null]
+ * @returns {(strings: string[], ...values: any[]) => string}
  */
-function html(strings, ...values) {
-  let acc = strings[0];
-  for (let index = 1; index < strings.length; index++) {
-    let value = String(values[index - 1]);
-    if (strings[index - 1].endsWith("$")) {
-      // If $ sign precedes the interpolation, then its considered safe to
-      // add the unescaped / raw HTML
-      acc = acc.slice(0, -1);
-    } else if (value) {
-      value = value.replace(findRegex, replaceFunc);
+function createHtml(renderContext = null) {
+  return function html(strings, ...values) {
+    let acc = strings[0];
+    for (let index = 1; index < strings.length; index++) {
+      const prevString = strings[index - 1];
+      const value = values[index - 1];
+      if (prevString.endsWith("$")) {
+        acc = acc.slice(0, -1);
+        acc += value + strings[index];
+        continue;
+      }
+
+      if (eventAttrRegex.test(prevString)) {
+        if (typeof value !== 'function') {
+          throw new Error('Pepper event attributes only support function values, e.g. on-click=${handler}.');
+        }
+        if (!renderContext) {
+          throw new Error('Pepper event handlers require the render-bound html passed to getHtml(html, data).');
+        }
+        acc += renderContext.handlerIndex++;
+        if (renderContext.handlers) {
+          renderContext.handlers.push(value);
+        }
+        acc += strings[index];
+        continue;
+      }
+
+      let safeValue = String(value);
+      if (safeValue) {
+        safeValue = safeValue.replace(findRegex, replaceFunc);
+      }
+      acc += safeValue + strings[index];
     }
-    acc += value + strings[index];
-  }
-  return acc;
+    return acc;
+  };
 }
 
-export { html };
+const html = createHtml();
+
+export { createHtml, html };

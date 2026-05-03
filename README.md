@@ -2,7 +2,7 @@
 
 NOTE: Project is still a work-in-progress
 
-Build interactive [islands](https://jasonformat.com/islands-architecture/) with plain HTML and a touch of JS.
+Build interactive [islands](https://jasonformat.com/islands-architecture/) with Pepper-rendered HTML and a touch of JS.
 
 Bundle size - pepper.js is 2.4 KB gzipped
 
@@ -12,20 +12,16 @@ Bundle size - pepper.js is 2.4 KB gzipped
 <!DOCTYPE html>
 <html>
     <body>
-        <div id="node-to-sync">
-            <button on-click="onClick">Test</button>
-        </div>
+        <div id="node-to-sync"><button>Test</button></div>
         <script type="module">
-            import { Pepper, html } from 'https://unpkg.com/@pepper-js/pepper';
+            import { Pepper } from 'https://unpkg.com/@pepper-js/pepper';
             const view = new Pepper({
-                getHtml(data) {
-                    return html`<button on-click="onClick">${data.text}</button>`;
+                getHtml(html, data) {
+                    return html`<button on-click=${this.onClick.bind(this)}>${data.text}</button>`;
                     // html tagged template literal escapes ${} interpolations and returns a string
                     // so that script tags or the like doesn't get executed.
                     // if the value is safe, then you can prefix interpolation by a $ sign,
                     // e.g.html`<div>$${'<img src="x" onerror="alert(1)">'}`.
-                    //
-                    // or you can instead use a template library here
                 },
                 
                 data: { text: 'Test' },
@@ -43,7 +39,9 @@ Bundle size - pepper.js is 2.4 KB gzipped
 </html>
 ```
 
-You can find examples for several templating language in the [examples directory](./examples).
+Pepper only hydrates event handlers produced by its own render-bound `html` tag. External string template engines are not supported for interactive hydration.
+
+Event handlers are invoked as plain functions, so if a handler relies on the Pepper instance as `this`, pass it as `on-click=${this.someMethod.bind(this)}`.
 
 ### Import from CDN
 
@@ -71,10 +69,14 @@ Or use `view.assign()` to not overwrite existing props
 
 ### Refs to DOM nodes
 
-```html
-<button ref="btnEl" on-click="onClick">
-    {{ text }}
-</button>
+```js
+getHtml(html, data) {
+    return html`
+        <button ref="btnEl" on-click=${this.onClick.bind(this)}>
+            ${data.text}
+        </button>
+    `;
+}
 ```
 
 Now you can use `this.btnEl` (inside a view method) or `view.btnEl` (from outside) to access the span element.
@@ -89,7 +91,7 @@ debugging purposes. Never use it in code.
 Pepper comes with a simplified data store, so that you can have multiple views with common states stored in it. Updating the store data will re-render connected views automatically.
 
 ```js
-import { Store } from 'https://unpkg.com/@pepper-js/pepper';
+import { Pepper, Store } from 'https://unpkg.com/@pepper-js/pepper';
 
 // initialize store
 const store = new Store({
@@ -107,7 +109,7 @@ const view1 = new Pepper({
             props: ['count']
         }
     },
-    getHtml: data => html`<span>Counter = ${ data.stores.counter.count }</span>`,
+    getHtml: (html, data) => html`<span>Counter = ${ data.stores.counter.count }</span>`,
     target: '#myview1',
     mount: true,
 });
@@ -118,7 +120,7 @@ const view2 = new Pepper({
             props: ['count']
         }
     },
-    getHtml: data => html`<span>Counter = ${ data.stores.counter.count }</span>`,
+    getHtml: (html, data) => html`<span>Counter = ${ data.stores.counter.count }</span>`,
     target: '#myview2',
     mount: true,
 });
@@ -157,15 +159,13 @@ store.subscribe(['property1', 'property2'], function effect(propertiesThatChange
 
 ### Server-side rendering
 
-If you use a template engine then that's your server-side rendering :)
-
-But if you used no template engine, but hand-wrote getHtml(), then you can import Pepper and your views with node.js
+If you hand-write `getHtml(html, data)`, then you can import Pepper and your views with node.js
 
 ```js
 // ESM
-import { Pepper, Store, html } from '@pepper-js/pepper';
+import { Pepper, Store } from '@pepper-js/pepper';
 // CJS
-const { Pepper, Store, html } = require('@pepper-js/pepper')
+const { Pepper, Store } = require('@pepper-js/pepper')
 
 // const pepperView = new Pepper(...)
 const html = pepperView.toString();

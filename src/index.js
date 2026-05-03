@@ -8,7 +8,7 @@ import {
 } from './utils.js';
 import { patchDom } from './dom-diff.js';
 import { Store } from './store.js';
-import { html } from './html.js';
+import { createHtml, html } from './html.js';
 
 // Deep merge helper
 function merge(out, ...args) {
@@ -65,7 +65,7 @@ function traverseElements(parentNode, onNextNode) {
  * @param {Object} config 
  * @param {HTMLElement} config.target
  * @param {DataType} config.data
- * @param {(data: DataType) => String} config.getHtml
+ * @param {(html: typeof import('./html.js').html, data: DataType) => String} config.getHtml
  * @param {Boolean} [config.mount=false]
  * @param {Boolean} [config.hydrate=false]
  * @param {{ [storeKey: string]: { store: Store, props: String[] } }|null} [config.stores]
@@ -124,19 +124,6 @@ function removeAllHandlers(node, context) {
 	});
 	handlerMap.delete(node);
 }
-/**
- * Invokes an event handler that was registered via attachHandler
- * @param {Pepper} context 
- * @param {Event} event 
- */
-function callHandler(context, event) {
-	var node = event.currentTarget;
-	var func = (handlerMap.get(node) || {})[event.type];
-	if (func) {
-		func.call(context, event);
-	}
-}
-
 // Methods and properties
 Pepper.prototype = {
 	/**
@@ -167,6 +154,7 @@ Pepper.prototype = {
 
 	/**
 	 * Function that returns component's html to be rendered
+	 * @param {typeof import('./html.js').html} html render-bound html template tag
 	 * @param {any} data combined data from this.data and subscribed stores
 	 * @returns {string}
 	 */
@@ -191,10 +179,13 @@ Pepper.prototype = {
 	},
 
 	handleEvent(event) {
-		callHandler(this, event);
+		var func = (handlerMap.get(event.currentTarget) || {})[event.type];
+		if (func) {
+			func(event);
+		}
 	},
 
-	toString: function renderToString() {
+	toString: function renderToString(isServerRender = typeof window === 'undefined' || typeof document === 'undefined') {
 		var self = this;
 		var stores = self.stores;
 		const storeData = keys(stores).reduce((acc, storeKey) => {
@@ -207,7 +198,12 @@ Pepper.prototype = {
 			return acc;
 		}, {});
 		var data = objectAssign({ stores: storeData }, self.data);
-		return self.getHtml(data);
+		var renderContext = {
+			handlerIndex: 0,
+			handlers: isServerRender ? null : []
+		};
+		self._renderHandlers = renderContext.handlers;
+		return self.getHtml(createHtml(renderContext), data);
 	},
 
 	/**
@@ -246,7 +242,7 @@ Pepper.prototype = {
 		}
 
 		// Step 3: Render/Update UI
-		var frag = parseAsFragment(self.toString());
+		var frag = parseAsFragment(self.toString(false));
 		var els = from(frag.childNodes)
 		// var el = frag.firstElementChild;
 
@@ -287,7 +283,8 @@ Pepper.prototype = {
 			each(node.attributes, (attr) => {
 				if (attr.name.startsWith('on-')) {
 					var eventName = attr.name.replace(/on-/, '');
-					attachHandler(node, self, eventName, self[attr.value]);
+					var func = (self._renderHandlers || [])[attr.value];
+					attachHandler(node, self, eventName, func);
 				}
 			});
 		});
@@ -321,6 +318,7 @@ Pepper.prototype = {
 		if (node) {
 			self.el = node;
 			if (hydrateOnly) {
+				self.toString(false);
 				self.domHydrate();
 			} else { // full render
 				self.render();

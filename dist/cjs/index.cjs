@@ -17,13 +17,13 @@ var __copyProps = (to, from2, except, desc) => {
 var __toCommonJS = (mod) => __copyProps(__defProp({}, "__esModule", { value: true }), mod);
 
 // src/index.js
-var src_exports = {};
-__export(src_exports, {
+var index_exports = {};
+__export(index_exports, {
   Pepper: () => Pepper,
   Store: () => Store,
   html: () => html
 });
-module.exports = __toCommonJS(src_exports);
+module.exports = __toCommonJS(index_exports);
 
 // src/utils.js
 var from = Array.from;
@@ -31,20 +31,16 @@ function each(arrayLike, fn) {
   return Array.prototype.forEach.call(arrayLike, fn);
 }
 function isCustomElement(element) {
-  if (element.tagName.indexOf("-") > 0)
-    return true;
+  if (element.tagName.indexOf("-") > 0) return true;
   var attr = element.getAttribute("is");
   return attr && attr.indexOf("-") > 0;
 }
 function keys(obj) {
-  if (!obj)
-    return [];
+  if (!obj) return [];
   return Object.keys(obj).filter((key) => key !== "constructor");
 }
-function objectAssign(target) {
-  from(arguments).forEach((obj, index) => {
-    if (!index)
-      return;
+function objectAssign(target, ...args) {
+  args.forEach((obj) => {
     keys(obj).forEach((key) => {
       target[key] = obj[key];
     });
@@ -96,8 +92,7 @@ function matchNodes(a, aStart, aEnd, b, bStart, bEnd) {
   var i, hash;
   for (i = bStart; i < bEnd; i++) {
     hash = hashNode(b[i]);
-    if (!domLookup[hash])
-      domLookup[hash] = [];
+    if (!domLookup[hash]) domLookup[hash] = [];
     domLookup[hash].push(b[i]);
   }
   var salvagableElements = {};
@@ -116,10 +111,8 @@ function matchNodes(a, aStart, aEnd, b, bStart, bEnd) {
       }
     }
     if (!matched && liveNode.nodeType === 1) {
-      if (liveNode.id)
-        salvagableElementsById[liveNode.id] = liveNode;
-      if (!salvagableElements[liveNode.nodeName])
-        salvagableElements[liveNode.nodeName] = [];
+      if (liveNode.id) salvagableElementsById[liveNode.id] = liveNode;
+      if (!salvagableElements[liveNode.nodeName]) salvagableElements[liveNode.nodeName] = [];
       salvagableElements[liveNode.nodeName].push(
         /** @type {Element} */
         liveNode
@@ -129,8 +122,7 @@ function matchNodes(a, aStart, aEnd, b, bStart, bEnd) {
   var aLiveNode;
   for (i = bStart; i < bEnd; i++) {
     newNode = b[i];
-    if (newNodeToLiveNodeMatch.get(newNode))
-      continue;
+    if (newNodeToLiveNodeMatch.get(newNode)) continue;
     var id = newNode.id;
     aLiveNode = id && salvagableElementsById[id];
     if (aLiveNode) {
@@ -145,8 +137,7 @@ function matchNodes(a, aStart, aEnd, b, bStart, bEnd) {
   }
   for (i = bStart; i < bEnd; i++) {
     newNode = b[i];
-    if (newNodeToLiveNodeMatch.get(newNode))
-      continue;
+    if (newNodeToLiveNodeMatch.get(newNode)) continue;
     if (newNode.nodeType === 1 && (aLiveNode = (salvagableElements[newNode.nodeName] || []).shift())) {
       syncNode(newNode, aLiveNode);
       newNodeToLiveNodeMatch.set(newNode, aLiveNode);
@@ -306,38 +297,62 @@ var characterEntitiesMapping = {
   ">": "&gt;",
   "&": "&amp;",
   "'": "&apos;",
-  '"': "&quot;"
+  '"': "&quot;",
+  // prevent attacks like html`<img src="x" onerror="html\`\${alert(1)}\`" />`
+  "`": "&#x60;"
 };
-function escape(text) {
-  if (!text)
-    return text;
-  return text.replace(/[<>&'"]/g, (character) => characterEntitiesMapping[character]);
-}
-function html(strings, ...values) {
-  return strings.reduce((acc, string, index) => {
-    let value = String(values[index - 1]);
-    if ((strings[index - 1] || "").endsWith("$")) {
-      acc = acc.slice(0, -1);
-    } else {
-      value = escape(value);
+var findRegex = /[<>&'"]/g;
+var eventAttrRegex = /(on-[^\s"'<>/=]+)=["']?$/;
+var replaceFunc = (character) => characterEntitiesMapping[character];
+function createHtml(renderContext = null) {
+  return function html2(strings, ...values) {
+    let acc = strings[0];
+    for (let index = 1; index < strings.length; index++) {
+      const prevString = strings[index - 1];
+      const value = values[index - 1];
+      if (prevString.endsWith("$")) {
+        acc = acc.slice(0, -1);
+        acc += value + strings[index];
+        continue;
+      }
+      if (eventAttrRegex.test(prevString)) {
+        if (typeof value !== "function") {
+          throw new Error("Pepper event attributes only support function values, e.g. on-click=${handler}.");
+        }
+        if (!renderContext) {
+          throw new Error("Pepper event handlers require the render-bound html passed to getHtml(html, data).");
+        }
+        acc += renderContext.handlerIndex++;
+        if (renderContext.handlers) {
+          renderContext.handlers.push(value);
+        }
+        acc += strings[index];
+        continue;
+      }
+      let safeValue = String(value);
+      if (safeValue) {
+        safeValue = safeValue.replace(findRegex, replaceFunc);
+      }
+      acc += safeValue + strings[index];
     }
-    return acc + value + string;
-  });
+    return acc;
+  };
 }
+var html = createHtml();
 
 // src/index.js
-function merge(out) {
+function merge(out, ...args) {
   out = out || {};
-  for (var argIndex = 1; argIndex < arguments.length; argIndex++) {
-    var obj = arguments[argIndex];
-    if (!obj || typeof val !== "object") {
+  for (let argIndex = 0; argIndex < args.length; argIndex++) {
+    let obj = args[argIndex];
+    if (!obj || typeof obj !== "object") {
       continue;
     }
-    var keys2 = keys2(obj);
-    for (var keyIndex = 1; keyIndex < keys2.length; keyIndex++) {
-      var key = keys2[keyIndex];
-      var val = obj[key];
-      out[key] = typeof val === "object" && val !== null ? merge(out[key], val) : val;
+    let objectKeys = keys(obj);
+    for (let keyIndex = 0; keyIndex < objectKeys.length; keyIndex++) {
+      let key = objectKeys[keyIndex];
+      let val = obj[key];
+      out[key] = val && typeof val === "object" ? merge(out[key], val) : val;
     }
   }
   return out;
@@ -385,8 +400,7 @@ function Pepper(config) {
 }
 var handlerMap = /* @__PURE__ */ new WeakMap();
 function attachHandler(node, context, eventName, func) {
-  if (!func)
-    return;
+  if (!func) return;
   var newMap = handlerMap.get(node) || {};
   newMap[eventName] = func;
   handlerMap.set(node, newMap);
@@ -397,13 +411,6 @@ function removeAllHandlers(node, context) {
     node.removeEventListener(eventName, context);
   });
   handlerMap.delete(node);
-}
-function callHandler(context, event) {
-  var node = event.currentTarget;
-  var func = (handlerMap.get(node) || {})[event.type];
-  if (func) {
-    func.call(context, event);
-  }
 }
 Pepper.prototype = {
   /**
@@ -431,6 +438,7 @@ Pepper.prototype = {
   stores: null,
   /**
    * Function that returns component's html to be rendered
+   * @param {typeof import('./html.js').html} html render-bound html template tag
    * @param {any} data combined data from this.data and subscribed stores
    * @returns {string}
    */
@@ -440,9 +448,8 @@ Pepper.prototype = {
   /**
    * Set data on this.data (using Object.assign), and re-render.
    */
-  assign() {
-    var args = from(arguments);
-    objectAssign.apply(null, [this.data].concat(args));
+  assign(...args) {
+    objectAssign(this.data, ...args);
     this.render();
   },
   /**
@@ -453,9 +460,12 @@ Pepper.prototype = {
     this.render();
   },
   handleEvent(event) {
-    callHandler(this, event);
+    var func = (handlerMap.get(event.currentTarget) || {})[event.type];
+    if (func) {
+      func(event);
+    }
   },
-  toString: function renderToString() {
+  toString: function renderToString(isServerRender = typeof window === "undefined" || typeof document === "undefined") {
     var self = this;
     var stores = self.stores;
     const storeData = keys(stores).reduce((acc, storeKey) => {
@@ -468,7 +478,12 @@ Pepper.prototype = {
       return acc;
     }, {});
     var data = objectAssign({ stores: storeData }, self.data);
-    return self.getHtml(data);
+    var renderContext = {
+      handlerIndex: 0,
+      handlers: isServerRender ? null : []
+    };
+    self._renderHandlers = renderContext.handlers;
+    return self.getHtml(createHtml(renderContext), data);
   },
   /**
    * Render view.
@@ -492,7 +507,7 @@ Pepper.prototype = {
         }
       });
     }
-    var frag = parseAsFragment(self.toString());
+    var frag = parseAsFragment(self.toString(false));
     var els = from(frag.childNodes);
     if (target) {
       patchDom(target, els);
@@ -519,7 +534,8 @@ Pepper.prototype = {
       each(node.attributes, (attr) => {
         if (attr.name.startsWith("on-")) {
           var eventName = attr.name.replace(/on-/, "");
-          attachHandler(node, self, eventName, self[attr.value]);
+          var func = (self._renderHandlers || [])[attr.value];
+          attachHandler(node, self, eventName, func);
         }
       });
     });
@@ -548,6 +564,7 @@ Pepper.prototype = {
     if (node) {
       self.el = node;
       if (hydrateOnly) {
+        self.toString(false);
         self.domHydrate();
       } else {
         self.render();
@@ -557,7 +574,7 @@ Pepper.prototype = {
     return false;
   },
   hydrate(data) {
-    if (arguments.length > 0 && data && typeof data === "object") {
+    if (data && typeof data === "object") {
       this._data = data;
     }
     this.mount(true);
