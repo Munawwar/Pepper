@@ -2,11 +2,11 @@ import { each, isCustomElement } from './utils.js';
 
 // This implementation is faster than Array.from(el.childNodes)
 function getChildNodes(el) {
-  var l = [];
-  for (var node = el.firstChild; node; node = node.nextSibling) {
-    l.push(node);
+  const nodes = [];
+  for (let node = el.firstChild; node; node = node.nextSibling) {
+    nodes.push(node);
   }
-  return l;
+  return nodes;
 }
 
 /**
@@ -30,7 +30,7 @@ function syncNode(newNode, liveNode) {
 
   // recursively sync children if innerHTML is different, except
   // custom elements (because encapsulation. reactivity with CE is via attributes only)
-  if (!isCustomElement(newNode) && newNode.innerHTML != liveNode.innerHTML) {
+  if (!isCustomElement(newNode) && newNode.innerHTML !== liveNode.innerHTML) {
     patchDom(
       liveNode,
       getChildNodes(newNode),
@@ -74,12 +74,12 @@ function matchNodes(a, aStart, aEnd, b, bStart, bEnd) {
    * Group elements with same hash
    * @type {Record<string, Node[]>}
    */
-  var domLookup = {};
+  const domLookup = Object.create(null);
   /** @type {Map<Node, Node>} */
-  var newNodeToLiveNodeMatch = new Map(); // 'n' (new) node to 'l' (live) node map
+  const newNodeToLiveNodeMatch = new Map(); // 'n' (new) node to 'l' (live) node map
  
-  var i, hash;
-  for (i = bStart; i < bEnd; i++) {
+  let hash;
+  for (let i = bStart; i < bEnd; i++) {
     hash = hashNode(b[i]);
     if (!domLookup[hash]) domLookup[hash] = [];
     domLookup[hash].push(b[i]);
@@ -89,14 +89,14 @@ function matchNodes(a, aStart, aEnd, b, bStart, bEnd) {
    * For unmatched elements, we later want to re-use them if we can
    * @type {Record<string, Element[]>}
    */
-  var salvagableElements = {};
-  var salvagableElementsById = {};
-  var newNode;
-  for (i = aStart; i < aEnd; i++) {
-    var liveNode = a[i];
+  const salvageableElements = Object.create(null);
+  const salvageableElementsById = Object.create(null);
+  let newNode;
+  for (let i = aStart; i < aEnd; i++) {
+    const liveNode = a[i];
     hash = hashNode(liveNode);
-    var entry = domLookup[hash];
-    var matched = false;
+    const entry = domLookup[hash];
+    let matched = false;
     if (entry) {
       newNode = entry.shift(); // pick first match
       if (newNode) {
@@ -105,39 +105,39 @@ function matchNodes(a, aStart, aEnd, b, bStart, bEnd) {
       }
     }
     if (!matched && liveNode.nodeType === 1) {
-      if (liveNode.id) salvagableElementsById[liveNode.id] = liveNode;
-      if (!salvagableElements[liveNode.nodeName]) salvagableElements[liveNode.nodeName] = [];
-      salvagableElements[liveNode.nodeName].push(/** @type {Element} */ (liveNode));
+      if (liveNode.id) salvageableElementsById[liveNode.id] = liveNode;
+      if (!salvageableElements[liveNode.nodeName]) salvageableElements[liveNode.nodeName] = [];
+      salvageableElements[liveNode.nodeName].push(/** @type {Element} */ (liveNode));
     }
   }
 
-  var aLiveNode;
+  let aLiveNode;
   // match by id to reuse existing elements which gives a better
   // chance to preserve DOM states like input focus.
-  for (i = bStart; i < bEnd; i++) {
+  for (let i = bStart; i < bEnd; i++) {
     newNode = b[i];
     if (newNodeToLiveNodeMatch.get(newNode)) continue;
 
-    var id = newNode.id;
-    aLiveNode = id && salvagableElementsById[id];
+    const id = newNode.id;
+    aLiveNode = id && salvageableElementsById[id];
     if (aLiveNode) {
       syncNode(newNode, aLiveNode);
       newNodeToLiveNodeMatch.set(newNode, aLiveNode);
-      salvagableElements[newNode.nodeName].splice(
-        salvagableElements[newNode.nodeName].indexOf(aLiveNode), 
+      salvageableElements[newNode.nodeName].splice(
+        salvageableElements[newNode.nodeName].indexOf(aLiveNode),
         1,
-      )
-      salvagableElementsById[id] = null;
+      );
+      salvageableElementsById[id] = null;
     }
   }
 
   // match by tag name to reuse existing elements which gives a better
   // chance to preserve DOM states like input focus.
-  for (i = bStart; i < bEnd; i++) {
+  for (let i = bStart; i < bEnd; i++) {
     newNode = b[i];
     if (newNodeToLiveNodeMatch.get(newNode)) continue;
 
-    if (newNode.nodeType === 1 && (aLiveNode = (salvagableElements[newNode.nodeName] || []).shift())) {
+    if (newNode.nodeType === 1 && (aLiveNode = (salvageableElements[newNode.nodeName] || []).shift())) {
       syncNode(newNode, aLiveNode);
       newNodeToLiveNodeMatch.set(newNode, aLiveNode);
     }
@@ -151,19 +151,19 @@ function matchNodes(a, aStart, aEnd, b, bStart, bEnd) {
  * @param {Node[]} newNodes
  */
 function patchDom(parentNode, newNodes) {
-  var a = getChildNodes(parentNode);
-  var aLen = a.length;
-  var aStart = 0;
-  var aEnd = aLen;
-  var b = newNodes;
-  var bStart = 0;
-  var bEnd = b.length;
+  const a = getChildNodes(parentNode);
+  let aLen = a.length;
+  let aStart = 0;
+  let aEnd = aLen;
+  const b = newNodes;
+  let bStart = 0;
+  let bEnd = b.length;
 
   // Thanks to https://github.com/WebReflection/udomdiff for the fast path inspiration.
   while (aStart < aEnd || bStart < bEnd) {
     // fast path to append head or tail
     if (aEnd === aStart) {
-      var insertBefore = a[aEnd];
+      const insertBefore = a[aEnd];
       while (bStart < bEnd) {
         parentNode.insertBefore(b[bStart++], insertBefore);
       }
@@ -199,9 +199,9 @@ function patchDom(parentNode, newNodes) {
       --aEnd;
       bStart++;
       --bEnd;
-      var oldStartNode = a[aStart++];
-      var oldEndNode = a[aEnd];
-      var startInsertBefore = oldStartNode.nextSibling;
+      const oldStartNode = a[aStart++];
+      const oldEndNode = a[aEnd];
+      const startInsertBefore = oldStartNode.nextSibling;
       parentNode.insertBefore(oldStartNode, oldEndNode.nextSibling);
       // if the two nodes were adjacent siblings then they are already swapped now, so ignore that case.
       if (startInsertBefore !== oldEndNode) {
@@ -209,14 +209,14 @@ function patchDom(parentNode, newNodes) {
       }
     } // diff, "slow" path
     else {
-      var newNodeToLiveNodeMatch = matchNodes(a, aStart, aEnd, b, bStart, bEnd);
+      const newNodeToLiveNodeMatch = matchNodes(a, aStart, aEnd, b, bStart, bEnd);
     
       // insert the future nodes into position
-      var i, newNode, nodeAtPosition;
-      for (i = bStart; i < bEnd; i++) {
-        newNode = b[i];
+      let nodeAtPosition;
+      for (let i = bStart; i < bEnd; i++) {
+        const newNode = b[i];
         // check for exact match live node
-        var existingLiveNode = newNodeToLiveNodeMatch.get(newNode);
+        const existingLiveNode = newNodeToLiveNodeMatch.get(newNode);
         nodeAtPosition = nodeAtPosition ? nodeAtPosition.nextSibling : a[i];
         if (existingLiveNode) {
           // place it at the position. If nodeAtPosition is undefined, then inserts to end

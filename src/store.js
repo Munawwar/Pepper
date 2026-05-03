@@ -1,97 +1,85 @@
-import { keys, objectAssign } from './utils.js'
+import { keys } from './utils.js';
 
 // A store for Pepper views
 // it only does a shallow (i.e level 1) equality check of the store data properties
 // for notifying relevant connected views to re-render
-/**
- * @constructor
- * @param {Object} initialData
- */
-function Store(initialData) {
-	var self = this;
-	/** @private */
-	self._data = initialData || {};
-	/** @private */
-	self._subscribers = [];
+class Store {
+	#data;
+	#subscribers;
 
-	Object.defineProperty(this, 'data', {
-		configurable: false,
-		set(newData) {
-			if (typeof newData !== 'object') {
-				return;
-			}
-			var changedProps = [].concat(
-				// find props that were changed
-				keys(newData).filter((prop) => self._data[prop] !== newData[prop]),
-				// find props that got removed (i.e. not in new data)
-				keys(self._data).filter((prop) => !(prop in newData))
-			);
-			self._data = newData;
-			self.notify(changedProps);
-		},
-		get() {
-			return self._data;
+	/**
+	 * @param {Object} initialData
+	 */
+	constructor(initialData) {
+		this.#data = initialData || {};
+		this.#subscribers = [];
+	}
+
+	get data() {
+		return this.#data;
+	}
+
+	set data(newData) {
+		if (!newData || typeof newData !== 'object') {
+			return;
 		}
-	});
-}
+		const changedProps = [
+			...keys(newData).filter((prop) => this.#data[prop] !== newData[prop]),
+			...keys(this.#data).filter((prop) => !(prop in newData)),
+		];
+		this.#data = newData;
+		this.#notify(changedProps);
+	}
 
-Store.prototype = {
 	/**
-	 * Reactive data - Getter/Setter
+	 * @param {string[]} changedProps
 	 */
-	data: {},
-	/**
-	 * @private
-	 */
-	notify(changedProps) {
-		var changedPropsLookup = changedProps.reduce((acc, prop) => {
-			acc[prop] = 1;
-			return acc;
-		}, {});
-		this._subscribers.forEach((subscriber) => {
-			var changesPropsSubset = subscriber.props.filter((prop) => changedPropsLookup[prop]);
+	#notify(changedProps) {
+		const changedPropsLookup = new Set(changedProps);
+		this.#subscribers.forEach((subscriber) => {
+			const changesPropsSubset = subscriber.props.filter((prop) => changedPropsLookup.has(prop));
 			if (changesPropsSubset.length) {
 				subscriber.callback.call(subscriber.context, changesPropsSubset);
 			}
 		});
-	},
+	}
+
 	/**
 	 * Subscribe to changes in global store properties
 	 * @param {string[]} propsToListenFor
 	 * @param {() => undefined} func
 	 * @param {any} [context]
-	 * @returns 
 	 */
 	subscribe(propsToListenFor, func, context) {
 		if (typeof func !== 'function' || !Array.isArray(propsToListenFor)) {
 			return;
 		}
-		var self = this;
-		var alreadyAdded = self._subscribers.some((subscriber) => (
+		const alreadyAdded = this.#subscribers.some((subscriber) => (
 			subscriber.callback === func && (context === undefined || context === subscriber.context)
 		));
 		if (!alreadyAdded) {
-			self._subscribers.push({
+			this.#subscribers.push({
 				props: propsToListenFor,
 				callback: func,
-				context: context
+				context,
 			});
 		}
-	},
+	}
+
 	unsubscribe(func, context) {
-		this._subscribers = this._subscribers.filter((subscriber) => !(
+		this.#subscribers = this.#subscribers.filter((subscriber) => !(
 			subscriber.callback === func && (context === undefined || context === subscriber.context)
 		));
-	},
+	}
+
 	assign(newData) {
-		var self = this;
-		if (typeof newData !== 'object') {
+		if (!newData || typeof newData !== 'object') {
 			return;
 		}
-		var changedProps = keys(newData).filter((prop) => self._data[prop] !== newData[prop]);
-		objectAssign(self._data, newData);
-		self.notify(changedProps);
+		const changedProps = keys(newData).filter((prop) => this.#data[prop] !== newData[prop]);
+		Object.assign(this.#data, newData);
+		this.#notify(changedProps);
 	}
-};
+}
 
 export { Store };

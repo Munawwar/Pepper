@@ -16,7 +16,9 @@
   },
   "scripts": {
     "build": "./build.sh",
-    "demo": " browser-sync start --server --port 3005 --startPath=examples/plain/test.html --watch --files=pepper.js,examples"
+    "demo": " browser-sync start --server --port 3005 --startPath=examples/plain/test.html --watch --files=pepper.js,examples",
+    "lint": "npx oxlint@^1.62.0 src examples",
+    "lint:fix": "npx oxlint@^1.62.0 --fix src examples"
   },
   "keywords": [
     "sprinkle some js"
@@ -25,20 +27,7 @@
   "license": "MIT",
   "devDependencies": {
     "browser-sync": "^2.29.1",
-    "esbuild": "^0.17.15",
-    "eslint": "^8.10.0"
+    "esbuild": "^0.28.0"
   },
-  "repository": "github:Munawwar/pepper",
-  "eslintConfig": {
-    "env": {
-      "browser": true,
-      "es2021": true
-    },
-    "extends": "eslint:recommended",
-    "parserOptions": {
-      "ecmaVersion": "latest",
-      "sourceType": "module"
-    },
-    "rules": {}
-  }
+  "repository": "github:Munawwar/pepper"
 }

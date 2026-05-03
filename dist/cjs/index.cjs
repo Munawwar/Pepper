@@ -42,14 +42,6 @@ function keys(obj) {
   if (!obj) return [];
   return Object.keys(obj).filter((key) => key !== "constructor");
 }
-function objectAssign(target, ...args) {
-  args.forEach((obj) => {
-    keys(obj).forEach((key) => {
-      target[key] = obj[key];
-    });
-  });
-  return target;
-}
 function isEqual(value1, value2) {
   if (Object.is(value1, value2)) return true;
   if (value1 === null || value2 === null || typeof value1 !== "object" || typeof value2 !== "object") {
@@ -77,11 +69,11 @@ function isEqual(value1, value2) {
 
 // src/dom-diff.js
 function getChildNodes(el) {
-  var l = [];
-  for (var node = el.firstChild; node; node = node.nextSibling) {
-    l.push(node);
+  const nodes = [];
+  for (let node = el.firstChild; node; node = node.nextSibling) {
+    nodes.push(node);
   }
-  return l;
+  return nodes;
 }
 function syncNode(newNode, liveNode) {
   each(liveNode.attributes, (attr) => {
@@ -94,7 +86,7 @@ function syncNode(newNode, liveNode) {
       liveNode.setAttribute(attr.name, attr.value);
     }
   });
-  if (!isCustomElement(newNode) && newNode.innerHTML != liveNode.innerHTML) {
+  if (!isCustomElement(newNode) && newNode.innerHTML !== liveNode.innerHTML) {
     patchDom(
       liveNode,
       getChildNodes(newNode)
@@ -114,22 +106,22 @@ function hashNode(node) {
   ));
 }
 function matchNodes(a, aStart, aEnd, b, bStart, bEnd) {
-  var domLookup = {};
-  var newNodeToLiveNodeMatch = /* @__PURE__ */ new Map();
-  var i, hash;
-  for (i = bStart; i < bEnd; i++) {
+  const domLookup = /* @__PURE__ */ Object.create(null);
+  const newNodeToLiveNodeMatch = /* @__PURE__ */ new Map();
+  let hash;
+  for (let i = bStart; i < bEnd; i++) {
     hash = hashNode(b[i]);
     if (!domLookup[hash]) domLookup[hash] = [];
     domLookup[hash].push(b[i]);
   }
-  var salvagableElements = {};
-  var salvagableElementsById = {};
-  var newNode;
-  for (i = aStart; i < aEnd; i++) {
-    var liveNode = a[i];
+  const salvageableElements = /* @__PURE__ */ Object.create(null);
+  const salvageableElementsById = /* @__PURE__ */ Object.create(null);
+  let newNode;
+  for (let i = aStart; i < aEnd; i++) {
+    const liveNode = a[i];
     hash = hashNode(liveNode);
-    var entry = domLookup[hash];
-    var matched = false;
+    const entry = domLookup[hash];
+    let matched = false;
     if (entry) {
       newNode = entry.shift();
       if (newNode) {
@@ -138,34 +130,34 @@ function matchNodes(a, aStart, aEnd, b, bStart, bEnd) {
       }
     }
     if (!matched && liveNode.nodeType === 1) {
-      if (liveNode.id) salvagableElementsById[liveNode.id] = liveNode;
-      if (!salvagableElements[liveNode.nodeName]) salvagableElements[liveNode.nodeName] = [];
-      salvagableElements[liveNode.nodeName].push(
+      if (liveNode.id) salvageableElementsById[liveNode.id] = liveNode;
+      if (!salvageableElements[liveNode.nodeName]) salvageableElements[liveNode.nodeName] = [];
+      salvageableElements[liveNode.nodeName].push(
         /** @type {Element} */
         liveNode
       );
     }
   }
-  var aLiveNode;
-  for (i = bStart; i < bEnd; i++) {
+  let aLiveNode;
+  for (let i = bStart; i < bEnd; i++) {
     newNode = b[i];
     if (newNodeToLiveNodeMatch.get(newNode)) continue;
-    var id = newNode.id;
-    aLiveNode = id && salvagableElementsById[id];
+    const id = newNode.id;
+    aLiveNode = id && salvageableElementsById[id];
     if (aLiveNode) {
       syncNode(newNode, aLiveNode);
       newNodeToLiveNodeMatch.set(newNode, aLiveNode);
-      salvagableElements[newNode.nodeName].splice(
-        salvagableElements[newNode.nodeName].indexOf(aLiveNode),
+      salvageableElements[newNode.nodeName].splice(
+        salvageableElements[newNode.nodeName].indexOf(aLiveNode),
         1
       );
-      salvagableElementsById[id] = null;
+      salvageableElementsById[id] = null;
     }
   }
-  for (i = bStart; i < bEnd; i++) {
+  for (let i = bStart; i < bEnd; i++) {
     newNode = b[i];
     if (newNodeToLiveNodeMatch.get(newNode)) continue;
-    if (newNode.nodeType === 1 && (aLiveNode = (salvagableElements[newNode.nodeName] || []).shift())) {
+    if (newNode.nodeType === 1 && (aLiveNode = (salvageableElements[newNode.nodeName] || []).shift())) {
       syncNode(newNode, aLiveNode);
       newNodeToLiveNodeMatch.set(newNode, aLiveNode);
     }
@@ -173,16 +165,16 @@ function matchNodes(a, aStart, aEnd, b, bStart, bEnd) {
   return newNodeToLiveNodeMatch;
 }
 function patchDom(parentNode, newNodes) {
-  var a = getChildNodes(parentNode);
-  var aLen = a.length;
-  var aStart = 0;
-  var aEnd = aLen;
-  var b = newNodes;
-  var bStart = 0;
-  var bEnd = b.length;
+  const a = getChildNodes(parentNode);
+  let aLen = a.length;
+  let aStart = 0;
+  let aEnd = aLen;
+  const b = newNodes;
+  let bStart = 0;
+  let bEnd = b.length;
   while (aStart < aEnd || bStart < bEnd) {
     if (aEnd === aStart) {
-      var insertBefore = a[aEnd];
+      const insertBefore = a[aEnd];
       while (bStart < bEnd) {
         parentNode.insertBefore(b[bStart++], insertBefore);
       }
@@ -205,19 +197,19 @@ function patchDom(parentNode, newNodes) {
       --aEnd;
       bStart++;
       --bEnd;
-      var oldStartNode = a[aStart++];
-      var oldEndNode = a[aEnd];
-      var startInsertBefore = oldStartNode.nextSibling;
+      const oldStartNode = a[aStart++];
+      const oldEndNode = a[aEnd];
+      const startInsertBefore = oldStartNode.nextSibling;
       parentNode.insertBefore(oldStartNode, oldEndNode.nextSibling);
       if (startInsertBefore !== oldEndNode) {
         parentNode.insertBefore(oldEndNode, startInsertBefore);
       }
     } else {
-      var newNodeToLiveNodeMatch = matchNodes(a, aStart, aEnd, b, bStart, bEnd);
-      var i, newNode, nodeAtPosition;
-      for (i = bStart; i < bEnd; i++) {
-        newNode = b[i];
-        var existingLiveNode = newNodeToLiveNodeMatch.get(newNode);
+      const newNodeToLiveNodeMatch = matchNodes(a, aStart, aEnd, b, bStart, bEnd);
+      let nodeAtPosition;
+      for (let i = bStart; i < bEnd; i++) {
+        const newNode = b[i];
+        const existingLiveNode = newNodeToLiveNodeMatch.get(newNode);
         nodeAtPosition = nodeAtPosition ? nodeAtPosition.nextSibling : a[i];
         if (existingLiveNode) {
           if (nodeAtPosition !== existingLiveNode) {
@@ -239,82 +231,71 @@ function patchDom(parentNode, newNodes) {
 }
 
 // src/store.js
-function Store(initialData) {
-  var self = this;
-  self._data = initialData || {};
-  self._subscribers = [];
-  Object.defineProperty(this, "data", {
-    configurable: false,
-    set(newData) {
-      if (typeof newData !== "object") {
-        return;
-      }
-      var changedProps = [].concat(
-        // find props that were changed
-        keys(newData).filter((prop) => self._data[prop] !== newData[prop]),
-        // find props that got removed (i.e. not in new data)
-        keys(self._data).filter((prop) => !(prop in newData))
-      );
-      self._data = newData;
-      self.notify(changedProps);
-    },
-    get() {
-      return self._data;
+var Store = class {
+  #data;
+  #subscribers;
+  /**
+   * @param {Object} initialData
+   */
+  constructor(initialData) {
+    this.#data = initialData || {};
+    this.#subscribers = [];
+  }
+  get data() {
+    return this.#data;
+  }
+  set data(newData) {
+    if (!newData || typeof newData !== "object") {
+      return;
     }
-  });
-}
-Store.prototype = {
+    const changedProps = [
+      ...keys(newData).filter((prop) => this.#data[prop] !== newData[prop]),
+      ...keys(this.#data).filter((prop) => !(prop in newData))
+    ];
+    this.#data = newData;
+    this.#notify(changedProps);
+  }
   /**
-   * Reactive data - Getter/Setter
+   * @param {string[]} changedProps
    */
-  data: {},
-  /**
-   * @private
-   */
-  notify(changedProps) {
-    var changedPropsLookup = changedProps.reduce((acc, prop) => {
-      acc[prop] = 1;
-      return acc;
-    }, {});
-    this._subscribers.forEach((subscriber) => {
-      var changesPropsSubset = subscriber.props.filter((prop) => changedPropsLookup[prop]);
+  #notify(changedProps) {
+    const changedPropsLookup = new Set(changedProps);
+    this.#subscribers.forEach((subscriber) => {
+      const changesPropsSubset = subscriber.props.filter((prop) => changedPropsLookup.has(prop));
       if (changesPropsSubset.length) {
         subscriber.callback.call(subscriber.context, changesPropsSubset);
       }
     });
-  },
+  }
   /**
    * Subscribe to changes in global store properties
    * @param {string[]} propsToListenFor
    * @param {() => undefined} func
    * @param {any} [context]
-   * @returns 
    */
   subscribe(propsToListenFor, func, context) {
     if (typeof func !== "function" || !Array.isArray(propsToListenFor)) {
       return;
     }
-    var self = this;
-    var alreadyAdded = self._subscribers.some((subscriber) => subscriber.callback === func && (context === void 0 || context === subscriber.context));
+    const alreadyAdded = this.#subscribers.some((subscriber) => subscriber.callback === func && (context === void 0 || context === subscriber.context));
     if (!alreadyAdded) {
-      self._subscribers.push({
+      this.#subscribers.push({
         props: propsToListenFor,
         callback: func,
         context
       });
     }
-  },
+  }
   unsubscribe(func, context) {
-    this._subscribers = this._subscribers.filter((subscriber) => !(subscriber.callback === func && (context === void 0 || context === subscriber.context)));
-  },
+    this.#subscribers = this.#subscribers.filter((subscriber) => !(subscriber.callback === func && (context === void 0 || context === subscriber.context)));
+  }
   assign(newData) {
-    var self = this;
-    if (typeof newData !== "object") {
+    if (!newData || typeof newData !== "object") {
       return;
     }
-    var changedProps = keys(newData).filter((prop) => self._data[prop] !== newData[prop]);
-    objectAssign(self._data, newData);
-    self.notify(changedProps);
+    const changedProps = keys(newData).filter((prop) => this.#data[prop] !== newData[prop]);
+    Object.assign(this.#data, newData);
+    this.#notify(changedProps);
   }
 };
 
