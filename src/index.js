@@ -7,7 +7,7 @@ import {
 } from './utils.js';
 import { patchDom } from './dom-diff.js';
 import { Store } from './store.js';
-import { createHtml, html } from './html.js';
+import { createHtml } from './html.js';
 
 const rootMap = new WeakMap();
 const handlerMap = new WeakMap();
@@ -144,7 +144,7 @@ function clearDomBindings(runtime) {
 			return;
 		}
 		keys(handlers).forEach((eventName) => {
-			node.removeEventListener(eventName, runtime);
+			node.removeEventListener(eventName, runtime.eventListener);
 		});
 		handlerMap.delete(node);
 	});
@@ -172,7 +172,7 @@ function bindDomRuntime(runtime) {
 			const nodeHandlers = handlerMap.get(node) || {};
 			nodeHandlers[eventName] = func;
 			handlerMap.set(node, nodeHandlers);
-			node.addEventListener(eventName, runtime);
+			node.addEventListener(eventName, runtime.eventListener);
 		});
 	});
 }
@@ -257,9 +257,29 @@ function runComponent(runtime, hydrateOnly = false, isServerRender = typeof wind
 }
 
 function createRuntime(Component, props = {}) {
-	const runtime = {
+	let runtime;
+	const getProps = () => runtime.props;
+	const onMount = (handler) => {
+		runtime.mountHandlers.push(handler);
+	};
+	const onProps = (handler) => {
+		runtime.propHandlers.push(handler);
+	};
+	const update = (callback) => {
+		scheduleRender(runtime, callback);
+	};
+	const eventListener = {
+		handleEvent(event) {
+			const func = (handlerMap.get(event.currentTarget) || {})[event.type];
+			if (func) {
+				func(event);
+			}
+		},
+	};
+	runtime = {
 		Component,
 		container: null,
+		eventListener,
 		flushScheduled: false,
 		isInitializing: true,
 		isRendering: false,
@@ -278,24 +298,6 @@ function createRuntime(Component, props = {}) {
 		refObjects: [],
 		renderHandlers: null,
 		renderRefs: null,
-		getProps() {
-			return runtime.props;
-		},
-		handleEvent(event) {
-			const func = (handlerMap.get(event.currentTarget) || {})[event.type];
-			if (func) {
-				func(event);
-			}
-		},
-		onMount(handler) {
-			runtime.mountHandlers.push(handler);
-		},
-		onProps(handler) {
-			runtime.propHandlers.push(handler);
-		},
-		update(callback) {
-			scheduleRender(runtime, callback);
-		},
 	};
 	const initialProps = syncProps(runtime, props);
 	runtime.pendingChangedProps = initialProps.changedProps;
@@ -304,10 +306,10 @@ function createRuntime(Component, props = {}) {
 	currentSetupRuntime = runtime;
 	try {
 		const model = Component({
-			getProps: runtime.getProps,
-			onMount: runtime.onMount,
-			onProps: runtime.onProps,
-			update: runtime.update,
+			getProps,
+			onMount,
+			onProps,
+			update,
 		});
 		runtime.model = typeof model === 'function' ? { render: model } : model;
 		if (!runtime.model || typeof runtime.model.render !== 'function') {
@@ -374,4 +376,4 @@ function renderToString(Component, props = {}) {
 	return runComponent(createRuntime(Component, props), false, true);
 }
 
-export { Store, html, hydrate, ref, render, renderToString, state };
+export { Store, hydrate, ref, render, renderToString, state };

@@ -20,7 +20,6 @@ var __toCommonJS = (mod) => __copyProps(__defProp({}, "__esModule", { value: tru
 var index_exports = {};
 __export(index_exports, {
   Store: () => Store,
-  html: () => html,
   hydrate: () => hydrate,
   ref: () => ref,
   render: () => render,
@@ -36,7 +35,7 @@ function each(arrayLike, fn) {
 }
 function isCustomElement(element) {
   if (element.tagName.indexOf("-") > 0) return true;
-  var attr = element.getAttribute("is");
+  const attr = element.getAttribute("is");
   return attr && attr.indexOf("-") > 0;
 }
 function keys(obj) {
@@ -56,7 +55,7 @@ function isEqual(value1, value2) {
   if (value1 === null || value2 === null || typeof value1 !== "object" || typeof value2 !== "object") {
     return value1 === value2;
   }
-  var prototype = Object.getPrototypeOf(value1);
+  const prototype = Object.getPrototypeOf(value1);
   if (prototype !== Object.getPrototypeOf(value2)) {
     return false;
   }
@@ -72,7 +71,7 @@ function isEqual(value1, value2) {
   if (prototype !== Object.prototype && prototype !== null) {
     return false;
   }
-  var objectKeys = keys(value1);
+  const objectKeys = keys(value1);
   return objectKeys.length === keys(value2).length && objectKeys.every((key) => key in value2 && isEqual(value1[key], value2[key]));
 }
 
@@ -333,8 +332,19 @@ var findRegex = /[<>&'"]/g;
 var eventAttrRegex = /(on-[^\s"'<>/=]+)=["']?$/;
 var refAttrRegex = /ref=["']?$/;
 var replaceFunc = (character) => characterEntitiesMapping[character];
+function emitRuntimeToken(renderContext, collectionName, indexName, value, missingContextMessage) {
+  if (!renderContext) {
+    throw new Error(missingContextMessage);
+  }
+  const token = renderContext[indexName]++;
+  const collection = renderContext[collectionName];
+  if (collection) {
+    collection.push(value);
+  }
+  return token;
+}
 function createHtml(renderContext = null) {
-  return function html2(strings, ...values) {
+  return function html(strings, ...values) {
     let acc = strings[0];
     for (let index = 1; index < strings.length; index++) {
       const prevString = strings[index - 1];
@@ -348,13 +358,13 @@ function createHtml(renderContext = null) {
         if (typeof value !== "function") {
           throw new Error("Pepper event attributes only support function values, e.g. on-click=${handler}.");
         }
-        if (!renderContext) {
-          throw new Error("Pepper event handlers require the render-bound html passed to render(html).");
-        }
-        acc += renderContext.handlerIndex++;
-        if (renderContext.handlers) {
-          renderContext.handlers.push(value);
-        }
+        acc += emitRuntimeToken(
+          renderContext,
+          "handlers",
+          "handlerIndex",
+          value,
+          "Pepper event handlers require the render-bound html passed to render(html)."
+        );
         acc += strings[index];
         continue;
       }
@@ -362,13 +372,13 @@ function createHtml(renderContext = null) {
         if (!value || typeof value !== "object" || !("current" in value)) {
           throw new Error("Pepper refs only support ref() values, e.g. ref=${buttonRef}.");
         }
-        if (!renderContext) {
-          throw new Error("Pepper refs require the render-bound html passed to render(html).");
-        }
-        acc += renderContext.refIndex++;
-        if (renderContext.refs) {
-          renderContext.refs.push(value);
-        }
+        acc += emitRuntimeToken(
+          renderContext,
+          "refs",
+          "refIndex",
+          value,
+          "Pepper refs require the render-bound html passed to render(html)."
+        );
         acc += strings[index];
         continue;
       }
@@ -381,7 +391,6 @@ function createHtml(renderContext = null) {
     return acc;
   };
 }
-var html = createHtml();
 
 // src/index.js
 var rootMap = /* @__PURE__ */ new WeakMap();
@@ -495,7 +504,7 @@ function clearDomBindings(runtime) {
       return;
     }
     keys(handlers).forEach((eventName) => {
-      node.removeEventListener(eventName, runtime);
+      node.removeEventListener(eventName, runtime.eventListener);
     });
     handlerMap.delete(node);
   });
@@ -522,7 +531,7 @@ function bindDomRuntime(runtime) {
       const nodeHandlers = handlerMap.get(node) || {};
       nodeHandlers[eventName] = func;
       handlerMap.set(node, nodeHandlers);
-      node.addEventListener(eventName, runtime);
+      node.addEventListener(eventName, runtime.eventListener);
     });
   });
 }
@@ -600,9 +609,29 @@ function runComponent(runtime, hydrateOnly = false, isServerRender = typeof wind
   return runtime.model;
 }
 function createRuntime(Component, props = {}) {
-  const runtime = {
+  let runtime;
+  const getProps = () => runtime.props;
+  const onMount = (handler) => {
+    runtime.mountHandlers.push(handler);
+  };
+  const onProps = (handler) => {
+    runtime.propHandlers.push(handler);
+  };
+  const update = (callback) => {
+    scheduleRender(runtime, callback);
+  };
+  const eventListener = {
+    handleEvent(event) {
+      const func = (handlerMap.get(event.currentTarget) || {})[event.type];
+      if (func) {
+        func(event);
+      }
+    }
+  };
+  runtime = {
     Component,
     container: null,
+    eventListener,
     flushScheduled: false,
     isInitializing: true,
     isRendering: false,
@@ -620,25 +649,7 @@ function createRuntime(Component, props = {}) {
     props: {},
     refObjects: [],
     renderHandlers: null,
-    renderRefs: null,
-    getProps() {
-      return runtime.props;
-    },
-    handleEvent(event) {
-      const func = (handlerMap.get(event.currentTarget) || {})[event.type];
-      if (func) {
-        func(event);
-      }
-    },
-    onMount(handler) {
-      runtime.mountHandlers.push(handler);
-    },
-    onProps(handler) {
-      runtime.propHandlers.push(handler);
-    },
-    update(callback) {
-      scheduleRender(runtime, callback);
-    }
+    renderRefs: null
   };
   const initialProps = syncProps(runtime, props);
   runtime.pendingChangedProps = initialProps.changedProps;
@@ -647,10 +658,10 @@ function createRuntime(Component, props = {}) {
   currentSetupRuntime = runtime;
   try {
     const model = Component({
-      getProps: runtime.getProps,
-      onMount: runtime.onMount,
-      onProps: runtime.onProps,
-      update: runtime.update
+      getProps,
+      onMount,
+      onProps,
+      update
     });
     runtime.model = typeof model === "function" ? { render: model } : model;
     if (!runtime.model || typeof runtime.model.render !== "function") {

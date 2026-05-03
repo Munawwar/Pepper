@@ -12,6 +12,18 @@ const eventAttrRegex = /(on-[^\s"'<>/=]+)=["']?$/;
 const refAttrRegex = /ref=["']?$/;
 const replaceFunc = character => characterEntitiesMapping[character];
 
+function emitRuntimeToken(renderContext, collectionName, indexName, value, missingContextMessage) {
+  if (!renderContext) {
+    throw new Error(missingContextMessage);
+  }
+  const token = renderContext[indexName]++;
+  const collection = renderContext[collectionName];
+  if (collection) {
+    collection.push(value);
+  }
+  return token;
+}
+
 /**
  * Creates an html tagged template literal with optional Pepper render context.
  * @param {{ handlerIndex: number, handlers: Function[]|null, refIndex: number, refs: { current: Node|null }[]|null }|null} [renderContext=null]
@@ -33,13 +45,13 @@ function createHtml(renderContext = null) {
         if (typeof value !== 'function') {
           throw new Error('Pepper event attributes only support function values, e.g. on-click=${handler}.');
         }
-        if (!renderContext) {
-          throw new Error('Pepper event handlers require the render-bound html passed to render(html).');
-        }
-        acc += renderContext.handlerIndex++;
-        if (renderContext.handlers) {
-          renderContext.handlers.push(value);
-        }
+        acc += emitRuntimeToken(
+          renderContext,
+          'handlers',
+          'handlerIndex',
+          value,
+          'Pepper event handlers require the render-bound html passed to render(html).',
+        );
         acc += strings[index];
         continue;
       }
@@ -47,13 +59,13 @@ function createHtml(renderContext = null) {
         if (!value || typeof value !== 'object' || !('current' in value)) {
           throw new Error('Pepper refs only support ref() values, e.g. ref=${buttonRef}.');
         }
-        if (!renderContext) {
-          throw new Error('Pepper refs require the render-bound html passed to render(html).');
-        }
-        acc += renderContext.refIndex++;
-        if (renderContext.refs) {
-          renderContext.refs.push(value);
-        }
+        acc += emitRuntimeToken(
+          renderContext,
+          'refs',
+          'refIndex',
+          value,
+          'Pepper refs require the render-bound html passed to render(html).',
+        );
         acc += strings[index];
         continue;
       }
@@ -67,7 +79,4 @@ function createHtml(renderContext = null) {
     return acc;
   };
 }
-
-const html = createHtml();
-
-export { createHtml, html };
+export { createHtml };

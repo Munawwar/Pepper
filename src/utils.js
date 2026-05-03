@@ -1,4 +1,4 @@
-var from = Array.from;
+const from = Array.from;
 
 function each(arrayLike, fn) {
 	return Array.prototype.forEach.call(arrayLike, fn);
@@ -6,7 +6,7 @@ function each(arrayLike, fn) {
 
 function isCustomElement(element) {
 	if (element.tagName.indexOf('-') > 0) return true;
-	var attr = element.getAttribute('is');
+	const attr = element.getAttribute('is');
 	return (attr && attr.indexOf('-') > 0);
 }
 
@@ -35,7 +35,7 @@ function isEqual(value1, value2) {
 		return value1 === value2;
 	}
 
-	var prototype = Object.getPrototypeOf(value1);
+	const prototype = Object.getPrototypeOf(value1);
 	if (prototype !== Object.getPrototypeOf(value2)) {
 		return false;
 	}
@@ -52,7 +52,7 @@ function isEqual(value1, value2) {
 		return false;
 	}
 
-	var objectKeys = keys(value1);
+	const objectKeys = keys(value1);
 	return objectKeys.length === keys(value2).length
 		&& objectKeys.every((key) => key in value2 && isEqual(value1[key], value2[key]));
 }
