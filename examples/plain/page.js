@@ -8,7 +8,7 @@ export default function CounterDemo({ getProps }) {
       <div class="counter-block">
         <div>Hydrated counter</div>
         <div class="counter-row">
-          <button on-click=${onIncrementClick}>Increase</button>
+          <button @click=${onIncrementClick}>Increase</button>
           <span>Counter = ${getCount()}</span>
         </div>
       </div>

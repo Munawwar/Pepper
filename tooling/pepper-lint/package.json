@@ -1,0 +1,14 @@
+{
+	"name": "pepper-lint",
+	"version": "0.1.0",
+	"private": true,
+	"type": "commonjs",
+	"main": "index.js",
+	"bin": {
+		"pepper-lint": "bin.js"
+	},
+	"dependencies": {
+		"pepper-template-analyzer": "0.1.0",
+		"typescript": "^5.9.2"
+	}
+}

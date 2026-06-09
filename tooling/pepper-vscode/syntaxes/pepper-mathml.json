@@ -1,0 +1,111 @@
+{
+	"fileTypes": [],
+	"injectionSelector": "L:source.js -comment -(string -meta.embedded), L:source.jsx -comment -(string -meta.embedded), L:source.js.jsx -comment -(string -meta.embedded), L:source.ts -comment -(string -meta.embedded), L:source.tsx -comment -(string -meta.embedded)",
+	"injections": {
+		"L:source": {
+			"patterns": [
+				{
+					"match": "<",
+					"name": "invalid.illegal.bad-angle-bracket.html"
+				}
+			]
+		}
+	},
+	"patterns": [
+		{
+			"name": "string.js.taggedTemplate.mathml",
+			"contentName": "meta.embedded.block.mathml",
+			"begin": "(?x)(\\b(?:\\w+\\.)*(?:mathml)\\s*)(`)",
+			"beginCaptures": {
+				"1": {
+					"name": "entity.name.function.tagged-template.js"
+				},
+				"2": {
+					"name": "punctuation.definition.string.template.begin.js"
+				}
+			},
+			"end": "(`)",
+			"endCaptures": {
+				"0": {
+					"name": "string.js"
+				},
+				"1": {
+					"name": "punctuation.definition.string.template.end.js"
+				}
+			},
+			"patterns": [
+				{
+					"include": "#component-close-tag"
+				},
+				{
+					"include": "#component-open-tag"
+				},
+				{
+					"include": "source.ts#template-substitution-element"
+				},
+				{
+					"include": "text.xml"
+				}
+			]
+		}
+	],
+	"repository": {
+		"component-open-tag": {
+			"name": "meta.tag.other.xml",
+			"begin": "(<)(?=\\$\\{)",
+			"beginCaptures": {
+				"1": {
+					"name": "punctuation.definition.tag.begin.xml"
+				}
+			},
+			"end": "(/?>)",
+			"endCaptures": {
+				"1": {
+					"name": "punctuation.definition.tag.end.xml"
+				}
+			},
+			"patterns": [
+				{
+					"include": "source.ts#template-substitution-element"
+				},
+				{
+					"match": "\\.\\.\\.(?=\\$\\{)",
+					"name": "keyword.operator.spread.pepper"
+				},
+				{
+					"match": "!?[.@?]?[A-Za-z_:][-A-Za-z0-9_:.]*(?=\\s*=)",
+					"name": "entity.other.attribute-name.xml"
+				},
+				{
+					"match": "=",
+					"name": "punctuation.separator.key-value.xml"
+				},
+				{
+					"match": "\"[^\"]*\"|'[^']*'",
+					"name": "string.quoted.double.xml"
+				}
+			]
+		},
+		"component-close-tag": {
+			"name": "meta.tag.other.xml",
+			"begin": "(</)(?=\\$\\{)",
+			"beginCaptures": {
+				"1": {
+					"name": "punctuation.definition.tag.begin.xml"
+				}
+			},
+			"end": "(>)",
+			"endCaptures": {
+				"1": {
+					"name": "punctuation.definition.tag.end.xml"
+				}
+			},
+			"patterns": [
+				{
+					"include": "source.ts#template-substitution-element"
+				}
+			]
+		}
+	},
+	"scopeName": "inline.pepper-mathml"
+}

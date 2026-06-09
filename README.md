@@ -1,227 +1,157 @@
 ## Pepper
 
-NOTE: Project is still a work-in-progress.
+Project status: work in progress.
 
-Build interactive [islands](https://jasonformat.com/islands-architecture/) with plain function components, server-rendered HTML, and client hydration.
-
-Bundle size - pepper.js is about 2.4 KB gzipped
-
-### Root API
+Pepper is a function-component runtime with DOM rendering, pseudo-hydration, and SSR.
 
 ```js
-import { hydrate, render, renderToString } from '@pepper-js/pepper';
+import { hydrate, ref, render, renderToString, state } from '@pepper-js/pepper'
 
-render(Component, container, props);
-hydrate(Component, container, props);
-renderToString(Component, props);
+function TodoRow({ getProps }) {
+	return html => html`<li>${getProps().label}</li>`
+}
+
+function TodoApp() {
+	const inputRef = ref()
+	const [getItems, setItems] = state([
+		{ id: 1, label: 'Write docs' },
+		{ id: 2, label: 'Ship demo' },
+	])
+	const [getNextId, setNextId] = state(3)
+
+	function addItem() {
+		const label = inputRef.current?.value?.trim()
+		if (!label) return
+		const nextId = getNextId()
+		setItems([...getItems(), { id: nextId, label }])
+		setNextId(nextId + 1)
+		inputRef.current.value = ''
+		inputRef.current.focus()
+	}
+
+	return html => html`
+		<input ref=${inputRef} placeholder="New todo" />
+		<button @click=${addItem}>Add</button>
+		<ul>
+			${getItems().map(item => html`<${TodoRow} key=${item.id} label=${item.label} />`)}
+		</ul>
+	`
+}
+
+render(TodoApp, domNodeOrCssSelector, props)
+hydrate(TodoApp, domNodeOrCssSelector, props)
+renderToString(TodoApp, props)
 ```
 
-- `render()` mounts or updates a component into a DOM container.
-- `hydrate()` attaches a component to matching server-rendered HTML already in the container.
-- `renderToString()` returns an HTML string for SSR.
+Note:
+- pass 4th param `{ debugKeys: true }` to `render()` or `hydrate()` to stamp keyed child roots with `x-key="..."`
 
-### Example
+### Demo
 
-```html
-<!DOCTYPE html>
-<html>
-    <body>
-        <div id="app"><button on-click=0>Increase</button><span>Count = 1</span></div>
-        <script>
-            window.initialProps = { initialCount: 1 };
-        </script>
-        <script type="module">
-            import { hydrate, state } from 'https://unpkg.com/@pepper-js/pepper/dist/index.js';
+- `examples/components.html` shows nested components, keyed child lists, and spread props
+- `tooling/pepper-vscode/pepper-vscode.vsix` is the installable VS Code extension bundle kept in-repo until marketplace publishing exists
 
-            function Counter({ getProps }) {
-                const [getCount, setCount] = state(getProps().initialCount);
-                const onClick = () => setCount(getCount() + 1);
+### Install
 
-                return function render(html) {
-                    return html`
-                        <button on-click=${onClick}>Increase</button>
-                        <span>Count = ${getCount()}</span>
-                    `;
-                };
-            }
-
-            hydrate(Counter, '#app', window.initialProps);
-        </script>
-    </body>
-</html>
+```bash
+npm install @pepper-js/pepper
 ```
 
-### Component Model
+### Component API
 
-Pepper components are plain functions.
-
-The setup function receives:
+Setup API:
 
 - `getProps()`
 - `onProps(handler)`
 - `onMount(handler)`
 - `update(callback?)`
 
-State and refs are direct imports:
+Direct imports:
 
-```js
-import { ref, state } from '@pepper-js/pepper';
-```
+- `state(initialValue, comparator?)`
+- `ref()`
 
-`state(initialValue, comparator?)` returns a getter/setter pair:
-
-```js
-const [getCount, setCount] = state(0);
-const [getValue, setValue] = state(initialValue, Object.is);
-```
-
-- the default comparator is deep equality
-- state and `update()` rerenders are batched into a single microtask flush
-- `setState(nextValueOrUpdater, false)` updates without scheduling a rerender
-- `setState(nextValueOrUpdater, callback)` runs `callback` after the render flush
-
-`ref()` returns an object ref:
-
-```js
-const buttonRef = ref();
-```
-
-Use it from render:
-
-```js
-function Counter() {
-    const buttonRef = ref();
-
-    return function render(html) {
-        return html`<button ref=${buttonRef}>Click me</button>`;
-    };
-}
-```
-
-The component setup may return either:
+Components may return:
 
 - a render function
-- an object with a `render(html)` method
+- an object with `render(html)`
 
-Both are supported:
+### "I don't want auto-memoization" / `component()` wrapper
+
+Plain function components use Pepper’s default runtime behavior:
+
+- deep prop memoization
+- automatic ignoring of `onX` function props for memo comparisons
+
+When you want to opt out, wrap the component:
 
 ```js
-function Counter({ getProps }) {
-    const [getCount, setCount] = state(0);
-    const onClick = () => setCount(getCount() + 1);
+import { component } from '@pepper-js/pepper'
 
-    return function render(html) {
-        return html`
-            <button on-click=${onClick}>
-                ${getProps().label}: ${getCount()}
-            </button>
-        `;
-    };
+const Unmemoized = component(function Unmemoized(api) {
+	return html => html`<div />`
+}, {
+	memo: false,
+})
+```
+
+Supported options:
+
+- `memo: boolean`
+- `propsComparator(prevProps, nextProps)`
+- `autoEffectEvent: boolean`
+
+### Layout components / children()
+
+Pepper supports paired component tags for layout-style composition:
+
+```js
+function Layout({ getProps }) {
+	return html => html`
+		<section class="layout">
+			<header>${getProps().title}</header>
+			<main>${getProps().children?.()}</main>
+		</section>
+	`
+}
+
+function Screen() {
+	return html => html`
+		<${Layout} title=${'Settings'}>
+			<span>${'inside'}</span>
+		</${Layout}>
+	`
 }
 ```
 
-```js
-function Counter({ getProps }) {
-    const [getCount, setCount] = state(0);
+Rules:
 
-    return {
-        increment() {
-            setCount(getCount() + 1);
-        },
+- `key=${...}` is reserved for component identity in child-component lists
+- `...${spreadProps}` works on child component tags
+- paired tags pass lazy `children()` to the child component
+- named slots are not supported yet
 
-        render(html) {
-            return html`
-                <button on-click=${this.increment.bind(this)}>
-                    ${getProps().label}: ${getCount()}
-                </button>
-            `;
-        },
-    };
-}
-```
+### Tooling
 
-Event handlers are invoked as plain functions. If a handler depends on model `this`, bind it explicitly.
+The repo now includes in-repo tooling packages:
 
-### Props And Effects
+- `tooling/pepper-template-analyzer`
+- `tooling/pepper-typescript-plugin`
+- `tooling/pepper-lint`
+- `tooling/pepper-vscode`
 
-`getProps()` always returns the latest props, which avoids stale closures.
+VS Code extension:
 
-```js
-function Counter({ getProps, onMount, onProps }) {
-    const [getCount, setCount] = state(getProps().initialCount);
+- rebuild: `npm run vscode:package`
+- install locally: `npm run vscode:install`
+- repo bundle path: `tooling/pepper-vscode/pepper-vscode.vsix`
 
-    onProps((changedProps, oldProps) => {
-        if (changedProps.includes('resetKey')) {
-            setCount(getProps().initialCount, false);
-        }
-    });
+### Browser support
 
-    onMount(() => {
-        console.log('mounted with', getProps());
-        return () => {
-            console.log('cleanup');
-        };
-    });
+Pepper targets modern browsers:
 
-    return function render(html) {
-        return html`<span>${getCount()}</span>`;
-    };
-}
-```
-
-### Pepper Store
-
-`Store` is still available, but it is no longer wired into component render data automatically. Pass store instances in through props.
-
-```js
-import { Store, render } from '@pepper-js/pepper';
-
-const store = new Store({ count: 1 });
-
-function Counter({ getProps, onMount, update }) {
-    onMount(() => {
-        const rerender = () => update();
-        getProps().store.subscribe(['count'], rerender);
-        return () => getProps().store.unsubscribe(rerender);
-    });
-
-    return function render(html) {
-        return html`<span>Count = ${getProps().store.data.count}</span>`;
-    };
-}
-
-render(Counter, '#app', { store });
-```
-
-For SSR, create the store per request and pass it through `props` on both `renderToString()` and `hydrate()`.
-
-### Server-side Rendering
-
-```js
-import { renderToString, state } from '@pepper-js/pepper';
-
-function Counter({ getProps }) {
-    const [getCount] = state(getProps().initialCount);
-    return function render(html) {
-        return html`<span>Count = ${getCount()}</span>`;
-    };
-}
-
-const html = renderToString(Counter, { initialCount: 1 });
-```
-
-Pepper only hydrates event handlers and refs produced by its render-bound `html` tag. External string template engines are not supported for interactive hydration.
-
-### Current Limitation
-
-Nested Pepper components are not supported yet. Today the root APIs work with a single component tree rendered as HTML strings.
-
-### Browser compatibility
-
-Supports every browser as GOV UK (2024) - https://www.gov.uk/service-manual/technology/designing-for-different-browsers-and-devices
-
-(Safari 15.6+ and latest Chrome, Edge, Firefox, Samsung Internet)
-
-### Credits
-
-To <a href="https://github.com/WebReflection/udomdiff">udomdiff</a> for dom diff fast path inspiration.
+- Safari 15.6+
+- latest Chrome
+- latest Edge
+- latest Firefox
+- latest Samsung Internet

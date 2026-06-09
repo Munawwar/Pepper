@@ -1,0 +1,29 @@
+{
+	"compilerOptions": {
+		"allowJs": true,
+		"checkJs": true,
+
+		"declaration": true,
+		"declarationMap": true,
+		"emitDeclarationOnly": true,
+		"outDir": ".types-generated",
+
+		"sourceMap": true,
+		"target": "ES2023",
+		"module": "ES2022",
+		"moduleResolution": "Node",
+		"verbatimModuleSyntax": true,
+
+		"lib": ["DOM", "DOM.Iterable", "ES2023"],
+		"types": ["@types/mocha"],
+
+		"skipLibCheck": true,
+		"strict": true,
+		"noImplicitAny": true,
+		"noUnusedLocals": true,
+		"noUnusedParameters": true
+	},
+
+	"include": ["./**/*.js"], // Plain JS only!
+	"exclude": ["node_modules"]
+}

@@ -1,376 +1,288 @@
 import {
-	from,
-	each,
-	isCustomElement,
-	isEqual,
-	keys,
-} from './utils.js';
-import { patchDom } from './dom-diff.js';
-import { Store } from './store.js';
-import { createHtml } from './html.js';
+	force,
+	html as baseHtml,
+	mathml as baseMathml,
+	rawText,
+	svg as baseSvg,
+	unsafeHTML,
+	unsafeMathML,
+	unsafeSVG,
+} from './html.js'
+import {
+	component,
+	createComponentRuntime,
+	destroyComponentRuntime,
+	finalizeComponentRuntime,
+	flushMounts,
+	getCurrentOwnerRuntime,
+	getOrCreateChildStore,
+	ref,
+	renderComponentRuntime,
+	state,
+	syncComponentProps,
+} from './component-runtime.js'
+import {
+	compileComponentTemplate,
+	lowerComponentTemplate,
+	renderSourceTemplate,
+	resolveComponentProps,
+} from './component-syntax.js'
+import { renderComponentToString } from './pepper-ssr.js'
+import { Store } from './store.js'
 
-const rootMap = new WeakMap();
-const handlerMap = new WeakMap();
-let currentSetupRuntime = null;
+const rootMap = new WeakMap()
+const singleValueStrings = ['', '']
+singleValueStrings.raw = singleValueStrings
+const publicTagsHolder = { domTags: null }
 
 /**
- * Converts html string to a document fragment.
- * @param {String} htmlString
- * @return {DocumentFragment}
+ * @typedef {{ debugKeys?: boolean }} RenderOptions
  */
-function parseAsFragment(htmlString) {
-	const templateTag = document.createElement('template');
-	templateTag.innerHTML = htmlString;
-	return templateTag.content;
+
+function asTemplateView(tag, value) {
+	return tag(singleValueStrings, value)
 }
 
-/**
- * Traverse elements of a tree in order of visibility (pre-order traversal).
- * @param {Node} parentNode
- * @param {(node: Element) => void} onNextNode
- */
-function traverseElements(parentNode, onNextNode) {
-	const treeWalker = document.createTreeWalker(parentNode, NodeFilter.SHOW_ELEMENT);
-	let node = treeWalker.nextNode();
-	while (node) {
-		if (isCustomElement(node)) {
-			node = treeWalker.nextSibling();
-			continue;
-		}
-		onNextNode(/** @type {Element} */ (node));
-		node = treeWalker.nextNode();
-	}
+function realizeDomRenderable(renderable, runtime, liveNodes = null) {
+	const view = typeof renderable === 'function' ? renderable : asTemplateView(runtime.rootRecord.domTags.html, renderable)
+	return liveNodes ? view(runtime.viewKey, liveNodes) : view(runtime.viewKey)
 }
 
-function state(initialValue, comparator = isEqual) {
-	const runtime = currentSetupRuntime;
-	if (!runtime) {
-		throw new Error('state() can only be used while creating a Pepper component.');
-	}
-	let value = initialValue;
-	return [
-		() => value,
-		(valueOrSetter, callback) => {
-			const nextValue = typeof valueOrSetter === 'function'
-				? valueOrSetter(value)
-				: valueOrSetter;
-			if (comparator(nextValue, value)) {
-				return;
+function flushCallbacks(rootRecord) {
+	const callbacks = rootRecord.pendingCallbacks.splice(0)
+	for (const callback of callbacks) callback()
+}
+
+function createDomTags() {
+	return {
+		html(strings, ...values) {
+			const compiled = compileComponentTemplate(strings)
+			if (!compiled) return baseHtml(strings, ...values)
+			const ownerRuntime = getCurrentOwnerRuntime()
+			if (!ownerRuntime) {
+				throw new Error('Pepper component tags can only be used while rendering a Pepper component.')
 			}
-			value = nextValue;
-			if (callback !== false) {
-				scheduleRender(runtime, callback);
-			}
-		},
-	];
-}
-
-function ref() {
-	const runtime = currentSetupRuntime;
-	if (!runtime) {
-		throw new Error('ref() can only be used while creating a Pepper component.');
-	}
-	const refObject = { current: null };
-	runtime.refObjects.push(refObject);
-	return refObject;
-}
-
-function scheduleRenderFlush(runtime) {
-	if (runtime.flushScheduled) {
-		return;
-	}
-	runtime.flushScheduled = true;
-	queueMicrotask(() => {
-		runtime.flushScheduled = false;
-		if (
-			!runtime.pendingRender
-			|| runtime.isInitializing
-			|| runtime.isRendering
-			|| runtime.isRunningMountHandlers
-		) {
-			return;
-		}
-		runtime.pendingRender = false;
-		runComponent(runtime);
-	});
-}
-
-function scheduleRender(runtime, callback) {
-	if (typeof callback === 'function') {
-		runtime.pendingCallbacks.push(callback);
-	}
-	runtime.pendingRender = true;
-	if (runtime.isServerRender) {
-		return;
-	}
-	scheduleRenderFlush(runtime);
-}
-
-function syncProps(runtime, nextProps) {
-	const oldProps = runtime.props;
-	const normalizedProps = {};
-	const changedProps = [];
-	const allKeys = new Set(keys(oldProps).concat(keys(nextProps)));
-	allKeys.forEach((key) => {
-		if (!(key in nextProps)) {
-			changedProps.push(key);
-			return;
-		}
-		const nextValue = nextProps[key];
-		if (key in oldProps && isEqual(oldProps[key], nextValue)) {
-			normalizedProps[key] = oldProps[key];
-			return;
-		}
-		normalizedProps[key] = nextValue;
-		changedProps.push(key);
-	});
-	runtime.props = normalizedProps;
-	return { changedProps, oldProps };
-}
-
-function clearDomBindings(runtime) {
-	runtime.refObjects.forEach((refObject) => {
-		refObject.current = null;
-	});
-	if (!runtime.container) {
-		return;
-	}
-	traverseElements(runtime.container, (node) => {
-		const handlers = handlerMap.get(node);
-		if (!handlers) {
-			return;
-		}
-		keys(handlers).forEach((eventName) => {
-			node.removeEventListener(eventName, runtime.eventListener);
-		});
-		handlerMap.delete(node);
-	});
-}
-
-function bindDomRuntime(runtime) {
-	runtime.container.pepperComponent = runtime.model;
-	traverseElements(runtime.container, (node) => {
-		each(node.attributes, (attr) => {
-			if (attr.name === 'ref') {
-				const refObject = runtime.renderRefs && runtime.renderRefs[attr.value];
-				if (refObject) {
-					refObject.current = node;
+			const lowered = lowerComponentTemplate(compiled, values, entry => (
+				createDomComponentValue(ownerRuntime, entry, values)
+			))
+			if (compiled.strings.every(string => string === '')) {
+				const keyedInstanceIds = new Map()
+				return function renderComponentOnlyTemplate(key = Symbol()) {
+					let instanceIds = keyedInstanceIds.get(key)
+					if (!instanceIds) keyedInstanceIds.set(key, (instanceIds = []))
+					return lowered.values.flatMap((value, index) => {
+						if (typeof value === 'function') {
+							let instanceId = instanceIds[index]
+							if (!instanceId) instanceIds[index] = instanceId = Symbol(`pepper-component-hole-${index}`)
+							return value(instanceId)
+						}
+						return Array.isArray(value) ? value.flat(Infinity) : value == null ? [] : [value]
+					})
 				}
-				return;
 			}
-			if (!attr.name.startsWith('on-')) {
-				return;
-			}
-			const func = runtime.renderHandlers && runtime.renderHandlers[attr.value];
-			if (!func) {
-				return;
-			}
-			const eventName = attr.name.slice(3);
-			const nodeHandlers = handlerMap.get(node) || {};
-			nodeHandlers[eventName] = func;
-			handlerMap.set(node, nodeHandlers);
-			node.addEventListener(eventName, runtime.eventListener);
-		});
-	});
-}
-
-function runMountHandlers(runtime) {
-	runtime.isRunningMountHandlers = true;
-	try {
-		runtime.mountHandlers.forEach((handler) => {
-			const cleanup = handler();
-			if (typeof cleanup === 'function') {
-				runtime.mountCleanups.push(cleanup);
-			}
-		});
-	} finally {
-		runtime.isRunningMountHandlers = false;
-	}
-	if (runtime.pendingRender) {
-		scheduleRenderFlush(runtime);
-	}
-}
-
-function flushCallbacks(runtime) {
-	const callbacks = runtime.pendingCallbacks.splice(0);
-	callbacks.forEach((callback) => {
-		callback();
-	});
-}
-
-function runComponent(runtime, hydrateOnly = false, isServerRender = typeof window === 'undefined' || typeof document === 'undefined', changedProps = runtime.pendingChangedProps, oldProps = runtime.pendingOldProps) {
-	runtime.isServerRender = isServerRender;
-	runtime.pendingChangedProps = [];
-	runtime.pendingOldProps = runtime.props;
-	runtime.isRendering = true;
-	const renderContext = {
-		handlerIndex: 0,
-		handlers: isServerRender ? null : [],
-		refIndex: 0,
-		refs: isServerRender ? null : [],
-	};
-	let htmlString;
-	try {
-		if (changedProps.length) {
-			runtime.propHandlers.forEach((handler) => {
-				handler(changedProps, oldProps);
-			});
-		}
-		runtime.renderHandlers = renderContext.handlers;
-		runtime.renderRefs = renderContext.refs;
-		htmlString = runtime.model.render.call(runtime.model, createHtml(renderContext));
-	} finally {
-		runtime.isRendering = false;
-	}
-	if (isServerRender) {
-		flushCallbacks(runtime);
-		return runtime.pendingRender
-			? (runtime.pendingRender = false, runComponent(runtime, false, true, [], runtime.props))
-			: htmlString;
-	}
-
-	const firstMount = !runtime.mounted;
-	const focusId = document.activeElement && document.activeElement.id;
-	clearDomBindings(runtime);
-	if (!hydrateOnly) {
-		patchDom(runtime.container, from(parseAsFragment(htmlString).childNodes));
-		if (focusId) {
-			const focusEl = document.getElementById(focusId);
-			if (focusEl) {
-				focusEl.focus();
-			}
-		}
-	}
-	bindDomRuntime(runtime);
-	runtime.mounted = true;
-	if (firstMount) {
-		runMountHandlers(runtime);
-	}
-	flushCallbacks(runtime);
-	if (runtime.pendingRender) {
-		scheduleRenderFlush(runtime);
-	}
-	return runtime.model;
-}
-
-function createRuntime(Component, props = {}) {
-	let runtime;
-	const getProps = () => runtime.props;
-	const onMount = (handler) => {
-		runtime.mountHandlers.push(handler);
-	};
-	const onProps = (handler) => {
-		runtime.propHandlers.push(handler);
-	};
-	const update = (callback) => {
-		scheduleRender(runtime, callback);
-	};
-	const eventListener = {
-		handleEvent(event) {
-			const func = (handlerMap.get(event.currentTarget) || {})[event.type];
-			if (func) {
-				func(event);
-			}
+			return baseHtml(lowered.strings, ...lowered.values)
 		},
-	};
-	runtime = {
-		Component,
-		container: null,
-		eventListener,
-		flushScheduled: false,
-		isInitializing: true,
-		isRendering: false,
-		isRunningMountHandlers: false,
-		isServerRender: false,
-		mounted: false,
-		mountCleanups: [],
-		mountHandlers: [],
-		model: null,
-		pendingCallbacks: [],
-		pendingChangedProps: [],
-		pendingOldProps: {},
-		pendingRender: false,
-		propHandlers: [],
-		props: {},
-		refObjects: [],
-		renderHandlers: null,
-		renderRefs: null,
-	};
-	const initialProps = syncProps(runtime, props);
-	runtime.pendingChangedProps = initialProps.changedProps;
-	runtime.pendingOldProps = initialProps.oldProps;
-	const prevRuntime = currentSetupRuntime;
-	currentSetupRuntime = runtime;
-	try {
-		const model = Component({
-			getProps,
-			onMount,
-			onProps,
-			update,
-		});
-		runtime.model = typeof model === 'function' ? { render: model } : model;
-		if (!runtime.model || typeof runtime.model.render !== 'function') {
-			throw new Error('Pepper components must return a render function or an object with a render(html) method.');
-		}
-	} finally {
-		runtime.isInitializing = false;
-		currentSetupRuntime = prevRuntime;
+		mathml: baseMathml,
+		svg: baseSvg,
 	}
-	return runtime;
 }
 
-function destroyRuntime(runtime) {
-	clearDomBindings(runtime);
-	runtime.mountCleanups.splice(0).forEach((cleanup) => {
-		cleanup();
-	});
-	if (runtime.container) {
-		delete runtime.container.pepperComponent;
-		rootMap.delete(runtime.container);
+function createDomComponentValue(ownerRuntime, entry, values) {
+	return function renderComponentValue(instanceKey = Symbol()) {
+		const store = getOrCreateChildStore(ownerRuntime, entry)
+		const componentType = values[entry.componentIndex]
+		const { key, props } = resolveComponentProps(entry.bindings, values)
+		if (entry.childrenSource != null) {
+			props.children = () => renderSourceTemplate(ownerRuntime.rootRecord.domTags.html, entry.childrenSource, values)
+		}
+		const childKey = key ?? instanceKey
+		let runtime = store.get(childKey)
+		if (!runtime || runtime.componentType !== componentType) {
+			if (runtime) destroyComponentRuntime(runtime)
+			runtime = createComponentRuntime(componentType, props, ownerRuntime.rootRecord, ownerRuntime)
+			store.set(childKey, runtime)
+		} else {
+			syncComponentProps(runtime, props)
+		}
+
+		runtime.lastSeen = ownerRuntime.renderPassId
+		const renderable = renderComponentRuntime(runtime, ownerRuntime.rootRecord.domTags)
+		const nodes = realizeDomRenderable(renderable, runtime)
+		const debugKeyValue = ownerRuntime.rootRecord.options.debugKeys === true && key != null ? String(key) : ''
+		if (runtime.debugKeyNodes)
+			for (const node of runtime.debugKeyNodes)
+				if (node instanceof Element && (!debugKeyValue || !nodes.includes(node))) node.removeAttribute('x-key')
+		runtime.debugKeyNodes = []
+		if (debugKeyValue)
+			for (const node of nodes)
+				if (node instanceof Element) {
+					node.setAttribute('x-key', debugKeyValue)
+					runtime.debugKeyNodes.push(node)
+				}
+		finalizeComponentRuntime(runtime)
+		return nodes
 	}
 }
 
 function resolveContainer(container) {
-	return typeof container === 'string' ? document.querySelector(container) : container;
+	return typeof container === 'string' ? document.querySelector(container) : container
 }
 
-function mountRoot(Component, container, props = {}, hydrateOnly = false) {
-	const target = resolveContainer(container);
+function createRootRecord(Component, container, props, options) {
+	const rootRecord = {
+		Component,
+		container,
+		domTags: null,
+		flushScheduled: false,
+		hydrating: false,
+		mounted: false,
+		pendingCallbacks: [],
+		pendingMounts: [],
+		rootKey: Symbol('pepper-root'),
+		options,
+		topRuntime: null,
+	}
+	rootRecord.scheduleRender = () => scheduleRootRender(rootRecord)
+	rootRecord.domTags = createDomTags()
+	rootRecord.topRuntime = createComponentRuntime(Component, props, rootRecord, null)
+	return rootRecord
+}
+
+function performRootRender(rootRecord, hydrateOnly = false) {
+	const liveNodes = hydrateOnly ? Array.from(rootRecord.container.childNodes) : null
+	const renderable = renderComponentRuntime(rootRecord.topRuntime, rootRecord.domTags)
+	const nodes = realizeDomRenderable(renderable, rootRecord.topRuntime, liveNodes && liveNodes.length ? liveNodes : null)
+	finalizeComponentRuntime(rootRecord.topRuntime)
+	if (!rootRecord.mounted && !hydrateOnly) rootRecord.container.replaceChildren(...nodes)
+	rootRecord.mounted = true
+	flushMounts(rootRecord)
+	flushCallbacks(rootRecord)
+}
+
+function scheduleRootRender(rootRecord) {
+	if (rootRecord.flushScheduled) return
+	rootRecord.flushScheduled = true
+	queueMicrotask(() => {
+		rootRecord.flushScheduled = false
+		performRootRender(rootRecord)
+	})
+}
+
+function destroyRootRecord(rootRecord) {
+	destroyComponentRuntime(rootRecord.topRuntime)
+	rootMap.delete(rootRecord.container)
+}
+
+function mountRoot(Component, container, props = {}, options = {}, hydrateOnly = false) {
+	const target = resolveContainer(container)
 	if (!(target instanceof Element)) {
-		throw new Error('Pepper render/hydrate target must be a DOM element or selector.');
+		throw new Error('Pepper render/hydrate target must be a DOM element or selector.')
 	}
-	let runtime = rootMap.get(target);
-	if (!runtime || runtime.Component !== Component) {
-		if (runtime) {
-			destroyRuntime(runtime);
-		}
-		runtime = createRuntime(Component, props);
-		runtime.container = target;
-		rootMap.set(target, runtime);
-		return runComponent(runtime, hydrateOnly);
+
+	let rootRecord = rootMap.get(target)
+	if (!rootRecord || rootRecord.Component !== Component) {
+		if (rootRecord) destroyRootRecord(rootRecord)
+		rootRecord = createRootRecord(Component, target, props, options)
+		rootMap.set(target, rootRecord)
+		performRootRender(rootRecord, hydrateOnly)
+		return rootRecord.topRuntime.model
 	}
-	const propChanges = syncProps(runtime, props);
-	runtime.pendingChangedProps = propChanges.changedProps;
-	runtime.pendingOldProps = propChanges.oldProps;
-	if (hydrateOnly && !runtime.mounted) {
-		return runComponent(runtime, true);
-	}
-	if (!propChanges.changedProps.length) {
-		return runtime.model;
-	}
-	return runComponent(runtime);
+
+	rootRecord.options = options
+	syncComponentProps(rootRecord.topRuntime, props)
+	performRootRender(rootRecord, hydrateOnly && !rootRecord.mounted)
+	return rootRecord.topRuntime.model
 }
 
-function render(Component, container, props = {}) {
-	return mountRoot(Component, container, props, false);
+/**
+ * Hydrate a Pepper component tree into existing server-rendered DOM.
+ *
+ * @template {Record<string, unknown>} [Props=Record<string, unknown>]
+ * @param {(api: {
+ *   getProps(): Props,
+ *   onMount(handler: () => void | (() => void)): void,
+ *   onProps(handler: (changedProps: string[], oldProps: Props) => void): void,
+ *   update(callback?: (() => void)): void,
+ * }) => { render(html: typeof baseHtml): unknown } | ((html: typeof baseHtml) => unknown)} Component
+ * @param {string | Element} container
+ * @param {Props} [props={}]
+ * @param {RenderOptions} [options={}]
+ * @returns {{ render?: (html: typeof baseHtml) => unknown, [key: string]: unknown }}
+ */
+function hydrate(Component, container, props = {}, options = {}) {
+	return mountRoot(Component, container, props, options, true)
 }
 
-function hydrate(Component, container, props = {}) {
-	return mountRoot(Component, container, props, true);
+/**
+ * Render a Pepper component tree into a DOM container.
+ *
+ * @template {Record<string, unknown>} [Props=Record<string, unknown>]
+ * @param {(api: {
+ *   getProps(): Props,
+ *   onMount(handler: () => void | (() => void)): void,
+ *   onProps(handler: (changedProps: string[], oldProps: Props) => void): void,
+ *   update(callback?: (() => void)): void,
+ * }) => { render(html: typeof baseHtml): unknown } | ((html: typeof baseHtml) => unknown)} Component
+ * @param {string | Element} container
+ * @param {Props} [props={}]
+ * @param {RenderOptions} [options={}]
+ * @returns {{ render?: (html: typeof baseHtml) => unknown, [key: string]: unknown }}
+ */
+function render(Component, container, props = {}, options = {}) {
+	return mountRoot(Component, container, props, options, false)
 }
 
+/**
+ * Render a Pepper component to an HTML string using the SSR backend.
+ *
+ * @template {Record<string, unknown>} [Props=Record<string, unknown>]
+ * @param {(api: {
+ *   getProps(): Props,
+ *   onMount(handler: () => void | (() => void)): void,
+ *   onProps(handler: (changedProps: string[], oldProps: Props) => void): void,
+ *   update(callback?: (() => void)): void,
+ * }) => { render(html: import('./ssr.js').html): unknown } | ((html: import('./ssr.js').html) => unknown)} Component
+ * @param {Props} [props={}]
+ * @returns {string}
+ */
 function renderToString(Component, props = {}) {
-	return runComponent(createRuntime(Component, props), false, true);
+	return renderComponentToString(Component, props)
 }
 
-export { Store, hydrate, ref, render, renderToString, state };
+publicTagsHolder.domTags = createDomTags()
+/**
+ * A Pepper `html` template tag function for component-aware DOM rendering and hydration.
+ *
+ * @type {typeof baseHtml}
+ */
+const html = publicTagsHolder.domTags.html
+/**
+ * A Pepper `svg` template tag function for DOM rendering and hydration.
+ *
+ * @type {typeof baseSvg}
+ */
+const svg = baseSvg
+/**
+ * A Pepper `mathml` template tag function for DOM rendering and hydration.
+ *
+ * @type {typeof baseMathml}
+ */
+const mathml = baseMathml
+
+export {
+	component,
+	force,
+	html,
+	hydrate,
+	mathml,
+	rawText,
+	ref,
+	render,
+	renderToString,
+	state,
+	Store,
+	svg,
+	unsafeHTML,
+	unsafeMathML,
+	unsafeSVG,
+}

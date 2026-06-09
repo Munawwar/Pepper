@@ -15,10 +15,20 @@ class Store {
 		this.#subscribers = [];
 	}
 
+	/**
+	 * Read the current store data object.
+	 *
+	 * @returns {Object}
+	 */
 	get data() {
 		return this.#data;
 	}
 
+	/**
+	 * Replace the entire store data object and notify subscribers for changed keys.
+	 *
+	 * @param {Object} newData
+	 */
 	set data(newData) {
 		if (!newData || typeof newData !== 'object') {
 			return;
@@ -72,6 +82,11 @@ class Store {
 		));
 	}
 
+	/**
+	 * Shallow-merge partial data into the store and notify subscribers for changed keys.
+	 *
+	 * @param {Object} newData
+	 */
 	assign(newData) {
 		if (!newData || typeof newData !== 'object') {
 			return;
