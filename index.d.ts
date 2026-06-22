@@ -2,10 +2,14 @@ export * from './src/html.js'
 export { Store } from './src/store.js'
 
 export type RenderCallback = () => void
+export type ContextInput = Record<string, unknown> | Map<string, unknown>
 export type ComponentSetupApi<Props = Record<string, unknown>> = {
 	getProps(): Props
+	getContext(key: string): unknown
+	hasContext(key: string): boolean
 	onMount(handler: () => void | (() => void)): void
 	onProps(handler: (changedProps: string[], oldProps: Props) => void): void
+	setContext(key: string, value: unknown): unknown
 	update(callback?: RenderCallback): void
 }
 
@@ -40,17 +44,18 @@ export function render<Props = Record<string, unknown>>(
 	componentType: PepperComponent<Props>,
 	container: string | Element,
 	props?: Props,
-	options?: { debugKeys?: boolean },
+	options?: { context?: ContextInput; debugKeys?: boolean },
 ): ComponentModel
 
 export function hydrate<Props = Record<string, unknown>>(
 	componentType: PepperComponent<Props>,
 	container: string | Element,
 	props?: Props,
-	options?: { debugKeys?: boolean },
+	options?: { context?: ContextInput; debugKeys?: boolean },
 ): ComponentModel
 
 export function renderToString<Props = Record<string, unknown>>(
 	componentType: PepperComponent<Props>,
 	props?: Props,
+	options?: { context?: ContextInput; debugKeys?: boolean },
 ): string

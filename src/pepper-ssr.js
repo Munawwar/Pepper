@@ -12,8 +12,10 @@ import {
 } from './html-ssr.js'
 import {
 	component,
+	createContextValues,
 	createComponentRuntime,
 	finalizeComponentRuntime,
+	getCurrentOwnerRuntime,
 	ref,
 	renderComponentRuntime,
 	state,
@@ -36,6 +38,7 @@ import {
   *   svg: typeof baseSvg,
  * }} SsrTags
  * @typedef {{
+ *   context: Map<string, unknown>,
  *   pendingCallbacks: Array<() => void>,
  *   pendingMounts: ComponentRuntime[],
  *   scheduleRender(): void,
@@ -45,6 +48,7 @@ import {
 
 /** @type {SsrRootRecord} */
 const publicSsrTagsHolder = {
+	context: new Map(),
 	pendingCallbacks: [],
 	pendingMounts: [],
 	scheduleRender() {},
@@ -60,8 +64,9 @@ function createSsrTags(rootRecord) {
 		html(strings, ...values) {
 			const compiled = compileComponentTemplate(strings)
 			if (!compiled) return baseHtml(strings, ...values)
+			const ownerRuntime = getCurrentOwnerRuntime()
 			const lowered = lowerComponentTemplate(compiled, values, entry => (
-				createSsrComponentValue(rootRecord, entry, values)
+				createSsrComponentValue(rootRecord, ownerRuntime, entry, values)
 			))
 			if (!lowered) return baseHtml(strings, ...values)
 			return baseHtml(lowered.strings, ...lowered.values)
@@ -73,11 +78,12 @@ function createSsrTags(rootRecord) {
 
 /**
  * @param {SsrRootRecord} rootRecord
+ * @param {ComponentRuntime | null} ownerRuntime
  * @param {ComponentDescriptor} descriptor
  * @param {unknown[]} values
  * @returns {() => unknown}
  */
-function createSsrComponentValue(rootRecord, descriptor, values) {
+function createSsrComponentValue(rootRecord, ownerRuntime, descriptor, values) {
 	return function renderComponentValue() {
 		const componentType = /** @type {PepperComponent} */ (values[descriptor.componentIndex])
 		const { props } = resolveComponentProps(descriptor.bindings, values)
@@ -85,7 +91,7 @@ function createSsrComponentValue(rootRecord, descriptor, values) {
 		if (childrenSource != null) {
 			props.children = () => renderSourceTemplate(/** @type {SsrTags} */ (rootRecord.ssrTags).html, childrenSource, values)
 		}
-		const runtime = createComponentRuntime(componentType, props, rootRecord, null)
+		const runtime = createComponentRuntime(componentType, props, rootRecord, ownerRuntime)
 		const renderable = renderComponentRuntime(runtime, /** @type {SsrTags} */ (rootRecord.ssrTags))
 		const serialized = typeof renderable === 'function' ? renderable() : renderable
 		finalizeComponentRuntime(runtime)
@@ -109,11 +115,13 @@ function html(strings, ...values) {
  *
  * @param {PepperComponent} Component
  * @param {Record<string, unknown>} [props={}]
+ * @param {{ context?: import('./component-runtime.js').ContextInput }} [options={}]
  * @returns {string}
  */
-function renderComponentToString(Component, props = {}) {
+function renderComponentToString(Component, props = {}, options = {}) {
 	/** @type {SsrRootRecord} */
 	const rootRecord = {
+		context: createContextValues(options.context),
 		pendingCallbacks: [],
 		pendingMounts: [],
 		scheduleRender() {},

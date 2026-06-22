@@ -46,6 +46,51 @@ renderToString(TodoApp, props)
 Note:
 - pass 4th param `{ debugKeys: true }` to `render()` or `hydrate()` to stamp keyed child roots with `x-key="..."`
 
+### Shared Store / Context / SSR
+
+Pepper roots accept a 4th-param `context` object. This is the intended way to pass request-local stores through the tree for both SSR and hydration.
+
+```js
+import { Store, hydrate, renderToString } from '@pepper-js/pepper'
+
+function CartCount({ getContext, onMount, update }) {
+	const cart = getContext('cart')
+	const onCartChange = () => update()
+
+	onMount(() => {
+		cart.subscribe(['items'], onCartChange)
+		return () => cart.unsubscribe(onCartChange)
+	})
+
+	return html => html`${cart.data.items.length}`
+}
+
+function HeaderCart() {
+	return html => html`<span>Cart: <${CartCount} /></span>`
+}
+
+function SidebarCart() {
+	return html => html`<aside>Items: <${CartCount} /></aside>`
+}
+
+// client: two islands sharing the same Store instance
+const cart = new Store(window.initialCart)
+
+hydrate(HeaderCart, '#header-cart', {}, { context: { cart } })
+hydrate(SidebarCart, '#sidebar-cart', {}, { context: { cart } })
+
+// server: same API, but per-request data
+const ssrCart = new Store(cartData)
+const headerHtml = renderToString(HeaderCart, {}, { context: { cart: ssrCart } })
+const sidebarHtml = renderToString(SidebarCart, {}, { context: { cart: ssrCart } })
+```
+
+Context API available inside components:
+
+- `getContext(key)`
+- `setContext(key, value)`
+- `hasContext(key)`
+
 ### Demo
 
 - `examples/components.html` shows nested components, keyed child lists, and spread props

@@ -10,6 +10,7 @@ import {
 } from './html.js'
 import {
 	component,
+	createContextValues,
 	createComponentRuntime,
 	destroyComponentRuntime,
 	finalizeComponentRuntime,
@@ -32,7 +33,10 @@ import { Store } from './store.js'
 
 /**
  * @typedef {string[] & { raw: string[] }} MutableTemplateStringsArray
- * @typedef {{ debugKeys?: boolean }} RenderOptions
+ * @typedef {{
+ *   context?: import('./component-runtime.js').ContextInput,
+ *   debugKeys?: boolean,
+ * }} RenderOptions
  * @typedef {import('./component-runtime.js').ComponentRuntime} ComponentRuntime
  * @typedef {import('./component-runtime.js').ComponentModel} ComponentModel
  * @typedef {import('./component-runtime.js').PepperComponent} PepperComponent
@@ -41,6 +45,7 @@ import { Store } from './store.js'
  * @typedef {{
  *   Component: PepperComponent,
  *   container: Element,
+ *   context: Map<string, unknown>,
  *   dirtyRuntimes: Set<ComponentRuntime>,
  *   domTags: DomTags,
  *   flushScheduled: boolean,
@@ -176,6 +181,7 @@ function createRootRecord(Component, container, props, options) {
 	const rootRecord = {
 		Component,
 		container,
+		context: createContextValues(options.context),
 		dirtyRuntimes: new Set(),
 		domTags,
 		flushScheduled: false,
@@ -322,10 +328,11 @@ function render(Component, container, props = {}, options = {}) {
  *
  * @param {PepperComponent} Component
  * @param {Record<string, unknown>} [props={}]
+ * @param {RenderOptions} [options={}]
  * @returns {string}
  */
-function renderToString(Component, props = {}) {
-	return renderComponentToString(Component, props)
+function renderToString(Component, props = {}, options = {}) {
+	return renderComponentToString(Component, props, options)
 }
 
 /**

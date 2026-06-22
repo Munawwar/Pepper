@@ -254,3 +254,19 @@ test('renders component roots to strings through Pepper SSR runtime', () => {
 
 	assert.equal(renderComponentToString(Counter, {count: 3}), '<button>3</button>')
 })
+
+test('reads root context and parent-provided context during SSR', () => {
+	function Child({getContext}) {
+		return h => h`<span>${getContext('greeting')} ${getContext('scope')}</span>`
+	}
+
+	function App({setContext}) {
+		setContext('scope', 'from-parent')
+		return h => h`<${Child} />`
+	}
+
+	assert.equal(
+		renderComponentToString(App, {}, {context: {greeting: 'hello'}}),
+		'<span>hello from-parent</span>',
+	)
+})

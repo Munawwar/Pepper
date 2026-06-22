@@ -1,4 +1,4 @@
-import {component, hydrate, ref, render, state} from '../src/index.js'
+import {component, hydrate, ref, render, state, Store} from '../src/index.js'
 
 /**
  * @typedef {(strings: TemplateStringsArray, ...values: readonly unknown[]) => unknown} HtmlTag
@@ -425,5 +425,45 @@ describe('Pepper component runtime', () => {
 		assertEquals(branchRenders, 1, 'Local leaf state updates should not rerender intermediate ancestors')
 		assertEquals(leafRenders, 2, 'Local leaf state updates should rerender the leaf itself')
 		assertEquals(button.textContent, '1', 'Leaf DOM should still update correctly')
+	})
+
+	it('reads stores from context and rerenders subscribed consumers', async () => {
+		/**
+		 * @param {{
+			 *   getContext(key: string): unknown,
+			 *   onMount(handler: () => void | (() => void)): void,
+			 *   update(callback?: () => void): void,
+		 * }} param0
+		 */
+		function CartCount({getContext, onMount, update}) {
+			/** @type {Store} */
+			const cart = /** @type {Store} */ (getContext('cart'))
+			const onCartChange = () => update()
+			onMount(() => {
+				cart.subscribe(['items'], onCartChange)
+				return () => cart.unsubscribe(onCartChange)
+			})
+			/** @param {HtmlTag} html */
+			return html => html`<span>${/** @type {unknown[]} */ (cart.data.items).length}</span>`
+		}
+
+		/**
+		 * @param {{ setContext(key: string, value: unknown): unknown }} param0
+		 */
+		function App({setContext}) {
+			setContext('featureName', 'cart')
+			/** @param {HtmlTag} html */
+			return html => html`<section data-feature=${'cart'}><${CartCount} /></section>`
+		}
+
+		const cart = new Store({items: ['a']})
+		const container = document.createElement('div')
+		document.body.append(container)
+		render(App, container, {}, {context: {cart}})
+
+		assertEquals(container.textContent, '1', 'Context-provided store should render initial data')
+		cart.assign({items: ['a', 'b', 'c']})
+		await flushRender()
+		assertEquals(container.textContent, '3', 'Subscribed components should rerender when the context store changes')
 	})
 })

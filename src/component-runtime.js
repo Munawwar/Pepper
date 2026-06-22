@@ -16,10 +16,14 @@ let currentOwnerRuntime = null
  * @typedef {{ current: Node | null }} RuntimeRef
  * @typedef {(strings: TemplateStringsArray, ...values: readonly unknown[]) => unknown} TemplateTag
  * @typedef {{ html: TemplateTag }} RuntimeTags
+ * @typedef {Record<string, unknown> | Map<string, unknown>} ContextInput
  * @typedef {{
  *   getProps(): Record<string, unknown>,
+ *   getContext(key: string): unknown,
+ *   hasContext(key: string): boolean,
  *   onMount(handler: () => void | (() => void)): void,
  *   onProps(handler: (changedProps: string[], oldProps: Record<string, unknown>) => void): void,
+ *   setContext(key: string, value: unknown): unknown,
  *   update(callback?: RenderCallback): void,
  * }} ComponentSetupApi
  * @typedef {{ render(html: TemplateTag): unknown, [key: string]: unknown }} ComponentModel
@@ -32,6 +36,7 @@ let currentOwnerRuntime = null
  * @typedef {PepperComponent & { [COMPONENT_SYMBOL]?: ComponentDefinition }} ConfigurableComponent
  * @typedef {{ factory: PepperComponent, options: ComponentOptions }} ComponentDefinition
  * @typedef {{
+ *   context?: Map<string, unknown>,
  *   pendingCallbacks: RenderCallback[],
  *   dirtyRuntimes?: Set<ComponentRuntime>,
  *   pendingMounts: ComponentRuntime[],
@@ -43,6 +48,7 @@ let currentOwnerRuntime = null
  * @typedef {{
  *   childStores: Map<unknown, Map<unknown, ComponentRuntime>>,
  *   componentType: PepperComponent,
+ *   contextValues: Map<string, unknown> | null,
  *   currentRenderable: unknown,
  *   debugKeyNodes?: Element[],
  *   destroyed: boolean,
@@ -135,6 +141,45 @@ function state(initialValue, comparator = isEqual) {
 			markRuntimeDirty(runtime, callback)
 		},
 	]
+}
+
+/**
+ * @param {ContextInput | undefined} context
+ * @returns {Map<string, unknown>}
+ */
+function createContextValues(context) {
+	if (context instanceof Map) return new Map(context)
+	return new Map(Object.entries(context || {}))
+}
+
+/**
+ * @param {ComponentRuntime} runtime
+ * @param {string} key
+ * @returns {unknown}
+ */
+function getContextValue(runtime, key) {
+	/** @type {ComponentRuntime | null} */
+	let current = runtime
+	while (current) {
+		if (current.contextValues?.has(key)) return current.contextValues.get(key)
+		current = current.parentRuntime
+	}
+	return runtime.rootRecord.context?.get(key)
+}
+
+/**
+ * @param {ComponentRuntime} runtime
+ * @param {string} key
+ * @returns {boolean}
+ */
+function hasContextValue(runtime, key) {
+	/** @type {ComponentRuntime | null} */
+	let current = runtime
+	while (current) {
+		if (current.contextValues?.has(key)) return true
+		current = current.parentRuntime
+	}
+	return runtime.rootRecord.context?.has(key) === true
 }
 
 /**
@@ -237,6 +282,7 @@ function createComponentRuntime(componentType, props, rootRecord, parentRuntime 
 	const runtime = {
 		childStores: new Map(),
 		componentType,
+		contextValues: null,
 		currentRenderable: null,
 		destroyed: false,
 		dirty: true,
@@ -262,11 +308,18 @@ function createComponentRuntime(componentType, props, rootRecord, parentRuntime 
 	/** @type {ComponentSetupApi} */
 	const api = {
 		getProps: () => runtime.props,
+		getContext: key => getContextValue(runtime, key),
+		hasContext: key => hasContextValue(runtime, key),
 		onMount: handler => {
 			runtime.mountHandlers.push(handler)
 		},
 		onProps: handler => {
 			runtime.propHandlers.push(handler)
+		},
+		setContext: (key, value) => {
+			if (!runtime.contextValues) runtime.contextValues = new Map()
+			runtime.contextValues.set(key, value)
+			return value
 		},
 		update: callback => {
 			markRuntimeDirty(runtime, callback)
@@ -394,6 +447,7 @@ export {
 	flushMounts,
 	getCurrentOwnerRuntime,
 	getOrCreateChildStore,
+	createContextValues,
 	ref,
 	renderComponentRuntime,
 	state,

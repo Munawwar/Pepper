@@ -1080,6 +1080,26 @@ function state(initialValue, comparator = isEqual) {
     }
   ];
 }
+function createContextValues(context) {
+  if (context instanceof Map) return new Map(context);
+  return new Map(Object.entries(context || {}));
+}
+function getContextValue(runtime, key) {
+  let current = runtime;
+  while (current) {
+    if (current.contextValues?.has(key)) return current.contextValues.get(key);
+    current = current.parentRuntime;
+  }
+  return runtime.rootRecord.context?.get(key);
+}
+function hasContextValue(runtime, key) {
+  let current = runtime;
+  while (current) {
+    if (current.contextValues?.has(key)) return true;
+    current = current.parentRuntime;
+  }
+  return runtime.rootRecord.context?.has(key) === true;
+}
 function ref() {
   const runtime = currentSetupRuntime;
   if (!runtime) throw new Error("ref() can only be used while creating a Pepper component.");
@@ -1139,6 +1159,7 @@ function createComponentRuntime(componentType, props, rootRecord, parentRuntime 
   const runtime = {
     childStores: /* @__PURE__ */ new Map(),
     componentType,
+    contextValues: null,
     currentRenderable: null,
     destroyed: false,
     dirty: true,
@@ -1162,11 +1183,18 @@ function createComponentRuntime(componentType, props, rootRecord, parentRuntime 
   syncComponentProps(runtime, props, true);
   const api = {
     getProps: () => runtime.props,
+    getContext: (key) => getContextValue(runtime, key),
+    hasContext: (key) => hasContextValue(runtime, key),
     onMount: (handler) => {
       runtime.mountHandlers.push(handler);
     },
     onProps: (handler) => {
       runtime.propHandlers.push(handler);
+    },
+    setContext: (key, value) => {
+      if (!runtime.contextValues) runtime.contextValues = /* @__PURE__ */ new Map();
+      runtime.contextValues.set(key, value);
+      return value;
     },
     update: (callback) => {
       markRuntimeDirty(runtime, callback);
@@ -1810,6 +1838,7 @@ function serializeTrustedTextValue(value) {
 
 // src/pepper-ssr.js
 var publicSsrTagsHolder = {
+  context: /* @__PURE__ */ new Map(),
   pendingCallbacks: [],
   pendingMounts: [],
   scheduleRender() {
@@ -1821,7 +1850,8 @@ function createSsrTags(rootRecord) {
     html(strings, ...values) {
       const compiled = compileComponentTemplate(strings);
       if (!compiled) return html2(strings, ...values);
-      const lowered = lowerComponentTemplate(compiled, values, (entry) => createSsrComponentValue(rootRecord, entry, values));
+      const ownerRuntime = getCurrentOwnerRuntime();
+      const lowered = lowerComponentTemplate(compiled, values, (entry) => createSsrComponentValue(rootRecord, ownerRuntime, entry, values));
       if (!lowered) return html2(strings, ...values);
       return html2(lowered.strings, ...lowered.values);
     },
@@ -1829,7 +1859,7 @@ function createSsrTags(rootRecord) {
     svg: svg2
   };
 }
-function createSsrComponentValue(rootRecord, descriptor, values) {
+function createSsrComponentValue(rootRecord, ownerRuntime, descriptor, values) {
   return function renderComponentValue() {
     const componentType = (
       /** @type {PepperComponent} */
@@ -1845,7 +1875,7 @@ function createSsrComponentValue(rootRecord, descriptor, values) {
         values
       );
     }
-    const runtime = createComponentRuntime(componentType, props, rootRecord, null);
+    const runtime = createComponentRuntime(componentType, props, rootRecord, ownerRuntime);
     const renderable = renderComponentRuntime(
       runtime,
       /** @type {SsrTags} */
@@ -1856,8 +1886,9 @@ function createSsrComponentValue(rootRecord, descriptor, values) {
     return serialized;
   };
 }
-function renderComponentToString(Component, props = {}) {
+function renderComponentToString(Component, props = {}, options = {}) {
   const rootRecord = {
+    context: createContextValues(options.context),
     pendingCallbacks: [],
     pendingMounts: [],
     scheduleRender() {
@@ -2075,6 +2106,7 @@ function createRootRecord(Component, container, props, options) {
   const rootRecord = {
     Component,
     container,
+    context: createContextValues(options.context),
     dirtyRuntimes: /* @__PURE__ */ new Set(),
     domTags,
     flushScheduled: false,
@@ -2090,8 +2122,28 @@ function createRootRecord(Component, container, props, options) {
   rootRecord.topRuntime = createComponentRuntime(Component, props, rootRecord, null);
   return rootRecord;
 }
+function flushDirtyRuntimes(rootRecord) {
+  const dirtyRuntimes = [...rootRecord.dirtyRuntimes].filter((runtime) => runtime.dirty && !runtime.destroyed).filter((runtime) => {
+    for (let parent = runtime.parentRuntime; parent; parent = parent.parentRuntime) {
+      if (rootRecord.dirtyRuntimes.has(parent) && parent.dirty && !parent.destroyed) return false;
+    }
+    return true;
+  });
+  rootRecord.dirtyRuntimes.clear();
+  for (const runtime of dirtyRuntimes) {
+    const renderable = renderComponentRuntime(runtime, rootRecord.domTags);
+    realizeDomRenderable(renderable, runtime);
+    finalizeComponentRuntime(runtime);
+  }
+  flushMounts(rootRecord);
+  for (const callback of rootRecord.pendingCallbacks.splice(0)) callback();
+}
 function performRootRender(rootRecord, hydrateOnly = false) {
   if (!rootRecord.topRuntime) throw new Error("Pepper root is missing its top runtime.");
+  if (!hydrateOnly && rootRecord.mounted && !rootRecord.topRuntime.dirty && !rootRecord.topRuntime.hasDirtyDescendant && !rootRecord.topRuntime.pendingChangedProps.length && rootRecord.dirtyRuntimes.size) {
+    flushDirtyRuntimes(rootRecord);
+    return;
+  }
   rootRecord.dirtyRuntimes.clear();
   const liveNodes = hydrateOnly ? Array.from(rootRecord.container.childNodes) : null;
   const renderable = renderComponentRuntime(rootRecord.topRuntime, rootRecord.domTags);
@@ -2108,20 +2160,7 @@ function scheduleRootRender(rootRecord) {
   queueMicrotask(() => {
     rootRecord.flushScheduled = false;
     if (!rootRecord.topRuntime) throw new Error("Pepper root is missing its top runtime.");
-    const dirtyRuntimes = [...rootRecord.dirtyRuntimes].filter((runtime) => runtime.dirty && !runtime.destroyed).filter((runtime) => {
-      for (let parent = runtime.parentRuntime; parent; parent = parent.parentRuntime) {
-        if (rootRecord.dirtyRuntimes.has(parent) && parent.dirty && !parent.destroyed) return false;
-      }
-      return true;
-    });
-    rootRecord.dirtyRuntimes.clear();
-    for (const runtime of dirtyRuntimes) {
-      const renderable = renderComponentRuntime(runtime, rootRecord.domTags);
-      realizeDomRenderable(renderable, runtime);
-      finalizeComponentRuntime(runtime);
-    }
-    flushMounts(rootRecord);
-    for (const callback of rootRecord.pendingCallbacks.splice(0)) callback();
+    flushDirtyRuntimes(rootRecord);
   });
 }
 function mountRoot(Component, container, props = {}, options = {}, hydrateOnly = false) {
@@ -2157,8 +2196,8 @@ function hydrate(Component, container, props = {}, options = {}) {
 function render(Component, container, props = {}, options = {}) {
   return mountRoot(Component, container, props, options, false);
 }
-function renderToString2(Component, props = {}) {
-  return renderComponentToString(Component, props);
+function renderToString2(Component, props = {}, options = {}) {
+  return renderComponentToString(Component, props, options);
 }
 var html3 = domTags.html;
 var svg3 = svg;
