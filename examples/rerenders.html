@@ -1,0 +1,203 @@
+<!doctype html>
+<html lang="en">
+	<head>
+		<meta charset="utf-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1" />
+		<title>Pepper rerender visualizer</title>
+		<style>
+			:root {
+				font-family: system-ui, sans-serif;
+				color: #1f2937;
+				background: #f3f4f6;
+			}
+
+			* {
+				box-sizing: border-box;
+			}
+
+			body {
+				margin: 0;
+				padding: 24px;
+			}
+
+			#app {
+				max-width: 1320px;
+				margin: 0 auto;
+			}
+
+			.demo-card {
+				background: white;
+				border: 1px solid #dbe3ee;
+				border-radius: 14px;
+				padding: 20px;
+				box-shadow: 0 10px 30px rgba(15, 23, 42, 0.08);
+			}
+
+			h1 {
+				margin: 0 0 8px;
+				font-size: 1.4rem;
+			}
+
+			.lede,
+			.hint,
+			.meta {
+				color: #526171;
+			}
+
+			.lede,
+			.hint {
+				margin: 0 0 14px;
+				line-height: 1.5;
+			}
+
+			.toolbar {
+				display: flex;
+				flex-wrap: wrap;
+				align-items: center;
+				gap: 10px;
+				margin-bottom: 14px;
+			}
+
+			button,
+			input {
+				font: inherit;
+			}
+
+			button {
+				padding: 8px 12px;
+				border: 1px solid #c7d2e0;
+				border-radius: 10px;
+				background: white;
+				cursor: pointer;
+			}
+
+			.tree-root,
+			.tree-children {
+				list-style: none;
+				margin: 0;
+				padding: 0;
+			}
+
+			.tree-root {
+				display: flex;
+				justify-content: center;
+				padding-top: 8px;
+			}
+
+			.tree-children {
+				position: relative;
+				display: flex;
+				justify-content: center;
+				gap: 28px;
+				margin-top: 26px;
+				padding-top: 22px;
+			}
+
+			.tree-children::before {
+				content: '';
+				position: absolute;
+				left: 25%;
+				right: 25%;
+				top: 0;
+				height: 1px;
+				background: #d5dce5;
+			}
+
+			.tree-branch {
+				position: relative;
+				display: flex;
+				flex-direction: column;
+				align-items: center;
+			}
+
+			.tree-children > .tree-branch::before {
+				content: '';
+				position: absolute;
+				top: -22px;
+				width: 1px;
+				height: 22px;
+				background: #d5dce5;
+			}
+
+			.tree-node {
+				position: relative;
+				width: 116px;
+				height: 116px;
+				border: 1px solid #d9e2ec;
+				border-radius: 999px;
+				background: #fcfdff;
+				display: flex;
+				flex-direction: column;
+				align-items: center;
+				justify-content: center;
+				gap: 10px;
+				transition: background-color 900ms ease, border-color 900ms ease, box-shadow 900ms ease;
+			}
+
+			.tree-node--flash {
+				background: #fff3bf;
+				border-color: #f59f00;
+				box-shadow: 0 0 0 2px rgba(245, 159, 0, 0.15);
+			}
+
+			.tree-node__render {
+				position: absolute;
+				top: 10px;
+				right: 12px;
+				font-size: 0.72rem;
+				color: #6b7280;
+			}
+
+			.tree-node__value {
+				font-size: 1.85rem;
+				font-weight: 700;
+				line-height: 1;
+			}
+
+			.tree-node__controls {
+				display: flex;
+				align-items: center;
+				gap: 8px;
+			}
+
+			.tree-node__button {
+				width: 28px;
+				height: 28px;
+				padding: 0;
+				border-radius: 999px;
+				font-size: 1rem;
+				line-height: 1;
+			}
+
+			@media (max-width: 760px) {
+				body {
+					padding: 16px;
+				}
+
+				.tree-children {
+					gap: 14px;
+					padding-top: 16px;
+					margin-top: 18px;
+				}
+
+				.tree-children > .tree-branch::before {
+					top: -16px;
+					height: 16px;
+				}
+
+				.tree-node {
+					width: 92px;
+					height: 92px;
+				}
+
+				.tree-node__value {
+					font-size: 1.45rem;
+				}
+			}
+		</style>
+	</head>
+	<body>
+		<div id="app"></div>
+		<script type="module" src="./rerenders.js"></script>
+	</body>
+</html>
