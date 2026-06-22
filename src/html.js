@@ -741,6 +741,11 @@ function getStableNestedKey(site, index) {
 	return key
 }
 
+/**
+ * @param {TemplateInstance} templateInstance
+ * @param {readonly Node[]} nodes
+ * @returns {void}
+ */
 function trackTemplateInstanceNodes(templateInstance, nodes) {
 	for (const node of nodes) nodeTemplateInstances.set(node, templateInstance)
 }
@@ -1193,8 +1198,11 @@ class TemplateInstance {
 	 */
 	applyValues(values) {
 		const sites = this.sites
+		/** @type {Element | null} */
 		let currentElement = null
+		/** @type {NonNullable<InterpolationSite['elementState']> | null} */
 		let currentElementState = null
+		/** @type {Map<string, { type: 'attribute'|'boolean-attribute'|'property'|'event', attributeName: string, value: unknown, force?: boolean }> | null} */
 		let currentBindings = null
 
 		const flushElementBindings = () => {
@@ -1251,9 +1259,9 @@ class TemplateInstance {
 				} else if (binding.type === 'boolean-attribute') {
 					if (binding.value) element.setAttribute(binding.attributeName, '')
 					else element.removeAttribute(binding.attributeName)
-				} else {
-					element.setAttribute(binding.attributeName, binding.value)
-				}
+					} else {
+						element.setAttribute(binding.attributeName, /** @type {string} */ (binding.value))
+					}
 			}
 
 			currentElementState.lastBindings = currentBindings
@@ -1275,7 +1283,7 @@ class TemplateInstance {
 			if (element !== currentElement) {
 				flushElementBindings()
 				currentElement = element
-				currentElementState = site.elementState
+					currentElementState = site.elementState || {}
 				currentBindings = new Map()
 			}
 
@@ -1311,6 +1319,7 @@ class TemplateInstance {
 						type = 'event'
 						attributeName = name.slice(1)
 						if (inputValue == null || inputValue === '' || inputValue === false) {
+							if (!currentBindings) continue
 							currentBindings.delete(getBindingKey(type, attributeName))
 							continue
 						}
@@ -1321,7 +1330,8 @@ class TemplateInstance {
 						bindingValue = String(inputValue ?? '')
 					}
 
-					currentBindings.set(getBindingKey(type, attributeName), {
+						if (!currentBindings) continue
+						currentBindings.set(getBindingKey(type, attributeName), {
 						type,
 						attributeName,
 						value: bindingValue,
@@ -1359,7 +1369,8 @@ class TemplateInstance {
 				for (const part of parts)
 					if (typeof part === 'number') processedValues[part] = attributeValues[attributeValueIndex++]
 
-				currentBindings.set(getBindingKey(site.type, site.attributeName || ''), {
+					if (!currentBindings) continue
+					currentBindings.set(getBindingKey(site.type, site.attributeName || ''), {
 					type: site.type,
 					attributeName: site.attributeName || '',
 					value: joinPartsWithValues(parts, processedValues),
@@ -1377,7 +1388,8 @@ class TemplateInstance {
 				} else if (parts.length === 1 && typeof parts[0] === 'string') setAttribute = parts[0].trim() !== ''
 				else setAttribute = true
 
-				currentBindings.set(getBindingKey(site.type, site.attributeName || ''), {
+					if (!currentBindings) continue
+					currentBindings.set(getBindingKey(site.type, site.attributeName || ''), {
 					type: site.type,
 					attributeName: site.attributeName || '',
 					value: setAttribute,
@@ -1392,7 +1404,8 @@ class TemplateInstance {
 				if (site.attributeName === '__pepperRef' && (!value || typeof value !== 'object' || !('current' in value))) {
 					throw new TypeError('Pepper ref bindings expect ref() objects, e.g. ref=${buttonRef}.')
 				}
-				currentBindings.set(getBindingKey(site.type, site.attributeName || ''), {
+					if (!currentBindings) continue
+					currentBindings.set(getBindingKey(site.type, site.attributeName || ''), {
 					type: site.type,
 					attributeName: site.attributeName || '',
 					value,
@@ -1408,11 +1421,13 @@ class TemplateInstance {
 
 			const bindingKey = getBindingKey(site.type, eventName)
 			if (inputValue == null || inputValue === '' || inputValue === false) {
+				if (!currentBindings) continue
 				currentBindings.delete(bindingKey)
 				continue
 			}
 
-			currentBindings.set(bindingKey, {
+				if (!currentBindings) continue
+				currentBindings.set(bindingKey, {
 				type: site.type,
 				attributeName: eventName,
 				value: inputValue,

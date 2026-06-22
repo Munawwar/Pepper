@@ -1,4 +1,4 @@
-// src/ssr.js
+// src/html-ssr.js
 var FORCE_SYMBOL = /* @__PURE__ */ Symbol("force");
 var TEMPLATE_RESULT_SYMBOL = /* @__PURE__ */ Symbol("template-result");
 var UNSAFE_HTML_SYMBOL = /* @__PURE__ */ Symbol("unsafe-html");
@@ -89,10 +89,14 @@ function serializeChildValue(value) {
   if (typeof value === "function") return serializeChildValue(value());
   if (looksTrustedTextValue(value)) return serializeTrustedTextValue(value);
   if (looksTemplateValue(value))
-    return serializeCompiledTemplate(getCompiledTemplate(
+    return serializeCompiledTemplate(
+      getCompiledTemplate(
+        /** @type {TemplateResult} */
+        value.strings
+      ),
       /** @type {TemplateResult} */
-      value.strings
-    ), value.values);
+      value.values
+    );
   if (looksLikeNode(value)) throw new Error("DOM nodes are not supported by pepper/ssr");
   return escapeHtml(String(value));
 }
@@ -315,7 +319,10 @@ function serializeTrustedTextValue(value) {
     return value[UNSAFE_HTML_SYMBOL] || value[UNSAFE_SVG_SYMBOL] || value[UNSAFE_MATHML_SYMBOL] || "";
   if (!(RAW_TEXT_SYMBOL in value)) return "";
   let text = value[RAW_TEXT_SYMBOL] || "";
-  for (const [pattern, replacement] of RAW_TEXT_REPLACEMENTS) text = text.replace(pattern, replacement);
+  for (const [pattern, replacement] of RAW_TEXT_REPLACEMENTS) {
+    if (typeof replacement === "string") text = text.replace(pattern, replacement);
+    else text = text.replace(pattern, replacement);
+  }
   return text;
 }
 
@@ -334,10 +341,15 @@ function isEqual(value1, value2) {
     return false;
   }
   if (Array.isArray(value1)) {
-    return value1.length === value2.length && value1.every((item, index) => isEqual(item, value2[index]));
+    const array2 = (
+      /** @type {unknown[]} */
+      value2
+    );
+    return value1.length === array2.length && value1.every((item, index) => isEqual(item, array2[index]));
   }
   if (value1 instanceof Date) {
-    return value1.getTime() === value2.getTime();
+    return value1.getTime() === /** @type {Date} */
+    value2.getTime();
   }
   if (value1 instanceof RegExp) {
     return value1.toString() === value2.toString();
@@ -346,7 +358,13 @@ function isEqual(value1, value2) {
     return false;
   }
   const objectKeys = keys(value1);
-  return objectKeys.length === keys(value2).length && objectKeys.every((key) => key in value2 && isEqual(value1[key], value2[key]));
+  return objectKeys.length === keys(value2).length && objectKeys.every((key) => key in /** @type {Record<string, unknown>} */
+  value2 && isEqual(
+    /** @type {Record<string, unknown>} */
+    value1[key],
+    /** @type {Record<string, unknown>} */
+    value2[key]
+  ));
 }
 
 // src/component-runtime.js
@@ -360,23 +378,39 @@ var currentSetupRuntime = null;
 var currentOwnerRuntime = null;
 function component(factory, options = {}) {
   if (typeof factory !== "function") throw new TypeError("Pepper component() expects a function.");
-  const wrapped = function PepperConfiguredComponent(api) {
-    return factory(api);
-  };
+  const wrapped = (
+    /** @type {ConfigurableComponent} */
+    (function PepperConfiguredComponent(api) {
+      return factory(
+        /** @type {any} */
+        api
+      );
+    })
+  );
   wrapped[COMPONENT_SYMBOL] = {
-    factory,
+    factory: (
+      /** @type {PepperComponent} */
+      factory
+    ),
     options: {
       ...defaultComponentOptions,
-      ...options
+      .../** @type {ComponentOptions} */
+      options
     }
   };
   return wrapped;
 }
 function getComponentDefinition(componentType) {
   if (typeof componentType !== "function") throw new TypeError("Pepper component tags expect a function component.");
-  const metadata = componentType[COMPONENT_SYMBOL];
+  const metadata = (
+    /** @type {ConfigurableComponent} */
+    componentType[COMPONENT_SYMBOL]
+  );
   return metadata || {
-    factory: componentType,
+    factory: (
+      /** @type {PepperComponent} */
+      componentType
+    ),
     options: defaultComponentOptions
   };
 }
@@ -387,7 +421,10 @@ function state(initialValue, comparator = isEqual) {
   return [
     () => value,
     (valueOrSetter, callback) => {
-      const nextValue = typeof valueOrSetter === "function" ? valueOrSetter(value) : valueOrSetter;
+      const nextValue = typeof valueOrSetter === "function" ? (
+        /** @type {(value: T) => T} */
+        valueOrSetter(value)
+      ) : valueOrSetter;
       if (comparator(nextValue, value)) return;
       value = nextValue;
       if (callback === false) return;
@@ -457,7 +494,6 @@ function createComponentRuntime(componentType, props, rootRecord, parentRuntime 
     currentRenderable: null,
     destroyed: false,
     dirty: true,
-    factory: definition.factory,
     hasDirtyDescendant: false,
     lastSeen: 0,
     model: null,
@@ -507,6 +543,7 @@ function renderComponentRuntime(runtime, tags) {
   if (runtime.pendingChangedProps.length) {
     for (const handler of runtime.propHandlers) handler(runtime.pendingChangedProps, runtime.pendingOldProps);
   }
+  if (!runtime.model) throw new Error("Pepper component runtime is missing its model.");
   runtime.renderPassId++;
   const previousOwnerRuntime = currentOwnerRuntime;
   currentOwnerRuntime = runtime;
@@ -518,13 +555,6 @@ function renderComponentRuntime(runtime, tags) {
   return runtime.currentRenderable;
 }
 function finalizeComponentRuntime(runtime) {
-  cleanupComponentChildren(runtime);
-  runtime.dirty = false;
-  runtime.hasDirtyDescendant = false;
-  runtime.pendingChangedProps = [];
-  runtime.pendingOldProps = runtime.props;
-}
-function cleanupComponentChildren(runtime) {
   for (const store of runtime.childStores.values()) {
     for (const [key, childRuntime] of store) {
       if (childRuntime.lastSeen === runtime.renderPassId) continue;
@@ -532,6 +562,10 @@ function cleanupComponentChildren(runtime) {
       store.delete(key);
     }
   }
+  runtime.dirty = false;
+  runtime.hasDirtyDescendant = false;
+  runtime.pendingChangedProps = [];
+  runtime.pendingOldProps = runtime.props;
 }
 function destroyComponentRuntime(runtime) {
   if (!runtime || runtime.destroyed) return;
@@ -655,7 +689,10 @@ function parseComponentBindings(attributesSource) {
     if (attributesSource.startsWith("...", cursor)) {
       const marker = readInterpolationMarker(attributesSource, cursor + 3);
       if (marker) {
-        bindings.push({ type: "spread", index: marker.index });
+        bindings.push(
+          /** @type {ComponentBinding} */
+          { type: "spread", index: marker.index }
+        );
         cursor = marker.end;
         continue;
       }
@@ -666,7 +703,10 @@ function parseComponentBindings(attributesSource) {
     if (!name) break;
     while (cursor < attributesSource.length && /\s/.test(attributesSource[cursor])) cursor++;
     if (attributesSource[cursor] !== "=") {
-      bindings.push({ type: "prop", name, parts: null });
+      bindings.push(
+        /** @type {ComponentBinding} */
+        { type: "prop", name, parts: null }
+      );
       continue;
     }
     cursor++;
@@ -683,7 +723,10 @@ function parseComponentBindings(attributesSource) {
       while (cursor < attributesSource.length && !/\s/.test(attributesSource[cursor])) cursor++;
       rawValue = attributesSource.slice(valueStart, cursor);
     }
-    bindings.push({ type: "prop", name, parts: parseInterpolationParts2(rawValue) });
+    bindings.push(
+      /** @type {ComponentBinding} */
+      { type: "prop", name, parts: parseInterpolationParts2(rawValue) }
+    );
   }
   return bindings;
 }
@@ -694,7 +737,7 @@ function compileComponentTemplate(strings) {
     (htmlString, string, index) => htmlString + string + (index < strings.length - 1 ? `${INTERPOLATION_MARKER2}${index}${INTERPOLATION_MARKER2}` : ""),
     ""
   );
-  const outputStrings = [""];
+  const outputStrings = Object.assign([""], { raw: [""] });
   const outputValues = [];
   let cursor = 0;
   let foundComponentSyntax = false;
@@ -717,6 +760,7 @@ function compileComponentTemplate(strings) {
         childrenSource
       });
       outputStrings.push("");
+      outputStrings.raw.push("");
       cursor = end;
       continue;
     }
@@ -724,20 +768,23 @@ function compileComponentTemplate(strings) {
     if (marker) {
       outputValues.push({ type: "value", index: marker.index });
       outputStrings.push("");
+      outputStrings.raw.push("");
       cursor = marker.end;
       continue;
     }
     outputStrings[outputStrings.length - 1] += source[cursor++];
   }
-  compiled = foundComponentSyntax ? { strings: outputStrings, values: outputValues } : null;
+  compiled = foundComponentSyntax ? { strings: (
+    /** @type {TemplateStringsArray} */
+    outputStrings
+  ), values: outputValues } : null;
   componentTemplateCache.set(strings, compiled);
   return compiled;
 }
 function getSourceTemplate(source) {
   let compiled = sourceTemplateCache.get(source);
   if (compiled) return compiled;
-  const strings = [""];
-  strings.raw = strings;
+  const strings = Object.assign([""], { raw: [""] });
   const indices = [];
   let cursor = 0;
   while (cursor < source.length) {
@@ -745,12 +792,16 @@ function getSourceTemplate(source) {
     if (marker) {
       indices.push(marker.index);
       strings.push("");
+      strings.raw.push("");
       cursor = marker.end;
       continue;
     }
     strings[strings.length - 1] += source[cursor++];
   }
-  compiled = { indices, strings };
+  compiled = { indices, strings: (
+    /** @type {TemplateStringsArray} */
+    strings
+  ) };
   sourceTemplateCache.set(source, compiled);
   return compiled;
 }
@@ -799,26 +850,45 @@ function createSsrTags(rootRecord) {
       const compiled = compileComponentTemplate(strings);
       if (!compiled) return html(strings, ...values);
       const lowered = lowerComponentTemplate(compiled, values, (entry) => createSsrComponentValue(rootRecord, entry, values));
+      if (!lowered) return html(strings, ...values);
       return html(lowered.strings, ...lowered.values);
     },
     mathml,
     svg
   };
 }
-function createSsrComponentValue(rootRecord, entry, values) {
+function createSsrComponentValue(rootRecord, descriptor, values) {
   return function renderComponentValue() {
-    const componentType = values[entry.componentIndex];
-    const { props } = resolveComponentProps(entry.bindings, values);
-    if (entry.childrenSource != null) props.children = () => renderSourceTemplate(rootRecord.ssrTags.html, entry.childrenSource, values);
+    const componentType = (
+      /** @type {PepperComponent} */
+      values[descriptor.componentIndex]
+    );
+    const { props } = resolveComponentProps(descriptor.bindings, values);
+    const childrenSource = descriptor.childrenSource;
+    if (childrenSource != null) {
+      props.children = () => renderSourceTemplate(
+        /** @type {SsrTags} */
+        rootRecord.ssrTags.html,
+        childrenSource,
+        values
+      );
+    }
     const runtime = createComponentRuntime(componentType, props, rootRecord, null);
-    const renderable = renderComponentRuntime(runtime, rootRecord.ssrTags);
+    const renderable = renderComponentRuntime(
+      runtime,
+      /** @type {SsrTags} */
+      rootRecord.ssrTags
+    );
     const serialized = typeof renderable === "function" ? renderable() : renderable;
     finalizeComponentRuntime(runtime);
     return serialized;
   };
 }
 function html2(strings, ...values) {
-  return publicSsrTagsHolder.ssrTags.html(strings, ...values);
+  return (
+    /** @type {SsrTags} */
+    publicSsrTagsHolder.ssrTags.html(strings, ...values)
+  );
 }
 function renderComponentToString(Component, props = {}) {
   const rootRecord = {
@@ -830,7 +900,11 @@ function renderComponentToString(Component, props = {}) {
   };
   rootRecord.ssrTags = createSsrTags(rootRecord);
   const runtime = createComponentRuntime(Component, props, rootRecord, null);
-  const renderable = renderComponentRuntime(runtime, rootRecord.ssrTags);
+  const renderable = renderComponentRuntime(
+    runtime,
+    /** @type {SsrTags} */
+    rootRecord.ssrTags
+  );
   const htmlString = renderToString(renderable);
   finalizeComponentRuntime(runtime);
   return htmlString;

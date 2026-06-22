@@ -1,4 +1,4 @@
-export * from './src/ssr.js'
+export * from './src/html-ssr.js'
 export { component, ref, state } from './index.js'
 
 export type RenderCallback = () => void
@@ -10,13 +10,13 @@ export type ComponentSetupApi<Props = Record<string, unknown>> = {
 }
 
 export type ComponentModel = {
-	render(html: typeof import('./src/ssr.js').html): unknown
+	render(html: typeof import('./src/html-ssr.js').html): unknown
 	[key: string]: unknown
 }
 
 export type PepperComponent<Props = Record<string, unknown>> = (
 	api: ComponentSetupApi<Props>
-) => ComponentModel | ((html: typeof import('./src/ssr.js').html) => unknown)
+) => ComponentModel | ((html: typeof import('./src/html-ssr.js').html) => unknown)
 
 export function renderComponentToString<Props = Record<string, unknown>>(
 	componentType: PepperComponent<Props>,

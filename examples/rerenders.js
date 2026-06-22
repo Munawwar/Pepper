@@ -2,8 +2,11 @@ import {ref, render, state} from '../src/index.js'
 
 const app = /** @type {HTMLDivElement} */ (document.getElementById('app'))
 
+/** @typedef {(strings: TemplateStringsArray, ...values: readonly unknown[]) => unknown} HtmlTag */
+
+/** @param {{ getProps(): { title: string, description: string, children?: () => unknown } }} api */
 function DemoFrame({getProps}) {
-	return html => html`
+	return /** @param {HtmlTag} html */ html => html`
 		<section class="demo-card">
 			<h1>${getProps().title}</h1>
 			<p class="lede">${getProps().description}</p>
@@ -12,16 +15,17 @@ function DemoFrame({getProps}) {
 	`
 }
 
+/** @param {{ getProps(): { path: string, depth: number, maxDepth: number } }} api */
 function TreeNode({getProps}) {
 	const nodeRef = ref()
 	const [getValue, setValue] = state(0)
 	let renderCount = 0
 	let flashTimer = 0
 
-	return html => {
+	return /** @param {HtmlTag} html */ html => {
 		renderCount++
 		queueMicrotask(() => {
-			const node = nodeRef.current
+			const node = /** @type {HTMLElement | null} */ (nodeRef.current)
 			if (!node) return
 			node.classList.remove('tree-node--flash')
 			void node.offsetWidth
@@ -67,7 +71,7 @@ function TreeNode({getProps}) {
 function RerenderDemo() {
 	const [getDepth, setDepth] = state(3)
 
-	return html => html`
+	return /** @param {HtmlTag} html */ html => html`
 		<${DemoFrame}
 			title="Pepper rerender visualizer"
 			description=${'Each tree node is its own component with local state. Click a deep leaf and watch which nodes flash. If ancestors flash too, Pepper is still bubbling rerenders up the tree.'}

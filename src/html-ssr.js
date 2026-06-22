@@ -33,15 +33,16 @@ const ATTRIBUTE_SITE_ERROR =
 const TRUSTED_TEXT_INPUT_ERROR = 'unsafeHTML(), unsafeSVG(), unsafeMathML(), and rawText() expect a string.'
 const TRUSTED_TEXT_CONTEXT_ERROR =
 	'unsafeHTML(), unsafeSVG(), unsafeMathML(), and rawText() are only allowed in text content interpolation.'
+/** @type {Array<[RegExp, string | ((match: string) => string)]>} */
 const RAW_TEXT_REPLACEMENTS = [
-	[/<\/script(?=[\t\n\f\r />])/gi, match => `\\x3C${match.slice(1)}`],
-	[/<script(?=[\t\n\f\r />])/gi, match => `\\x3C${match.slice(1)}`],
+	[/<\/script(?=[\t\n\f\r />])/gi, (match) => `\\x3C${match.slice(1)}`],
+	[/<script(?=[\t\n\f\r />])/gi, (match) => `\\x3C${match.slice(1)}`],
 	[/<!--/g, '\\x3C!--'],
-	[/<\/style(?=[\t\n\f\r />])/gi, match => `\\x3C${match.slice(1)}`],
-	[/<style(?=[\t\n\f\r />])/gi, match => `\\x3C${match.slice(1)}`],
-	[/<\/textarea(?=[\t\n\f\r />])/gi, match => `\\x3C${match.slice(1)}`],
-	[/<\/title(?=[\t\n\f\r />])/gi, match => `\\x3C${match.slice(1)}`],
-	[/<\/template(?=[\t\n\f\r />])/gi, match => `\\x3C${match.slice(1)}`],
+	[/<\/style(?=[\t\n\f\r />])/gi, (match) => `\\x3C${match.slice(1)}`],
+	[/<style(?=[\t\n\f\r />])/gi, (match) => `\\x3C${match.slice(1)}`],
+	[/<\/textarea(?=[\t\n\f\r />])/gi, (match) => `\\x3C${match.slice(1)}`],
+	[/<\/title(?=[\t\n\f\r />])/gi, (match) => `\\x3C${match.slice(1)}`],
+	[/<\/template(?=[\t\n\f\r />])/gi, (match) => `\\x3C${match.slice(1)}`],
 ]
 let ssrTemplateCache = new WeakMap()
 
@@ -213,7 +214,10 @@ function serializeChildValue(value) {
 	if (typeof value === 'function') return serializeChildValue(value())
 	if (looksTrustedTextValue(value)) return serializeTrustedTextValue(value)
 	if (looksTemplateValue(value))
-		return serializeCompiledTemplate(getCompiledTemplate(/** @type {TemplateResult} */ (value).strings), value.values)
+		return serializeCompiledTemplate(
+			getCompiledTemplate(/** @type {TemplateResult} */ (value).strings),
+			/** @type {TemplateResult} */ (value).values,
+		)
 	if (looksLikeNode(value)) throw new Error('DOM nodes are not supported by pepper/ssr')
 
 	return escapeHtml(String(value))
@@ -557,6 +561,9 @@ function serializeTrustedTextValue(value) {
 		return value[UNSAFE_HTML_SYMBOL] || value[UNSAFE_SVG_SYMBOL] || value[UNSAFE_MATHML_SYMBOL] || ''
 	if (!(RAW_TEXT_SYMBOL in value)) return ''
 	let text = value[RAW_TEXT_SYMBOL] || ''
-	for (const [pattern, replacement] of RAW_TEXT_REPLACEMENTS) text = text.replace(pattern, replacement)
+	for (const [pattern, replacement] of RAW_TEXT_REPLACEMENTS) {
+		if (typeof replacement === 'string') text = text.replace(pattern, replacement)
+		else text = text.replace(pattern, replacement)
+	}
 	return text
 }

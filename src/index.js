@@ -30,29 +30,58 @@ import {
 import { renderComponentToString } from './pepper-ssr.js'
 import { Store } from './store.js'
 
-const rootMap = new WeakMap()
-const singleValueStrings = ['', '']
-singleValueStrings.raw = singleValueStrings
-const publicTagsHolder = { domTags: null }
-
 /**
+ * @typedef {string[] & { raw: string[] }} MutableTemplateStringsArray
  * @typedef {{ debugKeys?: boolean }} RenderOptions
+ * @typedef {import('./component-runtime.js').ComponentRuntime} ComponentRuntime
+ * @typedef {import('./component-runtime.js').ComponentModel} ComponentModel
+ * @typedef {import('./component-runtime.js').PepperComponent} PepperComponent
+ * @typedef {import('./component-runtime.js').RuntimeTags} RuntimeTags
+ * @typedef {import('./component-syntax.js').ComponentDescriptor} ComponentDescriptor
+ * @typedef {{
+ *   Component: PepperComponent,
+ *   container: Element,
+ *   domTags: DomTags,
+ *   flushScheduled: boolean,
+ *   mounted: boolean,
+ *   options: RenderOptions,
+ *   pendingCallbacks: Array<() => void>,
+ *   pendingMounts: ComponentRuntime[],
+ *   scheduleRender(): void,
+ *   topRuntime: ComponentRuntime | null,
+ * }} RootRecord
+ * @typedef {{
+ *   html(strings: TemplateStringsArray, ...values: unknown[]): ReturnType<typeof baseHtml>,
+  *   mathml: typeof baseMathml,
+  *   svg: typeof baseSvg,
+ * }} DomTags
  */
 
-function asTemplateView(tag, value) {
-	return tag(singleValueStrings, value)
-}
+/** @type {WeakMap<Element, RootRecord>} */
+const rootMap = new WeakMap()
+/** @type {TemplateStringsArray} */
+const singleValueStrings = /** @type {TemplateStringsArray} */ (
+	Object.assign(/** @type {MutableTemplateStringsArray} */ (['', '']), {raw: ['', '']})
+)
 
+/**
+ * @param {unknown} renderable
+ * @param {ComponentRuntime} runtime
+ * @param {ChildNode[] | null} [liveNodes=null]
+ * @returns {Node[]}
+ */
 function realizeDomRenderable(renderable, runtime, liveNodes = null) {
-	const view = typeof renderable === 'function' ? renderable : asTemplateView(runtime.rootRecord.domTags.html, renderable)
+	const view = /** @type {(key?: symbol, liveNodes?: ChildNode[]) => Node[]} */ (
+		typeof renderable === 'function'
+			? renderable
+			: /** @type {DomTags} */ (runtime.rootRecord.domTags).html(singleValueStrings, renderable)
+	)
 	return liveNodes ? view(runtime.viewKey, liveNodes) : view(runtime.viewKey)
 }
 
-function flushCallbacks(rootRecord) {
-	const callbacks = rootRecord.pendingCallbacks.splice(0)
-	for (const callback of callbacks) callback()
-}
-
+/**
+ * @returns {DomTags}
+ */
 function createDomTags() {
 	return {
 		html(strings, ...values) {
@@ -65,6 +94,7 @@ function createDomTags() {
 			const lowered = lowerComponentTemplate(compiled, values, entry => (
 				createDomComponentValue(ownerRuntime, entry, values)
 			))
+			if (!lowered) return baseHtml(strings, ...values)
 			if (compiled.strings.every(string => string === '')) {
 				const keyedInstanceIds = new Map()
 				return function renderComponentOnlyTemplate(key = Symbol()) {
@@ -86,14 +116,22 @@ function createDomTags() {
 		svg: baseSvg,
 	}
 }
+const domTags = createDomTags()
 
-function createDomComponentValue(ownerRuntime, entry, values) {
+/**
+ * @param {ComponentRuntime} ownerRuntime
+ * @param {ComponentDescriptor} descriptor
+ * @param {unknown[]} values
+ * @returns {(instanceKey?: symbol) => Node[]}
+ */
+function createDomComponentValue(ownerRuntime, descriptor, values) {
 	return function renderComponentValue(instanceKey = Symbol()) {
-		const store = getOrCreateChildStore(ownerRuntime, entry)
-		const componentType = values[entry.componentIndex]
-		const { key, props } = resolveComponentProps(entry.bindings, values)
-		if (entry.childrenSource != null) {
-			props.children = () => renderSourceTemplate(ownerRuntime.rootRecord.domTags.html, entry.childrenSource, values)
+		const store = getOrCreateChildStore(ownerRuntime, descriptor)
+		const componentType = /** @type {PepperComponent} */ (values[descriptor.componentIndex])
+		const { key, props } = resolveComponentProps(descriptor.bindings, values)
+		const childrenSource = descriptor.childrenSource
+		if (childrenSource != null) {
+			props.children = () => renderSourceTemplate(/** @type {DomTags} */ (ownerRuntime.rootRecord.domTags).html, childrenSource, values)
 		}
 		const childKey = key ?? instanceKey
 		let runtime = store.get(childKey)
@@ -106,9 +144,9 @@ function createDomComponentValue(ownerRuntime, entry, values) {
 		}
 
 		runtime.lastSeen = ownerRuntime.renderPassId
-		const renderable = renderComponentRuntime(runtime, ownerRuntime.rootRecord.domTags)
+		const renderable = renderComponentRuntime(runtime, /** @type {RuntimeTags} */ (ownerRuntime.rootRecord.domTags))
 		const nodes = realizeDomRenderable(renderable, runtime)
-		const debugKeyValue = ownerRuntime.rootRecord.options.debugKeys === true && key != null ? String(key) : ''
+		const debugKeyValue = ownerRuntime.rootRecord.options?.debugKeys === true && key != null ? String(key) : ''
 		if (runtime.debugKeyNodes)
 			for (const node of runtime.debugKeyNodes)
 				if (node instanceof Element && (!debugKeyValue || !nodes.includes(node))) node.removeAttribute('x-key')
@@ -124,31 +162,40 @@ function createDomComponentValue(ownerRuntime, entry, values) {
 	}
 }
 
-function resolveContainer(container) {
-	return typeof container === 'string' ? document.querySelector(container) : container
-}
-
+/**
+ * @template {Record<string, unknown>} [Props=Record<string, unknown>]
+ * @param {PepperComponent} Component
+ * @param {Element} container
+ * @param {Props} props
+ * @param {RenderOptions} options
+ * @returns {RootRecord}
+ */
 function createRootRecord(Component, container, props, options) {
+	/** @type {RootRecord} */
 	const rootRecord = {
 		Component,
 		container,
-		domTags: null,
+		domTags,
 		flushScheduled: false,
-		hydrating: false,
 		mounted: false,
 		pendingCallbacks: [],
 		pendingMounts: [],
-		rootKey: Symbol('pepper-root'),
 		options,
+		scheduleRender() {},
 		topRuntime: null,
 	}
 	rootRecord.scheduleRender = () => scheduleRootRender(rootRecord)
-	rootRecord.domTags = createDomTags()
 	rootRecord.topRuntime = createComponentRuntime(Component, props, rootRecord, null)
 	return rootRecord
 }
 
+/**
+ * @param {RootRecord} rootRecord
+ * @param {boolean} [hydrateOnly=false]
+ * @returns {void}
+ */
 function performRootRender(rootRecord, hydrateOnly = false) {
+	if (!rootRecord.topRuntime) throw new Error('Pepper root is missing its top runtime.')
 	const liveNodes = hydrateOnly ? Array.from(rootRecord.container.childNodes) : null
 	const renderable = renderComponentRuntime(rootRecord.topRuntime, rootRecord.domTags)
 	const nodes = realizeDomRenderable(renderable, rootRecord.topRuntime, liveNodes && liveNodes.length ? liveNodes : null)
@@ -156,9 +203,13 @@ function performRootRender(rootRecord, hydrateOnly = false) {
 	if (!rootRecord.mounted && !hydrateOnly) rootRecord.container.replaceChildren(...nodes)
 	rootRecord.mounted = true
 	flushMounts(rootRecord)
-	flushCallbacks(rootRecord)
+	for (const callback of rootRecord.pendingCallbacks.splice(0)) callback()
 }
 
+/**
+ * @param {RootRecord} rootRecord
+ * @returns {void}
+ */
 function scheduleRootRender(rootRecord) {
 	if (rootRecord.flushScheduled) return
 	rootRecord.flushScheduled = true
@@ -168,46 +219,48 @@ function scheduleRootRender(rootRecord) {
 	})
 }
 
-function destroyRootRecord(rootRecord) {
-	destroyComponentRuntime(rootRecord.topRuntime)
-	rootMap.delete(rootRecord.container)
-}
-
+/**
+ * @param {PepperComponent} Component
+ * @param {string | Element} container
+ * @param {Record<string, unknown>} [props={}]
+ * @param {RenderOptions} [options={}]
+ * @param {boolean} [hydrateOnly=false]
+ * @returns {ComponentModel}
+ */
 function mountRoot(Component, container, props = {}, options = {}, hydrateOnly = false) {
-	const target = resolveContainer(container)
+	const target = typeof container === 'string' ? document.querySelector(container) : container
 	if (!(target instanceof Element)) {
 		throw new Error('Pepper render/hydrate target must be a DOM element or selector.')
 	}
 
 	let rootRecord = rootMap.get(target)
 	if (!rootRecord || rootRecord.Component !== Component) {
-		if (rootRecord) destroyRootRecord(rootRecord)
+		if (rootRecord) {
+			destroyComponentRuntime(rootRecord.topRuntime)
+			rootMap.delete(rootRecord.container)
+		}
 		rootRecord = createRootRecord(Component, target, props, options)
 		rootMap.set(target, rootRecord)
 		performRootRender(rootRecord, hydrateOnly)
+		if (!rootRecord.topRuntime?.model) throw new Error('Pepper root did not produce a component model.')
 		return rootRecord.topRuntime.model
 	}
 
 	rootRecord.options = options
-	syncComponentProps(rootRecord.topRuntime, props)
+	syncComponentProps(/** @type {ComponentRuntime} */ (rootRecord.topRuntime), props)
 	performRootRender(rootRecord, hydrateOnly && !rootRecord.mounted)
+	if (!rootRecord.topRuntime?.model) throw new Error('Pepper root did not produce a component model.')
 	return rootRecord.topRuntime.model
 }
 
 /**
  * Hydrate a Pepper component tree into existing server-rendered DOM.
  *
- * @template {Record<string, unknown>} [Props=Record<string, unknown>]
- * @param {(api: {
- *   getProps(): Props,
- *   onMount(handler: () => void | (() => void)): void,
- *   onProps(handler: (changedProps: string[], oldProps: Props) => void): void,
- *   update(callback?: (() => void)): void,
- * }) => { render(html: typeof baseHtml): unknown } | ((html: typeof baseHtml) => unknown)} Component
+ * @param {PepperComponent} Component
  * @param {string | Element} container
- * @param {Props} [props={}]
+ * @param {Record<string, unknown>} [props={}]
  * @param {RenderOptions} [options={}]
- * @returns {{ render?: (html: typeof baseHtml) => unknown, [key: string]: unknown }}
+ * @returns {ComponentModel}
  */
 function hydrate(Component, container, props = {}, options = {}) {
 	return mountRoot(Component, container, props, options, true)
@@ -216,17 +269,11 @@ function hydrate(Component, container, props = {}, options = {}) {
 /**
  * Render a Pepper component tree into a DOM container.
  *
- * @template {Record<string, unknown>} [Props=Record<string, unknown>]
- * @param {(api: {
- *   getProps(): Props,
- *   onMount(handler: () => void | (() => void)): void,
- *   onProps(handler: (changedProps: string[], oldProps: Props) => void): void,
- *   update(callback?: (() => void)): void,
- * }) => { render(html: typeof baseHtml): unknown } | ((html: typeof baseHtml) => unknown)} Component
+ * @param {PepperComponent} Component
  * @param {string | Element} container
- * @param {Props} [props={}]
+ * @param {Record<string, unknown>} [props={}]
  * @param {RenderOptions} [options={}]
- * @returns {{ render?: (html: typeof baseHtml) => unknown, [key: string]: unknown }}
+ * @returns {ComponentModel}
  */
 function render(Component, container, props = {}, options = {}) {
 	return mountRoot(Component, container, props, options, false)
@@ -235,27 +282,20 @@ function render(Component, container, props = {}, options = {}) {
 /**
  * Render a Pepper component to an HTML string using the SSR backend.
  *
- * @template {Record<string, unknown>} [Props=Record<string, unknown>]
- * @param {(api: {
- *   getProps(): Props,
- *   onMount(handler: () => void | (() => void)): void,
- *   onProps(handler: (changedProps: string[], oldProps: Props) => void): void,
- *   update(callback?: (() => void)): void,
- * }) => { render(html: import('./ssr.js').html): unknown } | ((html: import('./ssr.js').html) => unknown)} Component
- * @param {Props} [props={}]
+ * @param {PepperComponent} Component
+ * @param {Record<string, unknown>} [props={}]
  * @returns {string}
  */
 function renderToString(Component, props = {}) {
 	return renderComponentToString(Component, props)
 }
 
-publicTagsHolder.domTags = createDomTags()
 /**
  * A Pepper `html` template tag function for component-aware DOM rendering and hydration.
  *
  * @type {typeof baseHtml}
  */
-const html = publicTagsHolder.domTags.html
+const html = domTags.html
 /**
  * A Pepper `svg` template tag function for DOM rendering and hydration.
  *

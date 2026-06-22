@@ -6,8 +6,64 @@ const defaultComponentOptions = {
 	memo: true,
 	propsComparator: null,
 }
+/** @type {ComponentRuntime | null} */
 let currentSetupRuntime = null
+/** @type {ComponentRuntime | null} */
 let currentOwnerRuntime = null
+
+/**
+ * @typedef {() => void} RenderCallback
+ * @typedef {{ current: Node | null }} RuntimeRef
+ * @typedef {(strings: TemplateStringsArray, ...values: readonly unknown[]) => unknown} TemplateTag
+ * @typedef {{ html: TemplateTag }} RuntimeTags
+ * @typedef {{
+ *   getProps(): Record<string, unknown>,
+ *   onMount(handler: () => void | (() => void)): void,
+ *   onProps(handler: (changedProps: string[], oldProps: Record<string, unknown>) => void): void,
+ *   update(callback?: RenderCallback): void,
+ * }} ComponentSetupApi
+ * @typedef {{ render(html: TemplateTag): unknown, [key: string]: unknown }} ComponentModel
+ * @typedef {(api: ComponentSetupApi) => ComponentModel | ((html: TemplateTag) => unknown)} PepperComponent
+ * @typedef {{
+ *   autoEffectEvent: boolean,
+ *   memo: boolean,
+ *   propsComparator: ((previousProps: Record<string, unknown>, nextProps: Record<string, unknown>) => boolean) | null,
+ * }} ComponentOptions
+ * @typedef {PepperComponent & { [COMPONENT_SYMBOL]?: ComponentDefinition }} ConfigurableComponent
+ * @typedef {{ factory: PepperComponent, options: ComponentOptions }} ComponentDefinition
+ * @typedef {{
+ *   pendingCallbacks: RenderCallback[],
+ *   pendingMounts: ComponentRuntime[],
+ *   scheduleRender(): void,
+ *   domTags?: RuntimeTags,
+ *   options?: { debugKeys?: boolean },
+ *   [key: string]: unknown,
+ * }} RootRecord
+ * @typedef {{
+ *   childStores: Map<unknown, Map<unknown, ComponentRuntime>>,
+ *   componentType: PepperComponent,
+ *   currentRenderable: unknown,
+ *   debugKeyNodes?: Element[],
+ *   destroyed: boolean,
+ *   dirty: boolean,
+ *   hasDirtyDescendant: boolean,
+ *   lastSeen: number,
+ *   model: ComponentModel | null,
+ *   mountCleanups: Array<() => void>,
+ *   mountHandlers: Array<() => void | (() => void)>,
+ *   needsMount: boolean,
+ *   options: ComponentOptions,
+ *   parentRuntime: ComponentRuntime | null,
+ *   pendingChangedProps: string[],
+ *   pendingOldProps: Record<string, unknown>,
+ *   propHandlers: Array<(changedProps: string[], oldProps: Record<string, unknown>) => void>,
+ *   props: Record<string, unknown>,
+ *   refs: RuntimeRef[],
+ *   renderPassId: number,
+ *   rootRecord: RootRecord,
+ *   viewKey: symbol,
+ * }} ComponentRuntime
+ */
 
 /**
  * Wrap a function component with explicit Pepper runtime options.
@@ -24,28 +80,32 @@ let currentOwnerRuntime = null
  *   memo?: boolean,
  *   propsComparator?: ((previousProps: Props, nextProps: Props) => boolean) | null,
  * }} [options]
- * @returns {typeof factory}
+ * @returns {PepperComponent}
  */
 function component(factory, options = {}) {
 	if (typeof factory !== 'function') throw new TypeError('Pepper component() expects a function.')
-	const wrapped = function PepperConfiguredComponent(api) {
-		return factory(api)
-	}
+	const wrapped = /** @type {ConfigurableComponent} */ (function PepperConfiguredComponent(api) {
+		return factory(/** @type {any} */ (api))
+	})
 	wrapped[COMPONENT_SYMBOL] = {
-		factory,
+		factory: /** @type {PepperComponent} */ (factory),
 		options: {
 			...defaultComponentOptions,
-			...options,
+			.../** @type {ComponentOptions} */ (options),
 		},
 	}
 	return wrapped
 }
 
+/**
+ * @param {unknown} componentType
+ * @returns {ComponentDefinition}
+ */
 function getComponentDefinition(componentType) {
 	if (typeof componentType !== 'function') throw new TypeError('Pepper component tags expect a function component.')
-	const metadata = componentType[COMPONENT_SYMBOL]
+	const metadata = /** @type {ConfigurableComponent} */ (componentType)[COMPONENT_SYMBOL]
 	return metadata || {
-		factory: componentType,
+		factory: /** @type {PepperComponent} */ (componentType),
 		options: defaultComponentOptions,
 	}
 }
@@ -65,7 +125,9 @@ function state(initialValue, comparator = isEqual) {
 	return [
 		() => value,
 		(valueOrSetter, callback) => {
-			const nextValue = typeof valueOrSetter === 'function' ? valueOrSetter(value) : valueOrSetter
+			const nextValue = typeof valueOrSetter === 'function'
+				? /** @type {(value: T) => T} */ (valueOrSetter)(value)
+				: valueOrSetter
 			if (comparator(nextValue, value)) return
 			value = nextValue
 			if (callback === false) return
@@ -81,6 +143,7 @@ function state(initialValue, comparator = isEqual) {
  * @returns {{ current: T | null }}
  */
 function ref() {
+	/** @type {ComponentRuntime | null} */
 	const runtime = currentSetupRuntime
 	if (!runtime) throw new Error('ref() can only be used while creating a Pepper component.')
 	const refObject = { current: null }
@@ -88,6 +151,11 @@ function ref() {
 	return refObject
 }
 
+/**
+ * @param {ComponentRuntime} runtime
+ * @param {RenderCallback} [callback]
+ * @returns {void}
+ */
 function markRuntimeDirty(runtime, callback) {
 	if (callback && runtime.rootRecord.pendingCallbacks) runtime.rootRecord.pendingCallbacks.push(callback)
 	runtime.dirty = true
@@ -95,16 +163,25 @@ function markRuntimeDirty(runtime, callback) {
 	runtime.rootRecord.scheduleRender()
 }
 
+/**
+ * @param {ComponentRuntime} runtime
+ * @param {string} key
+ * @param {unknown} value
+ * @returns {boolean}
+ */
 function shouldIgnorePropForMemo(runtime, key, value) {
-	return (
-		runtime.options.autoEffectEvent !== false &&
-		typeof value === 'function' &&
-		/^on[A-Z]/.test(key)
-	)
+	return runtime.options.autoEffectEvent !== false && typeof value === 'function' && /^on[A-Z]/.test(key)
 }
 
+/**
+ * @param {ComponentRuntime} runtime
+ * @param {Record<string, unknown>} [nextProps={}]
+ * @param {boolean} [forceAll=false]
+ * @returns {boolean}
+ */
 function syncComponentProps(runtime, nextProps = {}, forceAll = false) {
 	const oldProps = runtime.props
+	/** @type {Record<string, unknown>} */
 	const normalizedProps = {}
 	const keys = new Set([...Object.keys(oldProps), ...Object.keys(nextProps)])
 	const changedProps = []
@@ -145,15 +222,23 @@ function syncComponentProps(runtime, nextProps = {}, forceAll = false) {
 	return changedProps.length > 0
 }
 
+/**
+ * @template {Record<string, unknown>} [Props=Record<string, unknown>]
+ * @param {PepperComponent} componentType
+ * @param {Props} props
+ * @param {RootRecord} rootRecord
+ * @param {ComponentRuntime | null} [parentRuntime=null]
+ * @returns {ComponentRuntime}
+ */
 function createComponentRuntime(componentType, props, rootRecord, parentRuntime = null) {
 	const definition = getComponentDefinition(componentType)
+	/** @type {ComponentRuntime} */
 	const runtime = {
 		childStores: new Map(),
 		componentType,
 		currentRenderable: null,
 		destroyed: false,
 		dirty: true,
-		factory: definition.factory,
 		hasDirtyDescendant: false,
 		lastSeen: 0,
 		model: null,
@@ -173,6 +258,7 @@ function createComponentRuntime(componentType, props, rootRecord, parentRuntime 
 	}
 	syncComponentProps(runtime, props, true)
 
+	/** @type {ComponentSetupApi} */
 	const api = {
 		getProps: () => runtime.props,
 		onMount: handler => {
@@ -202,6 +288,11 @@ function createComponentRuntime(componentType, props, rootRecord, parentRuntime 
 	return runtime
 }
 
+/**
+ * @param {ComponentRuntime} runtime
+ * @param {RuntimeTags} tags
+ * @returns {unknown}
+ */
 function renderComponentRuntime(runtime, tags) {
 	if (
 		runtime.currentRenderable &&
@@ -213,6 +304,7 @@ function renderComponentRuntime(runtime, tags) {
 	if (runtime.pendingChangedProps.length) {
 		for (const handler of runtime.propHandlers) handler(runtime.pendingChangedProps, runtime.pendingOldProps)
 	}
+	if (!runtime.model) throw new Error('Pepper component runtime is missing its model.')
 
 	runtime.renderPassId++
 	const previousOwnerRuntime = currentOwnerRuntime
@@ -225,15 +317,11 @@ function renderComponentRuntime(runtime, tags) {
 	return runtime.currentRenderable
 }
 
+/**
+ * @param {ComponentRuntime} runtime
+ * @returns {void}
+ */
 function finalizeComponentRuntime(runtime) {
-	cleanupComponentChildren(runtime)
-	runtime.dirty = false
-	runtime.hasDirtyDescendant = false
-	runtime.pendingChangedProps = []
-	runtime.pendingOldProps = runtime.props
-}
-
-function cleanupComponentChildren(runtime) {
 	for (const store of runtime.childStores.values()) {
 		for (const [key, childRuntime] of store) {
 			if (childRuntime.lastSeen === runtime.renderPassId) continue
@@ -241,8 +329,16 @@ function cleanupComponentChildren(runtime) {
 			store.delete(key)
 		}
 	}
+	runtime.dirty = false
+	runtime.hasDirtyDescendant = false
+	runtime.pendingChangedProps = []
+	runtime.pendingOldProps = runtime.props
 }
 
+/**
+ * @param {ComponentRuntime | null | undefined} runtime
+ * @returns {void}
+ */
 function destroyComponentRuntime(runtime) {
 	if (!runtime || runtime.destroyed) return
 	runtime.destroyed = true
@@ -255,6 +351,10 @@ function destroyComponentRuntime(runtime) {
 	for (const runtimeRef of runtime.refs) runtimeRef.current = null
 }
 
+/**
+ * @param {RootRecord} rootRecord
+ * @returns {void}
+ */
 function flushMounts(rootRecord) {
 	const pendingMounts = rootRecord.pendingMounts.splice(0)
 	for (const runtime of pendingMounts) {
@@ -267,10 +367,18 @@ function flushMounts(rootRecord) {
 	}
 }
 
+/**
+ * @returns {ComponentRuntime | null}
+ */
 function getCurrentOwnerRuntime() {
 	return currentOwnerRuntime
 }
 
+/**
+ * @param {ComponentRuntime} ownerRuntime
+ * @param {unknown} descriptor
+ * @returns {Map<unknown, ComponentRuntime>}
+ */
 function getOrCreateChildStore(ownerRuntime, descriptor) {
 	let store = ownerRuntime.childStores.get(descriptor)
 	if (!store) ownerRuntime.childStores.set(descriptor, (store = new Map()))
@@ -283,10 +391,8 @@ export {
 	destroyComponentRuntime,
 	finalizeComponentRuntime,
 	flushMounts,
-	getComponentDefinition,
 	getCurrentOwnerRuntime,
 	getOrCreateChildStore,
-	markRuntimeDirty,
 	ref,
 	renderComponentRuntime,
 	state,

@@ -349,7 +349,8 @@ describe('html template function', () => {
 			'?hidden': false,
 			'@click': () => fired.push('second'),
 		})
-		const fired = []
+			/** @type {string[]} */
+			const fired = []
 
 		const render = () =>
 			/** @type {[HTMLButtonElement]} */ (html`<button ...${first} ...${second}></button>`(key))
@@ -378,7 +379,8 @@ describe('html template function', () => {
 
 	it('uses one winning event handler for spread and explicit bindings', () => {
 		const key = Symbol()
-		const fired = []
+			/** @type {string[]} */
+			const fired = []
 		let spreadAtEnd = /** @type {Record<string, unknown>} */ ({'@click': () => fired.push('spread-end')})
 		let spreadBeforeExplicit = /** @type {Record<string, unknown>} */ ({
 			'@click': () => fired.push('spread-before-explicit'),

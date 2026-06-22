@@ -796,7 +796,7 @@ var TemplateInstance = class {
           if (binding.value) element.setAttribute(binding.attributeName, "");
           else element.removeAttribute(binding.attributeName);
         } else {
-          element.setAttribute(binding.attributeName, binding.value);
+          element.setAttribute(binding.attributeName, String(binding.value));
         }
       }
       currentElementState.lastBindings = currentBindings;
@@ -821,7 +821,7 @@ var TemplateInstance = class {
       if (element !== currentElement) {
         flushElementBindings();
         currentElement = element;
-        currentElementState = site.elementState;
+        currentElementState = site.elementState || {};
         currentBindings = /* @__PURE__ */ new Map();
       }
       const parts = site.parts || [];
@@ -850,6 +850,7 @@ var TemplateInstance = class {
             type = "event";
             attributeName = name.slice(1);
             if (inputValue2 == null || inputValue2 === "" || inputValue2 === false) {
+              if (!currentBindings) continue;
               currentBindings.delete(getBindingKey(type, attributeName));
               continue;
             }
@@ -859,6 +860,7 @@ var TemplateInstance = class {
               throw new Error(ATTRIBUTE_SITE_ERROR);
             bindingValue = String(inputValue2 ?? "");
           }
+          if (!currentBindings) continue;
           currentBindings.set(getBindingKey(type, attributeName), {
             type,
             attributeName,
@@ -891,6 +893,7 @@ var TemplateInstance = class {
         let attributeValueIndex = 0;
         for (const part of parts)
           if (typeof part === "number") processedValues[part] = attributeValues[attributeValueIndex++];
+        if (!currentBindings) continue;
         currentBindings.set(getBindingKey(site.type, site.attributeName || ""), {
           type: site.type,
           attributeName: site.attributeName || "",
@@ -907,6 +910,7 @@ var TemplateInstance = class {
           setAttribute = !!value;
         } else if (parts.length === 1 && typeof parts[0] === "string") setAttribute = parts[0].trim() !== "";
         else setAttribute = true;
+        if (!currentBindings) continue;
         currentBindings.set(getBindingKey(site.type, site.attributeName || ""), {
           type: site.type,
           attributeName: site.attributeName || "",
@@ -921,6 +925,7 @@ var TemplateInstance = class {
         if (site.attributeName === "__pepperRef" && (!value || typeof value !== "object" || !("current" in value))) {
           throw new TypeError("Pepper ref bindings expect ref() objects, e.g. ref=${buttonRef}.");
         }
+        if (!currentBindings) continue;
         currentBindings.set(getBindingKey(site.type, site.attributeName || ""), {
           type: site.type,
           attributeName: site.attributeName || "",
@@ -935,9 +940,11 @@ var TemplateInstance = class {
       if (typeof inputValue === "string" && inputValue.trim() === "") inputValue = null;
       const bindingKey = getBindingKey(site.type, eventName);
       if (inputValue == null || inputValue === "" || inputValue === false) {
+        if (!currentBindings) continue;
         currentBindings.delete(bindingKey);
         continue;
       }
+      if (!currentBindings) continue;
       currentBindings.set(bindingKey, {
         type: site.type,
         attributeName: eventName,
@@ -978,10 +985,15 @@ function isEqual(value1, value2) {
     return false;
   }
   if (Array.isArray(value1)) {
-    return value1.length === value2.length && value1.every((item, index) => isEqual(item, value2[index]));
+    const array2 = (
+      /** @type {unknown[]} */
+      value2
+    );
+    return value1.length === array2.length && value1.every((item, index) => isEqual(item, array2[index]));
   }
   if (value1 instanceof Date) {
-    return value1.getTime() === value2.getTime();
+    return value1.getTime() === /** @type {Date} */
+    value2.getTime();
   }
   if (value1 instanceof RegExp) {
     return value1.toString() === value2.toString();
@@ -990,7 +1002,13 @@ function isEqual(value1, value2) {
     return false;
   }
   const objectKeys = keys(value1);
-  return objectKeys.length === keys(value2).length && objectKeys.every((key) => key in value2 && isEqual(value1[key], value2[key]));
+  return objectKeys.length === keys(value2).length && objectKeys.every((key) => key in /** @type {Record<string, unknown>} */
+  value2 && isEqual(
+    /** @type {Record<string, unknown>} */
+    value1[key],
+    /** @type {Record<string, unknown>} */
+    value2[key]
+  ));
 }
 
 // src/component-runtime.js
@@ -1004,23 +1022,39 @@ var currentSetupRuntime = null;
 var currentOwnerRuntime = null;
 function component(factory, options = {}) {
   if (typeof factory !== "function") throw new TypeError("Pepper component() expects a function.");
-  const wrapped = function PepperConfiguredComponent(api) {
-    return factory(api);
-  };
+  const wrapped = (
+    /** @type {ConfigurableComponent} */
+    (function PepperConfiguredComponent(api) {
+      return factory(
+        /** @type {any} */
+        api
+      );
+    })
+  );
   wrapped[COMPONENT_SYMBOL] = {
-    factory,
+    factory: (
+      /** @type {PepperComponent} */
+      factory
+    ),
     options: {
       ...defaultComponentOptions,
-      ...options
+      .../** @type {ComponentOptions} */
+      options
     }
   };
   return wrapped;
 }
 function getComponentDefinition(componentType) {
   if (typeof componentType !== "function") throw new TypeError("Pepper component tags expect a function component.");
-  const metadata = componentType[COMPONENT_SYMBOL];
+  const metadata = (
+    /** @type {ConfigurableComponent} */
+    componentType[COMPONENT_SYMBOL]
+  );
   return metadata || {
-    factory: componentType,
+    factory: (
+      /** @type {PepperComponent} */
+      componentType
+    ),
     options: defaultComponentOptions
   };
 }
@@ -1031,7 +1065,10 @@ function state(initialValue, comparator = isEqual) {
   return [
     () => value,
     (valueOrSetter, callback) => {
-      const nextValue = typeof valueOrSetter === "function" ? valueOrSetter(value) : valueOrSetter;
+      const nextValue = typeof valueOrSetter === "function" ? (
+        /** @type {(value: T) => T} */
+        valueOrSetter(value)
+      ) : valueOrSetter;
       if (comparator(nextValue, value)) return;
       value = nextValue;
       if (callback === false) return;
@@ -1101,7 +1138,6 @@ function createComponentRuntime(componentType, props, rootRecord, parentRuntime 
     currentRenderable: null,
     destroyed: false,
     dirty: true,
-    factory: definition.factory,
     hasDirtyDescendant: false,
     lastSeen: 0,
     model: null,
@@ -1151,6 +1187,7 @@ function renderComponentRuntime(runtime, tags) {
   if (runtime.pendingChangedProps.length) {
     for (const handler of runtime.propHandlers) handler(runtime.pendingChangedProps, runtime.pendingOldProps);
   }
+  if (!runtime.model) throw new Error("Pepper component runtime is missing its model.");
   runtime.renderPassId++;
   const previousOwnerRuntime = currentOwnerRuntime;
   currentOwnerRuntime = runtime;
@@ -1162,13 +1199,6 @@ function renderComponentRuntime(runtime, tags) {
   return runtime.currentRenderable;
 }
 function finalizeComponentRuntime(runtime) {
-  cleanupComponentChildren(runtime);
-  runtime.dirty = false;
-  runtime.hasDirtyDescendant = false;
-  runtime.pendingChangedProps = [];
-  runtime.pendingOldProps = runtime.props;
-}
-function cleanupComponentChildren(runtime) {
   for (const store of runtime.childStores.values()) {
     for (const [key, childRuntime] of store) {
       if (childRuntime.lastSeen === runtime.renderPassId) continue;
@@ -1176,6 +1206,10 @@ function cleanupComponentChildren(runtime) {
       store.delete(key);
     }
   }
+  runtime.dirty = false;
+  runtime.hasDirtyDescendant = false;
+  runtime.pendingChangedProps = [];
+  runtime.pendingOldProps = runtime.props;
 }
 function destroyComponentRuntime(runtime) {
   if (!runtime || runtime.destroyed) return;
@@ -1318,7 +1352,10 @@ function parseComponentBindings(attributesSource) {
     if (attributesSource.startsWith("...", cursor)) {
       const marker = readInterpolationMarker(attributesSource, cursor + 3);
       if (marker) {
-        bindings.push({ type: "spread", index: marker.index });
+        bindings.push(
+          /** @type {ComponentBinding} */
+          { type: "spread", index: marker.index }
+        );
         cursor = marker.end;
         continue;
       }
@@ -1329,7 +1366,10 @@ function parseComponentBindings(attributesSource) {
     if (!name) break;
     while (cursor < attributesSource.length && /\s/.test(attributesSource[cursor])) cursor++;
     if (attributesSource[cursor] !== "=") {
-      bindings.push({ type: "prop", name, parts: null });
+      bindings.push(
+        /** @type {ComponentBinding} */
+        { type: "prop", name, parts: null }
+      );
       continue;
     }
     cursor++;
@@ -1346,7 +1386,10 @@ function parseComponentBindings(attributesSource) {
       while (cursor < attributesSource.length && !/\s/.test(attributesSource[cursor])) cursor++;
       rawValue = attributesSource.slice(valueStart, cursor);
     }
-    bindings.push({ type: "prop", name, parts: parseInterpolationParts2(rawValue) });
+    bindings.push(
+      /** @type {ComponentBinding} */
+      { type: "prop", name, parts: parseInterpolationParts2(rawValue) }
+    );
   }
   return bindings;
 }
@@ -1357,7 +1400,7 @@ function compileComponentTemplate(strings) {
     (htmlString, string, index) => htmlString + string + (index < strings.length - 1 ? `${INTERPOLATION_MARKER2}${index}${INTERPOLATION_MARKER2}` : ""),
     ""
   );
-  const outputStrings = [""];
+  const outputStrings = Object.assign([""], { raw: [""] });
   const outputValues = [];
   let cursor = 0;
   let foundComponentSyntax = false;
@@ -1380,6 +1423,7 @@ function compileComponentTemplate(strings) {
         childrenSource
       });
       outputStrings.push("");
+      outputStrings.raw.push("");
       cursor = end;
       continue;
     }
@@ -1387,20 +1431,23 @@ function compileComponentTemplate(strings) {
     if (marker) {
       outputValues.push({ type: "value", index: marker.index });
       outputStrings.push("");
+      outputStrings.raw.push("");
       cursor = marker.end;
       continue;
     }
     outputStrings[outputStrings.length - 1] += source[cursor++];
   }
-  compiled = foundComponentSyntax ? { strings: outputStrings, values: outputValues } : null;
+  compiled = foundComponentSyntax ? { strings: (
+    /** @type {TemplateStringsArray} */
+    outputStrings
+  ), values: outputValues } : null;
   componentTemplateCache.set(strings, compiled);
   return compiled;
 }
 function getSourceTemplate(source) {
   let compiled = sourceTemplateCache.get(source);
   if (compiled) return compiled;
-  const strings = [""];
-  strings.raw = strings;
+  const strings = Object.assign([""], { raw: [""] });
   const indices = [];
   let cursor = 0;
   while (cursor < source.length) {
@@ -1408,12 +1455,16 @@ function getSourceTemplate(source) {
     if (marker) {
       indices.push(marker.index);
       strings.push("");
+      strings.raw.push("");
       cursor = marker.end;
       continue;
     }
     strings[strings.length - 1] += source[cursor++];
   }
-  compiled = { indices, strings };
+  compiled = { indices, strings: (
+    /** @type {TemplateStringsArray} */
+    strings
+  ) };
   sourceTemplateCache.set(source, compiled);
   return compiled;
 }
@@ -1448,7 +1499,7 @@ function resolveComponentProps(bindings, values) {
   return { props, key };
 }
 
-// src/ssr.js
+// src/html-ssr.js
 var FORCE_SYMBOL2 = /* @__PURE__ */ Symbol("force");
 var TEMPLATE_RESULT_SYMBOL = /* @__PURE__ */ Symbol("template-result");
 var UNSAFE_HTML_SYMBOL2 = /* @__PURE__ */ Symbol("unsafe-html");
@@ -1516,10 +1567,14 @@ function serializeChildValue(value) {
   if (typeof value === "function") return serializeChildValue(value());
   if (looksTrustedTextValue(value)) return serializeTrustedTextValue(value);
   if (looksTemplateValue(value))
-    return serializeCompiledTemplate(getCompiledTemplate(
+    return serializeCompiledTemplate(
+      getCompiledTemplate(
+        /** @type {TemplateResult} */
+        value.strings
+      ),
       /** @type {TemplateResult} */
-      value.strings
-    ), value.values);
+      value.values
+    );
   if (looksLikeNode(value)) throw new Error("DOM nodes are not supported by pepper/ssr");
   return escapeHtml(String(value));
 }
@@ -1742,7 +1797,10 @@ function serializeTrustedTextValue(value) {
     return value[UNSAFE_HTML_SYMBOL2] || value[UNSAFE_SVG_SYMBOL2] || value[UNSAFE_MATHML_SYMBOL2] || "";
   if (!(RAW_TEXT_SYMBOL2 in value)) return "";
   let text = value[RAW_TEXT_SYMBOL2] || "";
-  for (const [pattern, replacement] of RAW_TEXT_REPLACEMENTS) text = text.replace(pattern, replacement);
+  for (const [pattern, replacement] of RAW_TEXT_REPLACEMENTS) {
+    if (typeof replacement === "string") text = text.replace(pattern, replacement);
+    else text = text.replace(pattern, replacement);
+  }
   return text;
 }
 
@@ -1760,19 +1818,35 @@ function createSsrTags(rootRecord) {
       const compiled = compileComponentTemplate(strings);
       if (!compiled) return html2(strings, ...values);
       const lowered = lowerComponentTemplate(compiled, values, (entry) => createSsrComponentValue(rootRecord, entry, values));
+      if (!lowered) return html2(strings, ...values);
       return html2(lowered.strings, ...lowered.values);
     },
     mathml: mathml2,
     svg: svg2
   };
 }
-function createSsrComponentValue(rootRecord, entry, values) {
+function createSsrComponentValue(rootRecord, descriptor, values) {
   return function renderComponentValue() {
-    const componentType = values[entry.componentIndex];
-    const { props } = resolveComponentProps(entry.bindings, values);
-    if (entry.childrenSource != null) props.children = () => renderSourceTemplate(rootRecord.ssrTags.html, entry.childrenSource, values);
+    const componentType = (
+      /** @type {PepperComponent} */
+      values[descriptor.componentIndex]
+    );
+    const { props } = resolveComponentProps(descriptor.bindings, values);
+    const childrenSource = descriptor.childrenSource;
+    if (childrenSource != null) {
+      props.children = () => renderSourceTemplate(
+        /** @type {SsrTags} */
+        rootRecord.ssrTags.html,
+        childrenSource,
+        values
+      );
+    }
     const runtime = createComponentRuntime(componentType, props, rootRecord, null);
-    const renderable = renderComponentRuntime(runtime, rootRecord.ssrTags);
+    const renderable = renderComponentRuntime(
+      runtime,
+      /** @type {SsrTags} */
+      rootRecord.ssrTags
+    );
     const serialized = typeof renderable === "function" ? renderable() : renderable;
     finalizeComponentRuntime(runtime);
     return serialized;
@@ -1788,7 +1862,11 @@ function renderComponentToString(Component, props = {}) {
   };
   rootRecord.ssrTags = createSsrTags(rootRecord);
   const runtime = createComponentRuntime(Component, props, rootRecord, null);
-  const renderable = renderComponentRuntime(runtime, rootRecord.ssrTags);
+  const renderable = renderComponentRuntime(
+    runtime,
+    /** @type {SsrTags} */
+    rootRecord.ssrTags
+  );
   const htmlString = renderToString(renderable);
   finalizeComponentRuntime(runtime);
   return htmlString;
@@ -1797,10 +1875,12 @@ publicSsrTagsHolder.ssrTags = createSsrTags(publicSsrTagsHolder);
 
 // src/store.js
 var Store = class {
+  /** @type {Record<string, unknown>} */
   #data;
+  /** @type {Array<{ props: string[], callback: (changedProps: string[]) => void, context: unknown }>} */
   #subscribers;
   /**
-   * @param {Object} initialData
+   * @param {Record<string, unknown>} [initialData]
    */
   constructor(initialData) {
     this.#data = initialData || {};
@@ -1809,7 +1889,7 @@ var Store = class {
   /**
    * Read the current store data object.
    *
-   * @returns {Object}
+   * @returns {Record<string, unknown>}
    */
   get data() {
     return this.#data;
@@ -1817,7 +1897,7 @@ var Store = class {
   /**
    * Replace the entire store data object and notify subscribers for changed keys.
    *
-   * @param {Object} newData
+   * @param {Record<string, unknown>} newData
    */
   set data(newData) {
     if (!newData || typeof newData !== "object") {
@@ -1845,8 +1925,8 @@ var Store = class {
   /**
    * Subscribe to changes in global store properties
    * @param {string[]} propsToListenFor
-   * @param {() => undefined} func
-   * @param {any} [context]
+   * @param {(changedProps: string[]) => void} func
+   * @param {unknown} [context]
    */
   subscribe(propsToListenFor, func, context) {
     if (typeof func !== "function" || !Array.isArray(propsToListenFor)) {
@@ -1861,13 +1941,18 @@ var Store = class {
       });
     }
   }
+  /**
+   * @param {(changedProps: string[]) => void} func
+   * @param {unknown} [context]
+   * @returns {void}
+   */
   unsubscribe(func, context) {
     this.#subscribers = this.#subscribers.filter((subscriber) => !(subscriber.callback === func && (context === void 0 || context === subscriber.context)));
   }
   /**
    * Shallow-merge partial data into the store and notify subscribers for changed keys.
    *
-   * @param {Object} newData
+   * @param {Record<string, unknown>} newData
    */
   assign(newData) {
     if (!newData || typeof newData !== "object") {
@@ -1881,19 +1966,23 @@ var Store = class {
 
 // src/index.js
 var rootMap = /* @__PURE__ */ new WeakMap();
-var singleValueStrings = ["", ""];
-singleValueStrings.raw = singleValueStrings;
-var publicTagsHolder = { domTags: null };
-function asTemplateView(tag, value) {
-  return tag(singleValueStrings, value);
-}
+var singleValueStrings = (
+  /** @type {TemplateStringsArray} */
+  Object.assign(
+    /** @type {MutableTemplateStringsArray} */
+    ["", ""],
+    { raw: ["", ""] }
+  )
+);
 function realizeDomRenderable(renderable, runtime, liveNodes = null) {
-  const view = typeof renderable === "function" ? renderable : asTemplateView(runtime.rootRecord.domTags.html, renderable);
+  const view = (
+    /** @type {(key?: symbol, liveNodes?: ChildNode[]) => Node[]} */
+    typeof renderable === "function" ? renderable : (
+      /** @type {DomTags} */
+      runtime.rootRecord.domTags.html(singleValueStrings, renderable)
+    )
+  );
   return liveNodes ? view(runtime.viewKey, liveNodes) : view(runtime.viewKey);
-}
-function flushCallbacks(rootRecord) {
-  const callbacks = rootRecord.pendingCallbacks.splice(0);
-  for (const callback of callbacks) callback();
 }
 function createDomTags() {
   return {
@@ -1905,6 +1994,7 @@ function createDomTags() {
         throw new Error("Pepper component tags can only be used while rendering a Pepper component.");
       }
       const lowered = lowerComponentTemplate(compiled, values, (entry) => createDomComponentValue(ownerRuntime, entry, values));
+      if (!lowered) return html(strings, ...values);
       if (compiled.strings.every((string) => string === "")) {
         const keyedInstanceIds = /* @__PURE__ */ new Map();
         return function renderComponentOnlyTemplate(key = /* @__PURE__ */ Symbol()) {
@@ -1926,13 +2016,23 @@ function createDomTags() {
     svg
   };
 }
-function createDomComponentValue(ownerRuntime, entry, values) {
+var domTags = createDomTags();
+function createDomComponentValue(ownerRuntime, descriptor, values) {
   return function renderComponentValue(instanceKey = /* @__PURE__ */ Symbol()) {
-    const store = getOrCreateChildStore(ownerRuntime, entry);
-    const componentType = values[entry.componentIndex];
-    const { key, props } = resolveComponentProps(entry.bindings, values);
-    if (entry.childrenSource != null) {
-      props.children = () => renderSourceTemplate(ownerRuntime.rootRecord.domTags.html, entry.childrenSource, values);
+    const store = getOrCreateChildStore(ownerRuntime, descriptor);
+    const componentType = (
+      /** @type {PepperComponent} */
+      values[descriptor.componentIndex]
+    );
+    const { key, props } = resolveComponentProps(descriptor.bindings, values);
+    const childrenSource = descriptor.childrenSource;
+    if (childrenSource != null) {
+      props.children = () => renderSourceTemplate(
+        /** @type {DomTags} */
+        ownerRuntime.rootRecord.domTags.html,
+        childrenSource,
+        values
+      );
     }
     const childKey = key ?? instanceKey;
     let runtime = store.get(childKey);
@@ -1944,9 +2044,13 @@ function createDomComponentValue(ownerRuntime, entry, values) {
       syncComponentProps(runtime, props);
     }
     runtime.lastSeen = ownerRuntime.renderPassId;
-    const renderable = renderComponentRuntime(runtime, ownerRuntime.rootRecord.domTags);
+    const renderable = renderComponentRuntime(
+      runtime,
+      /** @type {RuntimeTags} */
+      ownerRuntime.rootRecord.domTags
+    );
     const nodes = realizeDomRenderable(renderable, runtime);
-    const debugKeyValue = ownerRuntime.rootRecord.options.debugKeys === true && key != null ? String(key) : "";
+    const debugKeyValue = ownerRuntime.rootRecord.options?.debugKeys === true && key != null ? String(key) : "";
     if (runtime.debugKeyNodes) {
       for (const node of runtime.debugKeyNodes)
         if (node instanceof Element && (!debugKeyValue || !nodes.includes(node))) node.removeAttribute("x-key");
@@ -1963,29 +2067,26 @@ function createDomComponentValue(ownerRuntime, entry, values) {
     return nodes;
   };
 }
-function resolveContainer(container) {
-  return typeof container === "string" ? document.querySelector(container) : container;
-}
 function createRootRecord(Component, container, props, options) {
   const rootRecord = {
     Component,
     container,
-    domTags: null,
+    domTags,
     flushScheduled: false,
-    hydrating: false,
     mounted: false,
     pendingCallbacks: [],
     pendingMounts: [],
-    rootKey: /* @__PURE__ */ Symbol("pepper-root"),
     options,
+    scheduleRender() {
+    },
     topRuntime: null
   };
   rootRecord.scheduleRender = () => scheduleRootRender(rootRecord);
-  rootRecord.domTags = createDomTags();
   rootRecord.topRuntime = createComponentRuntime(Component, props, rootRecord, null);
   return rootRecord;
 }
 function performRootRender(rootRecord, hydrateOnly = false) {
+  if (!rootRecord.topRuntime) throw new Error("Pepper root is missing its top runtime.");
   const liveNodes = hydrateOnly ? Array.from(rootRecord.container.childNodes) : null;
   const renderable = renderComponentRuntime(rootRecord.topRuntime, rootRecord.domTags);
   const nodes = realizeDomRenderable(renderable, rootRecord.topRuntime, liveNodes && liveNodes.length ? liveNodes : null);
@@ -1993,7 +2094,7 @@ function performRootRender(rootRecord, hydrateOnly = false) {
   if (!rootRecord.mounted && !hydrateOnly) rootRecord.container.replaceChildren(...nodes);
   rootRecord.mounted = true;
   flushMounts(rootRecord);
-  flushCallbacks(rootRecord);
+  for (const callback of rootRecord.pendingCallbacks.splice(0)) callback();
 }
 function scheduleRootRender(rootRecord) {
   if (rootRecord.flushScheduled) return;
@@ -2003,26 +2104,31 @@ function scheduleRootRender(rootRecord) {
     performRootRender(rootRecord);
   });
 }
-function destroyRootRecord(rootRecord) {
-  destroyComponentRuntime(rootRecord.topRuntime);
-  rootMap.delete(rootRecord.container);
-}
 function mountRoot(Component, container, props = {}, options = {}, hydrateOnly = false) {
-  const target = resolveContainer(container);
+  const target = typeof container === "string" ? document.querySelector(container) : container;
   if (!(target instanceof Element)) {
     throw new Error("Pepper render/hydrate target must be a DOM element or selector.");
   }
   let rootRecord = rootMap.get(target);
   if (!rootRecord || rootRecord.Component !== Component) {
-    if (rootRecord) destroyRootRecord(rootRecord);
+    if (rootRecord) {
+      destroyComponentRuntime(rootRecord.topRuntime);
+      rootMap.delete(rootRecord.container);
+    }
     rootRecord = createRootRecord(Component, target, props, options);
     rootMap.set(target, rootRecord);
     performRootRender(rootRecord, hydrateOnly);
+    if (!rootRecord.topRuntime?.model) throw new Error("Pepper root did not produce a component model.");
     return rootRecord.topRuntime.model;
   }
   rootRecord.options = options;
-  syncComponentProps(rootRecord.topRuntime, props);
+  syncComponentProps(
+    /** @type {ComponentRuntime} */
+    rootRecord.topRuntime,
+    props
+  );
   performRootRender(rootRecord, hydrateOnly && !rootRecord.mounted);
+  if (!rootRecord.topRuntime?.model) throw new Error("Pepper root did not produce a component model.");
   return rootRecord.topRuntime.model;
 }
 function hydrate(Component, container, props = {}, options = {}) {
@@ -2034,8 +2140,7 @@ function render(Component, container, props = {}, options = {}) {
 function renderToString2(Component, props = {}) {
   return renderComponentToString(Component, props);
 }
-publicTagsHolder.domTags = createDomTags();
-var html3 = publicTagsHolder.domTags.html;
+var html3 = domTags.html;
 var svg3 = svg;
 var mathml3 = mathml;
 export {

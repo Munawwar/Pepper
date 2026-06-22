@@ -2,6 +2,26 @@ const INTERPOLATION_MARKER = '⧙⧘'
 const componentTemplateCache = new WeakMap()
 const sourceTemplateCache = new Map()
 
+/**
+ * @typedef {string[] & { raw: string[] }} MutableTemplateStringsArray
+ * @typedef {{ type: 'spread', index: number } | { type: 'prop', name: string, parts: Array<number | string> | null }} ComponentBinding
+ * @typedef {{ type: 'value', index: number } | ComponentDescriptor} ComponentTemplateEntry
+ * @typedef {{
+ *   type: 'component',
+ *   componentIndex: number,
+ *   bindings: ComponentBinding[],
+ *   childrenSource: string | null,
+ * }} ComponentDescriptor
+ * @typedef {{ strings: TemplateStringsArray, values: ComponentTemplateEntry[] }} CompiledComponentTemplate
+ * @typedef {{ strings: TemplateStringsArray, values: unknown[] }} LoweredComponentTemplate
+ * @typedef {{ indices: number[], strings: TemplateStringsArray }} SourceTemplate
+ */
+
+/**
+ * @param {string} source
+ * @param {number} start
+ * @returns {{ index: number, end: number } | null}
+ */
 function readInterpolationMarker(source, start) {
 	if (!source.startsWith(INTERPOLATION_MARKER, start)) return null
 	const valueStart = start + INTERPOLATION_MARKER.length
@@ -13,6 +33,10 @@ function readInterpolationMarker(source, start) {
 	}
 }
 
+/**
+ * @param {string} source
+ * @returns {Array<number | string>}
+ */
 function parseInterpolationParts(source) {
 	const parts = []
 	let cursor = 0
@@ -34,12 +58,22 @@ function parseInterpolationParts(source) {
 	return parts
 }
 
+/**
+ * @param {Array<number | string> | null} parts
+ * @param {unknown[]} values
+ * @returns {unknown}
+ */
 function resolveParts(parts, values) {
 	if (!parts) return true
 	if (parts.length === 1 && typeof parts[0] === 'number') return values[parts[0]]
 	return parts.map(part => (typeof part === 'number' ? String(values[part] ?? '') : part)).join('')
 }
 
+/**
+ * @param {string} source
+ * @param {number} start
+ * @returns {{ componentIndex: number, attributesSource: string, selfClosing: boolean, end: number } | null}
+ */
 function readDynamicComponentOpen(source, start) {
 	if (source[start] !== '<') return null
 	const marker = readInterpolationMarker(source, start + 1)
@@ -64,6 +98,11 @@ function readDynamicComponentOpen(source, start) {
 	}
 }
 
+/**
+ * @param {string} source
+ * @param {number} start
+ * @returns {{ componentIndex: number, start: number, end: number } | null}
+ */
 function readDynamicComponentClose(source, start) {
 	if (!source.startsWith('</', start)) return null
 	const marker = readInterpolationMarker(source, start + 2)
@@ -78,6 +117,11 @@ function readDynamicComponentClose(source, start) {
 	}
 }
 
+/**
+ * @param {string} source
+ * @param {number} start
+ * @returns {{ componentIndex: number, start: number, end: number } | null}
+ */
 function findMatchingComponentClose(source, start) {
 	let depth = 1
 	let cursor = start
@@ -105,7 +149,12 @@ function findMatchingComponentClose(source, start) {
 	return null
 }
 
+/**
+ * @param {string} attributesSource
+ * @returns {ComponentBinding[]}
+ */
 function parseComponentBindings(attributesSource) {
+	/** @type {ComponentBinding[]} */
 	const bindings = []
 	let cursor = 0
 	while (cursor < attributesSource.length) {
@@ -115,7 +164,7 @@ function parseComponentBindings(attributesSource) {
 		if (attributesSource.startsWith('...', cursor)) {
 			const marker = readInterpolationMarker(attributesSource, cursor + 3)
 			if (marker) {
-				bindings.push({type: 'spread', index: marker.index})
+				bindings.push(/** @type {ComponentBinding} */ ({type: 'spread', index: marker.index}))
 				cursor = marker.end
 				continue
 			}
@@ -128,7 +177,7 @@ function parseComponentBindings(attributesSource) {
 
 		while (cursor < attributesSource.length && /\s/.test(attributesSource[cursor])) cursor++
 		if (attributesSource[cursor] !== '=') {
-			bindings.push({type: 'prop', name, parts: null})
+			bindings.push(/** @type {ComponentBinding} */ ({type: 'prop', name, parts: null}))
 			continue
 		}
 
@@ -147,11 +196,15 @@ function parseComponentBindings(attributesSource) {
 			rawValue = attributesSource.slice(valueStart, cursor)
 		}
 
-		bindings.push({type: 'prop', name, parts: parseInterpolationParts(rawValue)})
+		bindings.push(/** @type {ComponentBinding} */ ({type: 'prop', name, parts: parseInterpolationParts(rawValue)}))
 	}
 	return bindings
 }
 
+/**
+ * @param {TemplateStringsArray} strings
+ * @returns {CompiledComponentTemplate | null}
+ */
 function compileComponentTemplate(strings) {
 	let compiled = componentTemplateCache.get(strings)
 	if (compiled) return compiled
@@ -163,9 +216,9 @@ function compileComponentTemplate(strings) {
 			(index < strings.length - 1 ? `${INTERPOLATION_MARKER}${index}${INTERPOLATION_MARKER}` : ''),
 		'',
 	)
-	/** @type {string[]} */
-	const outputStrings = ['']
-	/** @type {Array<{ type: 'value', index: number } | { type: 'component', componentIndex: number, bindings: Array<any>, childrenSource: string | null }>} */
+	/** @type {MutableTemplateStringsArray} */
+	const outputStrings = Object.assign([''], {raw: ['']})
+	/** @type {ComponentTemplateEntry[]} */
 	const outputValues = []
 	let cursor = 0
 	let foundComponentSyntax = false
@@ -189,6 +242,7 @@ function compileComponentTemplate(strings) {
 				childrenSource,
 			})
 			outputStrings.push('')
+			outputStrings.raw.push('')
 			cursor = end
 			continue
 		}
@@ -197,6 +251,7 @@ function compileComponentTemplate(strings) {
 		if (marker) {
 			outputValues.push({type: 'value', index: marker.index})
 			outputStrings.push('')
+			outputStrings.raw.push('')
 			cursor = marker.end
 			continue
 		}
@@ -204,16 +259,20 @@ function compileComponentTemplate(strings) {
 		outputStrings[outputStrings.length - 1] += source[cursor++]
 	}
 
-	compiled = foundComponentSyntax ? {strings: outputStrings, values: outputValues} : null
+	compiled = foundComponentSyntax ? {strings: /** @type {TemplateStringsArray} */ (outputStrings), values: outputValues} : null
 	componentTemplateCache.set(strings, compiled)
 	return compiled
 }
 
+/**
+ * @param {string} source
+ * @returns {SourceTemplate}
+ */
 function getSourceTemplate(source) {
 	let compiled = sourceTemplateCache.get(source)
 	if (compiled) return compiled
-	const strings = ['']
-	strings.raw = strings
+	/** @type {MutableTemplateStringsArray} */
+	const strings = Object.assign([''], {raw: ['']})
 	const indices = []
 	let cursor = 0
 	while (cursor < source.length) {
@@ -221,21 +280,34 @@ function getSourceTemplate(source) {
 		if (marker) {
 			indices.push(marker.index)
 			strings.push('')
+			strings.raw.push('')
 			cursor = marker.end
 			continue
 		}
 		strings[strings.length - 1] += source[cursor++]
 	}
-	compiled = {indices, strings}
+	compiled = {indices, strings: /** @type {TemplateStringsArray} */ (strings)}
 	sourceTemplateCache.set(source, compiled)
 	return compiled
 }
 
+/**
+ * @param {(strings: TemplateStringsArray, ...values: unknown[]) => unknown} tag
+ * @param {string} source
+ * @param {unknown[]} values
+ * @returns {unknown}
+ */
 function renderSourceTemplate(tag, source, values) {
 	const compiled = getSourceTemplate(source)
 	return tag(compiled.strings, ...compiled.indices.map(index => values[index]))
 }
 
+/**
+ * @param {CompiledComponentTemplate | null} compiled
+ * @param {unknown[]} values
+ * @param {(descriptor: ComponentDescriptor, values: unknown[], index: number) => unknown} createComponentValue
+ * @returns {LoweredComponentTemplate | null}
+ */
 function lowerComponentTemplate(compiled, values, createComponentValue) {
 	if (!compiled) return null
 	return {
@@ -248,7 +320,13 @@ function lowerComponentTemplate(compiled, values, createComponentValue) {
 	}
 }
 
+/**
+ * @param {ComponentBinding[]} bindings
+ * @param {unknown[]} values
+ * @returns {{ props: Record<string, unknown>, key: unknown }}
+ */
 function resolveComponentProps(bindings, values) {
+	/** @type {Record<string, unknown>} */
 	const props = {}
 	let key
 	for (const binding of bindings) {

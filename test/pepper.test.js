@@ -1,4 +1,9 @@
-import {component, html, hydrate, ref, render, state} from '../src/index.js'
+import {component, hydrate, ref, render, state} from '../src/index.js'
+
+/**
+ * @typedef {(strings: TemplateStringsArray, ...values: readonly unknown[]) => unknown} HtmlTag
+ * @typedef {{ id: number, label: string }} Item
+ */
 
 /**
  * @param {any} actual
@@ -19,7 +24,7 @@ function assertTrue(condition, message = '') {
 }
 
 function flushRender() {
-	return new Promise(resolve => queueMicrotask(resolve))
+	return Promise.resolve()
 }
 
 describe('Pepper component runtime', () => {
@@ -28,12 +33,21 @@ describe('Pepper component runtime', () => {
 	})
 
 	it('renders keyed nested components and preserves DOM nodes across reorder', () => {
+		/** @param {{ getProps(): Record<string, unknown> }} param0 */
 		function Row({getProps}) {
-			return html => html`<li data-id=${getProps().item.id}>${getProps().item.label}</li>`
+			/** @param {HtmlTag} html */
+			return html => {
+				const props = /** @type {{ item: Item }} */ (getProps())
+				return html`<li data-id=${props.item.id}>${props.item.label}</li>`
+			}
 		}
 
+		/** @param {{ getProps(): Record<string, unknown> }} param0 */
 		function App({getProps}) {
-			return html => html`<ul>${getProps().items.map(item => html`<${Row} key=${item.id} item=${item} />`)}</ul>`
+			/** @param {HtmlTag} html */
+			return html => html`<ul>${/** @type {{ items: Item[] }} */ (getProps()).items.map(
+				/** @param {Item} item */ item => html`<${Row} key=${item.id} item=${item} />`,
+			)}</ul>`
 		}
 
 		const container = document.createElement('div')
@@ -63,12 +77,21 @@ describe('Pepper component runtime', () => {
 	})
 
 	it('preserves keyed nested component DOM nodes across rotate reorder', () => {
+		/** @param {{ getProps(): Record<string, unknown> }} param0 */
 		function Row({getProps}) {
-			return html => html`<li data-id=${getProps().item.id}>${getProps().item.label}</li>`
+			/** @param {HtmlTag} html */
+			return html => {
+				const props = /** @type {{ item: Item }} */ (getProps())
+				return html`<li data-id=${props.item.id}>${props.item.label}</li>`
+			}
 		}
 
+		/** @param {{ getProps(): Record<string, unknown> }} param0 */
 		function App({getProps}) {
-			return html => html`<ul>${getProps().items.map(item => html`<${Row} key=${item.id} item=${item} />`)}</ul>`
+			/** @param {HtmlTag} html */
+			return html => html`<ul>${/** @type {{ items: Item[] }} */ (getProps()).items.map(
+				/** @param {Item} item */ item => html`<${Row} key=${item.id} item=${item} />`,
+			)}</ul>`
 		}
 
 		const container = document.createElement('div')
@@ -99,12 +122,18 @@ describe('Pepper component runtime', () => {
 	})
 
 	it('adds x-key attributes for keyed child components when debugKeys is enabled', () => {
+		/** @param {{ getProps(): Record<string, unknown> }} param0 */
 		function Row({getProps}) {
-			return html => html`<li>${getProps().label}</li>`
+			/** @param {HtmlTag} html */
+			return html => html`<li>${/** @type {{ label: string }} */ (getProps()).label}</li>`
 		}
 
+		/** @param {{ getProps(): Record<string, unknown> }} param0 */
 		function App({getProps}) {
-			return html => html`<ul>${getProps().items.map(item => html`<${Row} key=${item.id} label=${item.label} />`)}</ul>`
+			/** @param {HtmlTag} html */
+			return html => html`<ul>${/** @type {{ items: Item[] }} */ (getProps()).items.map(
+				/** @param {Item} item */ item => html`<${Row} key=${item.id} label=${item.label} />`,
+			)}</ul>`
 		}
 
 		const container = document.createElement('div')
@@ -131,12 +160,16 @@ describe('Pepper component runtime', () => {
 	})
 
 	it('keeps paired-tag child template nodes stable across parent rerenders', async () => {
+		/** @param {{ getProps(): Record<string, unknown> }} param0 */
 		function Frame({getProps}) {
-			return html => html`<section>${getProps().children?.()}</section>`
+			/** @param {HtmlTag} html */
+			return html => html`<section>${/** @type {{ children?: (() => unknown) | undefined }} */ (getProps()).children?.()}</section>`
 		}
 
+		/** @param {{ getProps(): Record<string, unknown> }} param0 */
 		function Row({getProps}) {
-			return html => html`<li>${getProps().label}</li>`
+			/** @param {HtmlTag} html */
+			return html => html`<li>${/** @type {{ label: string }} */ (getProps()).label}</li>`
 		}
 
 		function App() {
@@ -151,12 +184,15 @@ describe('Pepper component runtime', () => {
 				setNextId(nextId + 1)
 			}
 
+			/** @param {HtmlTag} html */
 			return html => html`
-				<${Frame}>
-					<button @click=${addRow}>Add row</button>
-					<ul>${getItems().map(item => html`<${Row} key=${item.id} ...${item} />`)}</ul>
-				</${Frame}>
-			`
+					<${Frame}>
+						<button @click=${addRow}>Add row</button>
+						<ul>${getItems().map(
+							/** @param {Item} item */ item => html`<${Row} key=${item.id} ...${item} />`,
+						)}</ul>
+					</${Frame}>
+				`
 		}
 
 		const container = document.createElement('div')
@@ -174,16 +210,19 @@ describe('Pepper component runtime', () => {
 	})
 
 	it('hydrates nested component tags and keeps refs bound to adopted nodes', async () => {
+		/** @type {{ current: HTMLButtonElement | null } | null} */
 		let latestButtonRef = null
 
 		function Counter() {
 			const [getCount, setCount] = state(0)
-			const buttonRef = ref()
+			const buttonRef = /** @type {{ current: HTMLButtonElement | null }} */ (ref())
 			latestButtonRef = buttonRef
+			/** @param {HtmlTag} html */
 			return html => html`<button ref=${buttonRef} @click=${() => setCount(getCount() + 1)}>${getCount()}</button>`
 		}
 
 		function App() {
+			/** @param {HtmlTag} html */
 			return html => html`<section><${Counter} /></section>`
 		}
 
@@ -191,18 +230,20 @@ describe('Pepper component runtime', () => {
 		container.innerHTML = '<section><button>0</button></section>'
 		document.body.append(container)
 
-		const liveButton = container.querySelector('button')
+		const liveButton = /** @type {HTMLButtonElement | null} */ (container.querySelector('button'))
 		hydrate(App, container)
-		const button = container.querySelector('button')
+		const button = /** @type {HTMLButtonElement | null} */ (container.querySelector('button'))
+		if (!liveButton || !button || !latestButtonRef) throw new Error('Expected hydrated button refs to exist')
+		const buttonRef = /** @type {{ current: HTMLButtonElement | null }} */ (latestButtonRef)
 
 		assertEquals(button, liveButton, 'Hydration should adopt the existing child DOM node')
-		assertEquals(latestButtonRef.current, liveButton, 'ref() should point at the adopted DOM node')
+		assertEquals(buttonRef.current, liveButton, 'ref() should point at the adopted DOM node')
 
 		button.click()
 		await flushRender()
 
 		assertEquals(button.textContent, '1', 'Hydrated event handlers should update component state')
-		assertEquals(latestButtonRef.current, liveButton, 'ref() should stay bound after rerender')
+		assertEquals(buttonRef.current, liveButton, 'ref() should stay bound after rerender')
 	})
 
 	it('memoizes props by default and allows component-level overrides', () => {
@@ -212,40 +253,50 @@ describe('Pepper component runtime', () => {
 		let customComparatorRenders = 0
 		let noAutoEffectEventRenders = 0
 
+		/** @param {{ getProps(): Record<string, unknown> }} param0 */
 		function Plain({getProps}) {
+			/** @param {HtmlTag} html */
 			return html => {
 				plainRenders++
-				return html`<div>${getProps().value.label}</div>`
+				return html`<div>${/** @type {{ value: { label: string } }} */ (getProps()).value.label}</div>`
 			}
 		}
 
+		/** @param {{ getProps(): Record<string, unknown> }} param0 */
 		function EventMemo({getProps}) {
+			/** @param {HtmlTag} html */
 			return html => {
 				eventMemoRenders++
-				return html`<button>${getProps().label}</button>`
+				return html`<button>${/** @type {{ label: string }} */ (getProps()).label}</button>`
 			}
 		}
 
-		const Unmemoized = component(({getProps}) => {
+		const Unmemoized = component(/** @param {{ getProps(): Record<string, unknown> }} param0 */ ({getProps}) => {
+			/** @param {HtmlTag} html */
 			return html => {
 				unmemoizedRenders++
-				return html`<div>${getProps().value.label}</div>`
+				return html`<div>${/** @type {{ value: { label: string } }} */ (getProps()).value.label}</div>`
 			}
 		}, {memo: false})
 
-		const VersionMemo = component(({getProps}) => {
+		const VersionMemo = component(/** @param {{ getProps(): Record<string, unknown> }} param0 */ ({getProps}) => {
+			/** @param {HtmlTag} html */
 			return html => {
 				customComparatorRenders++
-				return html`<div>${getProps().label}</div>`
+				return html`<div>${/** @type {{ label: string }} */ (getProps()).label}</div>`
 			}
 		}, {
-			propsComparator: (previousProps, nextProps) => previousProps.version === nextProps.version,
+			propsComparator: (previousProps, nextProps) => (
+				/** @type {{ version?: number }} */ (previousProps).version ===
+				/** @type {{ version?: number }} */ (nextProps).version
+			),
 		})
 
-		const NoAutoEffectEvent = component(({getProps}) => {
+		const NoAutoEffectEvent = component(/** @param {{ getProps(): Record<string, unknown> }} param0 */ ({getProps}) => {
+			/** @param {HtmlTag} html */
 			return html => {
 				noAutoEffectEventRenders++
-				return html`<button>${getProps().label}</button>`
+				return html`<button>${/** @type {{ label: string }} */ (getProps()).label}</button>`
 			}
 		}, {autoEffectEvent: false})
 
@@ -284,8 +335,10 @@ describe('Pepper component runtime', () => {
 
 	it('does not rerender when state setter receives false as the second argument', async () => {
 		let renders = 0
-		let appModel
+		/** @type {{ bumpSilently(): void, flush(): void } | null} */
+		let appModel = null
 
+		/** @param {{ update(callback?: () => void): void }} param0 */
 		function App({update}) {
 			const [getCount, setCount] = state(0)
 			appModel = {
@@ -297,6 +350,7 @@ describe('Pepper component runtime', () => {
 				},
 			}
 
+			/** @param {HtmlTag} html */
 			return html => {
 				renders++
 				return html`<span>${getCount()}</span>`
@@ -310,13 +364,15 @@ describe('Pepper component runtime', () => {
 		assertEquals(renders, 1, 'Initial render should happen once')
 		assertEquals(container.textContent, '0', 'Initial DOM should reflect initial state')
 
-		appModel.bumpSilently()
+		if (!appModel) throw new Error('Expected app model to be initialized')
+		const model = /** @type {{ bumpSilently(): void, flush(): void }} */ (appModel)
+		model.bumpSilently()
 		await flushRender()
 
 		assertEquals(renders, 1, 'setState(value, false) should not trigger a rerender')
 		assertEquals(container.textContent, '0', 'Silent state changes should not update DOM immediately')
 
-		appModel.flush()
+		model.flush()
 		await flushRender()
 
 		assertEquals(renders, 2, 'Explicit update() should rerender after a silent state change')

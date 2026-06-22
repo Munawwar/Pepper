@@ -2,8 +2,11 @@ import {render, state} from '../src/index.js'
 
 const app = /** @type {HTMLDivElement} */ (document.getElementById('app'))
 
+/** @typedef {(strings: TemplateStringsArray, ...values: readonly unknown[]) => unknown} HtmlTag */
+
+/** @param {{ getProps(): { title: string, description: string, children?: () => unknown } }} api */
 function DemoFrame({getProps}) {
-	return html => html`
+	return /** @param {HtmlTag} html */ html => html`
 		<section class="demo-card">
 			<h1>${getProps().title}</h1>
 			<p class="lede">${getProps().description}</p>
@@ -12,10 +15,11 @@ function DemoFrame({getProps}) {
 	`
 }
 
+/** @param {{ getProps(): { id: number, name: string, tone: string } }} api */
 function MemberRow({getProps}) {
 	const [getVotes, setVotes] = state(0)
 
-	return html => html`
+	return /** @param {HtmlTag} html */ html => html`
 		<li class="member">
 			<div class="member-copy">
 				<span class="tag tag--${getProps().tone}" title="spread prop on component child">
@@ -57,7 +61,7 @@ function ComponentsDemo() {
 	}
 	const removeFirst = () => setMembers(members => members.slice(1))
 
-	return html => html`
+	return /** @param {HtmlTag} html */ html => html`
 		<${DemoFrame}
 			title="Pepper nested components"
 			description=${'Each row is a keyed child component with its own local state. Reorder the list and the row counts stay attached to the same ids.'}

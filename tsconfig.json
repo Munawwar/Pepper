@@ -25,5 +25,5 @@
 	},
 
 	"include": ["./**/*.js"], // Plain JS only!
-	"exclude": ["node_modules"]
+	"exclude": ["node_modules", "dist", "__ignore__", ".types-generated"]
 }

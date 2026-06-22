@@ -1,29 +1,54 @@
 const from = Array.from;
 
+/**
+ * @template T, U
+ * @param {ArrayLike<T>} arrayLike
+ * @param {(value: T, index: number) => U} fn
+ * @returns {void}
+ */
 function each(arrayLike, fn) {
 	return Array.prototype.forEach.call(arrayLike, fn);
 }
 
+/**
+ * @param {Element} element
+ * @returns {boolean}
+ */
 function isCustomElement(element) {
 	if (element.tagName.indexOf('-') > 0) return true;
 	const attr = element.getAttribute('is');
-	return (attr && attr.indexOf('-') > 0);
+	return !!(attr && attr.indexOf('-') > 0);
 }
 
+/**
+ * @param {object | null | undefined} obj
+ * @returns {string[]}
+ */
 function keys(obj) {
   if (!obj) return [];
 	return Object.keys(obj).filter(key => key !== 'constructor');
 }
 // Safer Object.assign
+/**
+ * @template T
+ * @param {T} target
+ * @param {...Array<Record<string, unknown> | null | undefined>} args
+ * @returns {T & Record<string, unknown>}
+ */
 function objectAssign(target, ...args) {
 	args.forEach((obj) => {
 		keys(obj).forEach((key) => {
-			target[key] = obj[key];
+			/** @type {Record<string, unknown>} */ (target)[key] = /** @type {Record<string, unknown>} */ (/** @type {unknown} */ (obj))[key];
 		});
 	});
-	return target;
+	return /** @type {T & Record<string, unknown>} */ (target);
 }
 
+/**
+ * @param {unknown} value1
+ * @param {unknown} value2
+ * @returns {boolean}
+ */
 function isEqual(value1, value2) {
 	if (Object.is(value1, value2)) return true;
 	if (
@@ -40,10 +65,11 @@ function isEqual(value1, value2) {
 		return false;
 	}
 	if (Array.isArray(value1)) {
-		return value1.length === value2.length && value1.every((item, index) => isEqual(item, value2[index]));
+		const array2 = /** @type {unknown[]} */ (value2);
+		return value1.length === array2.length && value1.every((item, index) => isEqual(item, array2[index]));
 	}
 	if (value1 instanceof Date) {
-		return value1.getTime() === value2.getTime();
+		return value1.getTime() === /** @type {Date} */ (value2).getTime();
 	}
 	if (value1 instanceof RegExp) {
 		return value1.toString() === value2.toString();
@@ -54,7 +80,10 @@ function isEqual(value1, value2) {
 
 	const objectKeys = keys(value1);
 	return objectKeys.length === keys(value2).length
-		&& objectKeys.every((key) => key in value2 && isEqual(value1[key], value2[key]));
+		&& objectKeys.every((key) => key in /** @type {Record<string, unknown>} */ (value2) && isEqual(
+			/** @type {Record<string, unknown>} */ (value1)[key],
+			/** @type {Record<string, unknown>} */ (value2)[key],
+		));
 }
 
 export {

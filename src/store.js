@@ -4,11 +4,13 @@ import { keys } from './utils.js';
 // it only does a shallow (i.e level 1) equality check of the store data properties
 // for notifying relevant connected views to re-render
 class Store {
+	/** @type {Record<string, unknown>} */
 	#data;
+	/** @type {Array<{ props: string[], callback: (changedProps: string[]) => void, context: unknown }>} */
 	#subscribers;
 
 	/**
-	 * @param {Object} initialData
+	 * @param {Record<string, unknown>} [initialData]
 	 */
 	constructor(initialData) {
 		this.#data = initialData || {};
@@ -18,7 +20,7 @@ class Store {
 	/**
 	 * Read the current store data object.
 	 *
-	 * @returns {Object}
+	 * @returns {Record<string, unknown>}
 	 */
 	get data() {
 		return this.#data;
@@ -27,7 +29,7 @@ class Store {
 	/**
 	 * Replace the entire store data object and notify subscribers for changed keys.
 	 *
-	 * @param {Object} newData
+	 * @param {Record<string, unknown>} newData
 	 */
 	set data(newData) {
 		if (!newData || typeof newData !== 'object') {
@@ -57,8 +59,8 @@ class Store {
 	/**
 	 * Subscribe to changes in global store properties
 	 * @param {string[]} propsToListenFor
-	 * @param {() => undefined} func
-	 * @param {any} [context]
+	 * @param {(changedProps: string[]) => void} func
+	 * @param {unknown} [context]
 	 */
 	subscribe(propsToListenFor, func, context) {
 		if (typeof func !== 'function' || !Array.isArray(propsToListenFor)) {
@@ -76,6 +78,11 @@ class Store {
 		}
 	}
 
+	/**
+	 * @param {(changedProps: string[]) => void} func
+	 * @param {unknown} [context]
+	 * @returns {void}
+	 */
 	unsubscribe(func, context) {
 		this.#subscribers = this.#subscribers.filter((subscriber) => !(
 			subscriber.callback === func && (context === undefined || context === subscriber.context)
@@ -85,7 +92,7 @@ class Store {
 	/**
 	 * Shallow-merge partial data into the store and notify subscribers for changed keys.
 	 *
-	 * @param {Object} newData
+	 * @param {Record<string, unknown>} newData
 	 */
 	assign(newData) {
 		if (!newData || typeof newData !== 'object') {
