@@ -1,4 +1,4 @@
-## Pepper
+# Pepper
 
 Project status: work in progress.
 
@@ -11,13 +11,14 @@ function TodoRow({ getProps }) {
 	return html => html`<li>${getProps().label}</li>`
 }
 
-function TodoApp() {
-	const inputRef = ref()
+function TodoApp({ getProps, update, onMount, onProps }) {
 	const [getItems, setItems] = state([
 		{ id: 1, label: 'Write docs' },
 		{ id: 2, label: 'Ship demo' },
 	])
+	// or use `let` and manual update() like remix 3
 	const [getNextId, setNextId] = state(3)
+	const inputRef = ref()
 
 	function addItem() {
 		const label = inputRef.current?.value?.trim()
@@ -29,6 +30,18 @@ function TodoApp() {
 		inputRef.current.focus()
 	}
 
+	onProps((changedProps, oldProps) => {
+		// changedProps is list of top-level props that changed
+		// oldProps: previous props object
+		// use getProps() to always get latest props
+	})
+
+	onMount(() => {
+		console.log('mounted');
+		return () => console.log('unmounted');
+	})
+
+	// Return a render function. It receives a html tagged template literal for rendering purpose
 	return html => html`
 		<input ref=${inputRef} placeholder="New todo" />
 		<button @click=${addItem}>Add</button>
@@ -46,7 +59,44 @@ renderToString(TodoApp, props)
 Note:
 - pass 4th param `{ debugKeys: true }` to `render()` or `hydrate()` to stamp keyed child roots with `x-key="..."`
 
-### Shared Store / Context / SSR
+## Demo
+
+```
+npm run demo
+```
+Check `examples/components.html` shows nested components, keyed child lists, and spread props.
+
+## Install
+
+```bash
+npm install @pepper-js/pepper
+```
+
+Install VSCode extension from `tooling/pepper-vscode/pepper-vscode.vsix`
+
+## Component API
+
+Setup API:
+
+- `getProps()`
+- `onProps(handler)`
+- `onMount(handler)`
+- `update(callback?)` - callback is called after a re-render
+
+Direct imports:
+
+- `const [getState, setState] = state(initialValue, comparator?)`
+	- `setState(newState, falseOrCallback?)`
+		- If 2nd param is false, then no re-render is scheduled.
+		- If 2nd param is a function, it's called after re-render.
+- `ref()`
+
+Components may return:
+
+- a render function
+- an object with `render(html)`
+
+## SSR / Store / Context
 
 Pepper roots accept a 4th-param `context` object. This is the intended way to pass request-local stores through the tree for both SSR and hydration.
 
@@ -91,37 +141,33 @@ Context API available inside components:
 - `setContext(key, value)`
 - `hasContext(key)`
 
-### Demo
+### Store API
 
-- `examples/components.html` shows nested components, keyed child lists, and spread props
-- `tooling/pepper-vscode/pepper-vscode.vsix` is the installable VS Code extension bundle kept in-repo until marketplace publishing exists
+`Store` is a small external state container intended to be passed through Pepper context.
 
-### Install
+```js
+const cart = new Store({ items: [] })
 
-```bash
-npm install @pepper-js/pepper
+cart.data
+cart.data = { items: ['a'] }
+cart.assign({ items: ['a', 'b'] })
+
+const onCartChange = changedProps => {
+	console.log(changedProps)
+}
+
+cart.subscribe(['items'], onCartChange)
+cart.unsubscribe(onCartChange)
 ```
 
-### Component API
+Notes:
 
-Setup API:
+- change detection is shallow, top-level only
+- `store.data = nextData` replaces the whole data object
+- `store.assign(partial)` shallow-merges into the existing data object
+- subscribers are notified only for the top-level keys they subscribed to
 
-- `getProps()`
-- `onProps(handler)`
-- `onMount(handler)`
-- `update(callback?)`
-
-Direct imports:
-
-- `state(initialValue, comparator?)`
-- `ref()`
-
-Components may return:
-
-- a render function
-- an object with `render(html)`
-
-### "I don't want auto-memoization" / `component()` wrapper
+## "I don't want auto-memoization" / `component()` wrapper
 
 Plain function components use Pepper’s default runtime behavior:
 
@@ -146,7 +192,7 @@ Supported options:
 - `propsComparator(prevProps, nextProps)`
 - `autoEffectEvent: boolean`
 
-### Layout components / children()
+## Layout components / children()
 
 Pepper supports paired component tags for layout-style composition:
 
@@ -176,7 +222,7 @@ Rules:
 - paired tags pass lazy `children()` to the child component
 - named slots are not supported yet
 
-### Tooling
+## Tooling
 
 The repo now includes in-repo tooling packages:
 
@@ -191,7 +237,7 @@ VS Code extension:
 - install locally: `npm run vscode:install`
 - repo bundle path: `tooling/pepper-vscode/pepper-vscode.vsix`
 
-### Browser support
+## Browser support
 
 Pepper targets modern browsers:
 
