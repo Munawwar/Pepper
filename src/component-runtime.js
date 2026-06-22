@@ -33,6 +33,7 @@ let currentOwnerRuntime = null
  * @typedef {{ factory: PepperComponent, options: ComponentOptions }} ComponentDefinition
  * @typedef {{
  *   pendingCallbacks: RenderCallback[],
+ *   dirtyRuntimes?: Set<ComponentRuntime>,
  *   pendingMounts: ComponentRuntime[],
  *   scheduleRender(): void,
  *   domTags?: RuntimeTags,
@@ -159,7 +160,7 @@ function ref() {
 function markRuntimeDirty(runtime, callback) {
 	if (callback && runtime.rootRecord.pendingCallbacks) runtime.rootRecord.pendingCallbacks.push(callback)
 	runtime.dirty = true
-	for (let parent = runtime.parentRuntime; parent; parent = parent.parentRuntime) parent.hasDirtyDescendant = true
+	runtime.rootRecord.dirtyRuntimes?.add(runtime)
 	runtime.rootRecord.scheduleRender()
 }
 

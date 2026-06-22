@@ -796,7 +796,11 @@ var TemplateInstance = class {
           if (binding.value) element.setAttribute(binding.attributeName, "");
           else element.removeAttribute(binding.attributeName);
         } else {
-          element.setAttribute(binding.attributeName, String(binding.value));
+          element.setAttribute(
+            binding.attributeName,
+            /** @type {string} */
+            binding.value
+          );
         }
       }
       currentElementState.lastBindings = currentBindings;
@@ -1086,7 +1090,7 @@ function ref() {
 function markRuntimeDirty(runtime, callback) {
   if (callback && runtime.rootRecord.pendingCallbacks) runtime.rootRecord.pendingCallbacks.push(callback);
   runtime.dirty = true;
-  for (let parent = runtime.parentRuntime; parent; parent = parent.parentRuntime) parent.hasDirtyDescendant = true;
+  runtime.rootRecord.dirtyRuntimes?.add(runtime);
   runtime.rootRecord.scheduleRender();
 }
 function shouldIgnorePropForMemo(runtime, key, value) {
@@ -2071,6 +2075,7 @@ function createRootRecord(Component, container, props, options) {
   const rootRecord = {
     Component,
     container,
+    dirtyRuntimes: /* @__PURE__ */ new Set(),
     domTags,
     flushScheduled: false,
     mounted: false,
@@ -2087,6 +2092,7 @@ function createRootRecord(Component, container, props, options) {
 }
 function performRootRender(rootRecord, hydrateOnly = false) {
   if (!rootRecord.topRuntime) throw new Error("Pepper root is missing its top runtime.");
+  rootRecord.dirtyRuntimes.clear();
   const liveNodes = hydrateOnly ? Array.from(rootRecord.container.childNodes) : null;
   const renderable = renderComponentRuntime(rootRecord.topRuntime, rootRecord.domTags);
   const nodes = realizeDomRenderable(renderable, rootRecord.topRuntime, liveNodes && liveNodes.length ? liveNodes : null);
@@ -2101,7 +2107,21 @@ function scheduleRootRender(rootRecord) {
   rootRecord.flushScheduled = true;
   queueMicrotask(() => {
     rootRecord.flushScheduled = false;
-    performRootRender(rootRecord);
+    if (!rootRecord.topRuntime) throw new Error("Pepper root is missing its top runtime.");
+    const dirtyRuntimes = [...rootRecord.dirtyRuntimes].filter((runtime) => runtime.dirty && !runtime.destroyed).filter((runtime) => {
+      for (let parent = runtime.parentRuntime; parent; parent = parent.parentRuntime) {
+        if (rootRecord.dirtyRuntimes.has(parent) && parent.dirty && !parent.destroyed) return false;
+      }
+      return true;
+    });
+    rootRecord.dirtyRuntimes.clear();
+    for (const runtime of dirtyRuntimes) {
+      const renderable = renderComponentRuntime(runtime, rootRecord.domTags);
+      realizeDomRenderable(renderable, runtime);
+      finalizeComponentRuntime(runtime);
+    }
+    flushMounts(rootRecord);
+    for (const callback of rootRecord.pendingCallbacks.splice(0)) callback();
   });
 }
 function mountRoot(Component, container, props = {}, options = {}, hydrateOnly = false) {

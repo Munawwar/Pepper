@@ -41,6 +41,7 @@ import { Store } from './store.js'
  * @typedef {{
  *   Component: PepperComponent,
  *   container: Element,
+ *   dirtyRuntimes: Set<ComponentRuntime>,
  *   domTags: DomTags,
  *   flushScheduled: boolean,
  *   mounted: boolean,
@@ -175,6 +176,7 @@ function createRootRecord(Component, container, props, options) {
 	const rootRecord = {
 		Component,
 		container,
+		dirtyRuntimes: new Set(),
 		domTags,
 		flushScheduled: false,
 		mounted: false,
@@ -191,11 +193,46 @@ function createRootRecord(Component, container, props, options) {
 
 /**
  * @param {RootRecord} rootRecord
+ * @returns {void}
+ */
+function flushDirtyRuntimes(rootRecord) {
+	const dirtyRuntimes = [...rootRecord.dirtyRuntimes]
+		.filter(runtime => runtime.dirty && !runtime.destroyed)
+		.filter(runtime => {
+			for (let parent = runtime.parentRuntime; parent; parent = parent.parentRuntime) {
+				if (rootRecord.dirtyRuntimes.has(parent) && parent.dirty && !parent.destroyed) return false
+			}
+			return true
+		})
+	rootRecord.dirtyRuntimes.clear()
+	for (const runtime of dirtyRuntimes) {
+		const renderable = renderComponentRuntime(runtime, rootRecord.domTags)
+		realizeDomRenderable(renderable, runtime)
+		finalizeComponentRuntime(runtime)
+	}
+	flushMounts(rootRecord)
+	for (const callback of rootRecord.pendingCallbacks.splice(0)) callback()
+}
+
+/**
+ * @param {RootRecord} rootRecord
  * @param {boolean} [hydrateOnly=false]
  * @returns {void}
  */
 function performRootRender(rootRecord, hydrateOnly = false) {
 	if (!rootRecord.topRuntime) throw new Error('Pepper root is missing its top runtime.')
+	if (
+		!hydrateOnly &&
+		rootRecord.mounted &&
+		!rootRecord.topRuntime.dirty &&
+		!rootRecord.topRuntime.hasDirtyDescendant &&
+		!rootRecord.topRuntime.pendingChangedProps.length &&
+		rootRecord.dirtyRuntimes.size
+	) {
+		flushDirtyRuntimes(rootRecord)
+		return
+	}
+	rootRecord.dirtyRuntimes.clear()
 	const liveNodes = hydrateOnly ? Array.from(rootRecord.container.childNodes) : null
 	const renderable = renderComponentRuntime(rootRecord.topRuntime, rootRecord.domTags)
 	const nodes = realizeDomRenderable(renderable, rootRecord.topRuntime, liveNodes && liveNodes.length ? liveNodes : null)
@@ -215,7 +252,8 @@ function scheduleRootRender(rootRecord) {
 	rootRecord.flushScheduled = true
 	queueMicrotask(() => {
 		rootRecord.flushScheduled = false
-		performRootRender(rootRecord)
+		if (!rootRecord.topRuntime) throw new Error('Pepper root is missing its top runtime.')
+		flushDirtyRuntimes(rootRecord)
 	})
 }
 

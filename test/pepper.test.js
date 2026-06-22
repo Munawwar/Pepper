@@ -378,4 +378,52 @@ describe('Pepper component runtime', () => {
 		assertEquals(renders, 2, 'Explicit update() should rerender after a silent state change')
 		assertEquals(container.textContent, '1', 'Later rerender should pick up the silent state change')
 	})
+
+	it('does not rerender ancestors when a deep child updates local state', async () => {
+		let rootRenders = 0
+		let branchRenders = 0
+		let leafRenders = 0
+
+		function Leaf() {
+			const [getCount, setCount] = state(0)
+			/** @param {HtmlTag} html */
+			return html => {
+				leafRenders++
+				return html`<button @click=${() => setCount(getCount() + 1)}>${getCount()}</button>`
+			}
+		}
+
+		function Branch() {
+			/** @param {HtmlTag} html */
+			return html => {
+				branchRenders++
+				return html`<section><${Leaf} /></section>`
+			}
+		}
+
+		function App() {
+			/** @param {HtmlTag} html */
+			return html => {
+				rootRenders++
+				return html`<main><${Branch} /></main>`
+			}
+		}
+
+		const container = document.createElement('div')
+		document.body.append(container)
+		render(App, container)
+
+		assertEquals(rootRenders, 1, 'Initial root render should happen once')
+		assertEquals(branchRenders, 1, 'Initial branch render should happen once')
+		assertEquals(leafRenders, 1, 'Initial leaf render should happen once')
+
+		const button = /** @type {HTMLButtonElement} */ (container.querySelector('button'))
+		button.click()
+		await flushRender()
+
+		assertEquals(rootRenders, 1, 'Local leaf state updates should not rerender the root')
+		assertEquals(branchRenders, 1, 'Local leaf state updates should not rerender intermediate ancestors')
+		assertEquals(leafRenders, 2, 'Local leaf state updates should rerender the leaf itself')
+		assertEquals(button.textContent, '1', 'Leaf DOM should still update correctly')
+	})
 })

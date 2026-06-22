@@ -442,7 +442,7 @@ function ref() {
 function markRuntimeDirty(runtime, callback) {
   if (callback && runtime.rootRecord.pendingCallbacks) runtime.rootRecord.pendingCallbacks.push(callback);
   runtime.dirty = true;
-  for (let parent = runtime.parentRuntime; parent; parent = parent.parentRuntime) parent.hasDirtyDescendant = true;
+  runtime.rootRecord.dirtyRuntimes?.add(runtime);
   runtime.rootRecord.scheduleRender();
 }
 function shouldIgnorePropForMemo(runtime, key, value) {
