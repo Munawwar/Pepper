@@ -7,8 +7,8 @@ import type {
 	TemplateView,
 } from '../src/html.js'
 import {force, html} from '../src/html.js'
-import type {ComponentSetupApi, PepperContext, RootContainer, RootOptions} from '../index.js'
-import {component, hydrate, ref, render, renderToString, state} from '../index.js'
+import type {ComponentSetupApi, PepperContext, PortalTarget, RootContainer, RootOptions} from '../index.js'
+import {component, hydrate, portal, ref, render, renderToString, state} from '../index.js'
 
 const key = Symbol()
 const text = 'hello'
@@ -44,6 +44,9 @@ view({})
 // @ts-expect-error template keys must be weak-map compatible
 view(123)
 
+// @ts-expect-error portal targets must be DOM elements or selectors
+portal(123, html`<span>bad</span>`)
+
 const ModelComponent = component(function ModelComponent() {
 	return {
 		focus() {
@@ -64,8 +67,11 @@ const modelRoot = render(ModelComponent, renderContainer)
 const hydratedModelRoot = hydrate(ModelComponent, renderContainer)
 const functionRoot = render(FunctionComponent, renderContainer)
 const selectorContainer: RootContainer = '#app'
+const portalTarget: PortalTarget = renderContainer
 const rootOptions: RootOptions = {context: {ready: true}, debugKeys: true}
 render(FunctionComponent, selectorContainer, undefined, rootOptions)
+const portalView = portal(portalTarget, html`<span>portal</span>`)
+portalView(Symbol())
 
 type AppContext = {
 	cart: {items: string[]}

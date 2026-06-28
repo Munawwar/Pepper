@@ -9,6 +9,7 @@ import {
 	force,
 	html,
 	mathml,
+	portal,
 	rawText,
 	renderComponentToString,
 	renderToString,
@@ -253,6 +254,16 @@ test('renders component roots to strings through Pepper SSR runtime', () => {
 	})
 
 	assert.equal(renderComponentToString(Counter, {count: 3}), '<button>3</button>')
+})
+
+test('omits portal content during SSR', () => {
+	const target = /** @type {any} */ ({})
+
+	function App() {
+		return h => h`<section>${'shell'}${portal(target, h`<span>${'inside portal'}</span>`)}</section>`
+	}
+
+	assert.equal(renderComponentToString(App), '<section>shell</section>')
 })
 
 test('reads root context and parent-provided context during SSR', () => {

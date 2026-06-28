@@ -145,6 +145,15 @@ function renderToString(value) {
 	return baseRenderToString(value)
 }
 
+/**
+ * Server rendering omits portal output.
+ *
+ * @returns {() => []}
+ */
+function portal() {
+	return () => []
+}
+
 publicSsrTagsHolder.ssrTags = createSsrTags(publicSsrTagsHolder)
 /** @type {typeof baseSvg} */
 const svg = baseSvg
@@ -157,6 +166,7 @@ export {
 	force,
 	html,
 	mathml,
+	portal,
 	rawText,
 	ref,
 	renderComponentToString,

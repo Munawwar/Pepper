@@ -43,6 +43,8 @@ export type ComponentOptions<Props = Record<string, unknown>> = {
 	propsComparator?: ((previousProps: Props, nextProps: Props) => boolean) | null
 }
 export type RootContainer = string | Element
+export type PortalTarget = RootContainer
+export type PortalRenderable = (key?: import('./src/html.js').TemplateKey) => []
 export type RootOptions<Context extends PepperContext = PepperContext> = {
 	context?: ContextInput<Context>
 	debugKeys?: boolean
@@ -63,6 +65,7 @@ export function state<T>(
 ): [() => T, (valueOrSetter: T | ((value: T) => T), callback?: false | RenderCallback) => void]
 
 export function ref<T = Node>(): { current: T | null }
+export function portal(target: PortalTarget, renderable: unknown): PortalRenderable
 
 export function render<
 	Props = Record<string, unknown>,

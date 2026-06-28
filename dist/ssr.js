@@ -526,6 +526,7 @@ function createComponentRuntime(componentType, props, rootRecord, parentRuntime 
     parentRuntime,
     pendingChangedProps: [],
     pendingOldProps: {},
+    portals: /* @__PURE__ */ new Map(),
     propHandlers: [],
     props: {},
     refs: [],
@@ -591,6 +592,11 @@ function finalizeComponentRuntime(runtime) {
       store.delete(key);
     }
   }
+  for (const [key, portalRuntime] of runtime.portals) {
+    if (portalRuntime.lastSeen === runtime.renderPassId) continue;
+    portalRuntime.destroy();
+    runtime.portals.delete(key);
+  }
   runtime.dirty = false;
   runtime.hasDirtyDescendant = false;
   runtime.pendingChangedProps = [];
@@ -604,6 +610,8 @@ function destroyComponentRuntime(runtime) {
     store.clear();
   }
   runtime.childStores.clear();
+  for (const portalRuntime of runtime.portals.values()) portalRuntime.destroy();
+  runtime.portals.clear();
   runtime.currentNodes = null;
   for (const cleanup of runtime.mountCleanups.splice(0)) cleanup();
   for (const runtimeRef of runtime.refs) runtimeRef.current = null;
@@ -948,6 +956,9 @@ function renderComponentToString(Component, props = {}, options = {}) {
 function renderToString2(value) {
   return renderToString(value);
 }
+function portal() {
+  return () => [];
+}
 publicSsrTagsHolder.ssrTags = createSsrTags(publicSsrTagsHolder);
 var svg2 = svg;
 var mathml2 = mathml;
@@ -957,6 +968,7 @@ export {
   force,
   html2 as html,
   mathml2 as mathml,
+  portal,
   rawText,
   ref,
   renderComponentToString,

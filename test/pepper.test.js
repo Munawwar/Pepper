@@ -1,4 +1,4 @@
-import {component, hydrate, ref, render, state, Store} from '../src/index.js'
+import {component, hydrate, portal, ref, render, state, Store} from '../src/index.js'
 
 /**
  * @typedef {(strings: TemplateStringsArray, ...values: readonly unknown[]) => unknown} HtmlTag
@@ -503,5 +503,48 @@ describe('Pepper component runtime', () => {
 		cart.assign({items: ['a', 'b', 'c']})
 		await flushRender()
 		assertEquals(container.textContent, '3', 'Subscribed components should rerender when the context store changes')
+	})
+
+	it('renders portals into external targets and cleans them up when removed', async () => {
+		let portalUnmounts = 0
+		const outlet = document.createElement('div')
+
+		/** @param {{ onMount(handler: () => void | (() => void)): void }} param0 */
+		function PortalChild({onMount}) {
+			onMount(() => () => {
+				portalUnmounts++
+			})
+			/** @param {HtmlTag} html */
+			return html => html`<span>${'inside portal'}</span>`
+		}
+
+		const App = component(function App() {
+			const [getOpen, setOpen] = state(true)
+			return {
+				toggle() {
+					setOpen(open => !open)
+				},
+				/** @param {HtmlTag} html */
+				render(html) {
+					return html`
+						<div>${'shell'}</div>
+						${getOpen() ? portal(outlet, html`<${PortalChild} />`) : ''}
+					`
+				},
+			}
+		})
+
+		const container = document.createElement('div')
+		document.body.append(container, outlet)
+		const model = /** @type {{ toggle(): void }} */ (/** @type {unknown} */ (render(App, container)))
+
+		assertEquals(container.textContent, 'shell', 'Portal content should stay out of the owner container')
+		assertEquals(outlet.textContent, 'inside portal', 'Portal content should render into the target container')
+
+		model.toggle()
+		await flushRender()
+
+		assertEquals(outlet.textContent, '', 'Turning the portal off should remove its target DOM')
+		assertEquals(portalUnmounts, 1, 'Portal child components should run unmount cleanup when removed')
 	})
 })

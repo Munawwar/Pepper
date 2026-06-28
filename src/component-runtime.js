@@ -64,6 +64,7 @@ let currentOwnerRuntime = null
  *   parentRuntime: ComponentRuntime | null,
  *   pendingChangedProps: string[],
  *   pendingOldProps: Record<string, unknown>,
+ *   portals: Map<unknown, { currentNodes: ChildNode[], currentTarget: Element | null, destroy(): void, lastSeen: number, viewKey: symbol }>,
  *   propHandlers: Array<(changedProps: string[], oldProps: Record<string, unknown>) => void>,
  *   props: Record<string, unknown>,
  *   refs: RuntimeRef[],
@@ -298,6 +299,7 @@ function createComponentRuntime(componentType, props, rootRecord, parentRuntime 
 		parentRuntime,
 		pendingChangedProps: [],
 		pendingOldProps: {},
+		portals: new Map(),
 		propHandlers: [],
 		props: {},
 		refs: [],
@@ -385,6 +387,11 @@ function finalizeComponentRuntime(runtime) {
 			store.delete(key)
 		}
 	}
+	for (const [key, portalRuntime] of runtime.portals) {
+		if (portalRuntime.lastSeen === runtime.renderPassId) continue
+		portalRuntime.destroy()
+		runtime.portals.delete(key)
+	}
 	runtime.dirty = false
 	runtime.hasDirtyDescendant = false
 	runtime.pendingChangedProps = []
@@ -403,6 +410,8 @@ function destroyComponentRuntime(runtime) {
 		store.clear()
 	}
 	runtime.childStores.clear()
+	for (const portalRuntime of runtime.portals.values()) portalRuntime.destroy()
+	runtime.portals.clear()
 	runtime.currentNodes = null
 	for (const cleanup of runtime.mountCleanups.splice(0)) cleanup()
 	for (const runtimeRef of runtime.refs) runtimeRef.current = null

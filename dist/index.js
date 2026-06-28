@@ -1174,6 +1174,7 @@ function createComponentRuntime(componentType, props, rootRecord, parentRuntime 
     parentRuntime,
     pendingChangedProps: [],
     pendingOldProps: {},
+    portals: /* @__PURE__ */ new Map(),
     propHandlers: [],
     props: {},
     refs: [],
@@ -1239,6 +1240,11 @@ function finalizeComponentRuntime(runtime) {
       store.delete(key);
     }
   }
+  for (const [key, portalRuntime] of runtime.portals) {
+    if (portalRuntime.lastSeen === runtime.renderPassId) continue;
+    portalRuntime.destroy();
+    runtime.portals.delete(key);
+  }
   runtime.dirty = false;
   runtime.hasDirtyDescendant = false;
   runtime.pendingChangedProps = [];
@@ -1252,6 +1258,8 @@ function destroyComponentRuntime(runtime) {
     store.clear();
   }
   runtime.childStores.clear();
+  for (const portalRuntime of runtime.portals.values()) portalRuntime.destroy();
+  runtime.portals.clear();
   runtime.currentNodes = null;
   for (const cleanup of runtime.mountCleanups.splice(0)) cleanup();
   for (const runtimeRef of runtime.refs) runtimeRef.current = null;
@@ -2129,6 +2137,17 @@ function createRootRecord(Component, container, props, options) {
   rootRecord.topRuntime = createComponentRuntime(Component, props, rootRecord, null);
   return rootRecord;
 }
+function removeOwnedNodes(target, nodes) {
+  if (!target) return;
+  for (const node of nodes) {
+    if (node.parentNode === target) node.remove();
+  }
+}
+function resolveElementTarget(container, errorPrefix) {
+  const target = typeof container === "string" ? document.querySelector(container) : container;
+  if (!(target instanceof Element)) throw new Error(`${errorPrefix} must be a DOM element or selector.`);
+  return target;
+}
 function flushDirtyRuntimes(rootRecord) {
   const dirtyRuntimes = [...rootRecord.dirtyRuntimes].filter((runtime) => runtime.dirty && !runtime.destroyed).filter((runtime) => {
     for (let parent = runtime.parentRuntime; parent; parent = parent.parentRuntime) {
@@ -2171,10 +2190,7 @@ function scheduleRootRender(rootRecord) {
   });
 }
 function mountRoot(Component, container, props = {}, options = {}, hydrateOnly = false) {
-  const target = typeof container === "string" ? document.querySelector(container) : container;
-  if (!(target instanceof Element)) {
-    throw new Error("Pepper render/hydrate target must be a DOM element or selector.");
-  }
+  const target = resolveElementTarget(container, "Pepper render/hydrate target");
   let rootRecord = rootMap.get(target);
   if (!rootRecord || rootRecord.Component !== Component) {
     if (rootRecord) {
@@ -2206,6 +2222,55 @@ function render(Component, container, props = {}, options = {}) {
 function renderToString2(Component, props = {}, options = {}) {
   return renderComponentToString(Component, props, options);
 }
+function portal(target, renderable) {
+  const ownerRuntime = getCurrentOwnerRuntime();
+  if (!ownerRuntime) throw new Error("portal() can only be used while rendering a Pepper component.");
+  if (!ownerRuntime.rootRecord.domTags || typeof document === "undefined") return () => [];
+  return function renderPortalValue(instanceKey = /* @__PURE__ */ Symbol()) {
+    let portalRuntime = ownerRuntime.portals.get(instanceKey);
+    if (!portalRuntime) {
+      const createdPortalRuntime = {
+        currentNodes: [],
+        currentTarget: null,
+        viewKey: /* @__PURE__ */ Symbol(`pepper-portal-${ownerRuntime.renderPassId}`),
+        lastSeen: 0,
+        destroy() {
+          removeOwnedNodes(createdPortalRuntime.currentTarget, createdPortalRuntime.currentNodes);
+          createdPortalRuntime.currentNodes = [];
+          createdPortalRuntime.currentTarget = null;
+        }
+      };
+      portalRuntime = createdPortalRuntime;
+      ownerRuntime.portals.set(instanceKey, portalRuntime);
+    }
+    const nextTarget = resolveElementTarget(target, "Pepper portal target");
+    const portalState = (
+      /** @type {{ currentNodes: ChildNode[], currentTarget: Element | null, viewKey: symbol, lastSeen: number, destroy(): void }} */
+      portalRuntime
+    );
+    const liveNodes = portalState.currentTarget === nextTarget && portalState.currentNodes.length ? portalState.currentNodes : null;
+    if (!liveNodes && portalState.currentTarget && portalState.currentTarget !== nextTarget) {
+      removeOwnedNodes(portalState.currentTarget, portalState.currentNodes);
+      portalState.currentNodes = [];
+    }
+    const view = (
+      /** @type {(key?: symbol, liveNodes?: ChildNode[]) => Node[]} */
+      typeof renderable === "function" ? renderable : (
+        /** @type {DomTags} */
+        ownerRuntime.rootRecord.domTags.html(singleValueStrings, renderable)
+      )
+    );
+    const nodes = (
+      /** @type {ChildNode[]} */
+      liveNodes ? view(portalState.viewKey, portalState.currentNodes) : view(portalState.viewKey)
+    );
+    if (!liveNodes) for (const node of nodes) nextTarget.append(node);
+    portalState.currentNodes = nodes;
+    portalState.currentTarget = nextTarget;
+    portalState.lastSeen = ownerRuntime.renderPassId;
+    return [];
+  };
+}
 var html3 = domTags.html;
 var svg3 = svg;
 var mathml3 = mathml;
@@ -2216,6 +2281,7 @@ export {
   html3 as html,
   hydrate,
   mathml3 as mathml,
+  portal,
   rawText,
   ref,
   render,

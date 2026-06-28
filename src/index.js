@@ -37,6 +37,7 @@ import { Store } from './store.js'
  *   context?: import('./component-runtime.js').ContextInput,
  *   debugKeys?: boolean,
  * }} RenderOptions
+ * @typedef {string | Element} PortalTarget
  * @typedef {import('./component-runtime.js').ComponentRuntime} ComponentRuntime
  * @typedef {import('./component-runtime.js').ComponentModel} ComponentModel
  * @typedef {import('./component-runtime.js').PepperComponent} PepperComponent
@@ -214,6 +215,29 @@ function createRootRecord(Component, container, props, options) {
 }
 
 /**
+ * @param {Element | null} target
+ * @param {ChildNode[]} nodes
+ * @returns {void}
+ */
+function removeOwnedNodes(target, nodes) {
+	if (!target) return
+	for (const node of nodes) {
+		if (node.parentNode === target) node.remove()
+	}
+}
+
+/**
+ * @param {string | Element} container
+ * @param {string} errorPrefix
+ * @returns {Element}
+ */
+function resolveElementTarget(container, errorPrefix) {
+	const target = typeof container === 'string' ? document.querySelector(container) : container
+	if (!(target instanceof Element)) throw new Error(`${errorPrefix} must be a DOM element or selector.`)
+	return target
+}
+
+/**
  * @param {RootRecord} rootRecord
  * @returns {void}
  */
@@ -288,10 +312,7 @@ function scheduleRootRender(rootRecord) {
  * @returns {ComponentModel}
  */
 function mountRoot(Component, container, props = {}, options = {}, hydrateOnly = false) {
-	const target = typeof container === 'string' ? document.querySelector(container) : container
-	if (!(target instanceof Element)) {
-		throw new Error('Pepper render/hydrate target must be a DOM element or selector.')
-	}
+	const target = resolveElementTarget(container, 'Pepper render/hydrate target')
 
 	let rootRecord = rootMap.get(target)
 	if (!rootRecord || rootRecord.Component !== Component) {
@@ -352,6 +373,59 @@ function renderToString(Component, props = {}, options = {}) {
 }
 
 /**
+ * Render a Pepper subtree into another DOM container while keeping ownership,
+ * context, and lifecycle under the current component runtime.
+ *
+ * Server rendering omits portal output.
+ *
+ * @param {PortalTarget} target
+ * @param {unknown} renderable
+ * @returns {(instanceKey?: symbol) => []}
+ */
+function portal(target, renderable) {
+	const ownerRuntime = getCurrentOwnerRuntime()
+	if (!ownerRuntime) throw new Error('portal() can only be used while rendering a Pepper component.')
+	if (!ownerRuntime.rootRecord.domTags || typeof document === 'undefined') return () => []
+	return function renderPortalValue(instanceKey = Symbol()) {
+		let portalRuntime = ownerRuntime.portals.get(instanceKey)
+		if (!portalRuntime) {
+			const createdPortalRuntime = {
+				currentNodes: [],
+				currentTarget: null,
+				viewKey: Symbol(`pepper-portal-${ownerRuntime.renderPassId}`),
+				lastSeen: 0,
+				destroy() {
+					removeOwnedNodes(createdPortalRuntime.currentTarget, createdPortalRuntime.currentNodes)
+					createdPortalRuntime.currentNodes = []
+					createdPortalRuntime.currentTarget = null
+				},
+			}
+			portalRuntime = createdPortalRuntime
+			ownerRuntime.portals.set(instanceKey, portalRuntime)
+		}
+
+		const nextTarget = resolveElementTarget(target, 'Pepper portal target')
+		const portalState = /** @type {{ currentNodes: ChildNode[], currentTarget: Element | null, viewKey: symbol, lastSeen: number, destroy(): void }} */ (portalRuntime)
+		const liveNodes = portalState.currentTarget === nextTarget && portalState.currentNodes.length ? portalState.currentNodes : null
+		if (!liveNodes && portalState.currentTarget && portalState.currentTarget !== nextTarget) {
+			removeOwnedNodes(portalState.currentTarget, portalState.currentNodes)
+			portalState.currentNodes = []
+		}
+		const view = /** @type {(key?: symbol, liveNodes?: ChildNode[]) => Node[]} */ (
+			typeof renderable === 'function'
+				? renderable
+				: /** @type {DomTags} */ (ownerRuntime.rootRecord.domTags).html(singleValueStrings, renderable)
+		)
+		const nodes = /** @type {ChildNode[]} */ (liveNodes ? view(portalState.viewKey, portalState.currentNodes) : view(portalState.viewKey))
+		if (!liveNodes) for (const node of nodes) nextTarget.append(node)
+		portalState.currentNodes = nodes
+		portalState.currentTarget = nextTarget
+		portalState.lastSeen = ownerRuntime.renderPassId
+		return []
+	}
+}
+
+/**
  * A Pepper `html` template tag function for component-aware DOM rendering and hydration.
  *
  * @type {typeof baseHtml}
@@ -380,6 +454,7 @@ export {
 	ref,
 	render,
 	renderToString,
+	portal,
 	state,
 	Store,
 	svg,

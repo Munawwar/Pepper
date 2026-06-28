@@ -33,6 +33,7 @@ export type PepperComponent<
 > = (
 	api: ComponentSetupApi<Props, Context>
 ) => Result
+export type PortalRenderable = (key?: import('./src/html-ssr.js').TemplateKey) => []
 export type SsrRenderOptions<Context extends PepperContext = PepperContext> = {
 	context?: ContextInput<Context>
 }
@@ -45,6 +46,7 @@ export function component<
 	factory: PepperComponent<Props, Result, Context>,
 	options?: import('./index.js').ComponentOptions<Props>,
 ): PepperComponent<Props, Result, Context>
+export function portal(target: string | Element, renderable: unknown): PortalRenderable
 
 export function renderComponentToString<
 	Props = Record<string, unknown>,

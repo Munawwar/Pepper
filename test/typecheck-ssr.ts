@@ -1,5 +1,5 @@
 import type {HtmlTag, SsrRenderOptions} from '../pepper-ssr'
-import {component, renderComponentToString} from '../pepper-ssr'
+import {component, portal, renderComponentToString} from '../pepper-ssr'
 import type {SsrTemplateView} from '../src/html-ssr.js'
 import {html} from '../src/html-ssr.js'
 
@@ -27,8 +27,10 @@ const options: SsrRenderOptions<AppContext> = {
 	context: {requestId: 'req-1'},
 }
 const markup: string = renderComponentToString(SsrComponent, {}, options)
+const ssrPortal = portal('#modal', html`<div>modal</div>`)
 
 markup
+ssrPortal()
 
 // @ts-expect-error SSR context values should match the declared context shape
 const badOptions: SsrRenderOptions<AppContext> = {context: {requestId: 1}}
