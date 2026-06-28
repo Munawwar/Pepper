@@ -281,3 +281,25 @@ test('reads root context and parent-provided context during SSR', () => {
 		'<span>hello from-parent</span>',
 	)
 })
+
+test('renders error boundary fallbacks during SSR when children throw', () => {
+	const Boundary = component(function Boundary({getError, getProps}) {
+		return {
+			render(h) {
+				return getError() ? h`<p>${'fallback'}</p>` : getProps().children?.()
+			},
+		}
+	}, {errorBoundary: true})
+
+	function Buggy() {
+		return () => {
+			throw new Error('boom')
+		}
+	}
+
+	function App() {
+		return h => h`<${Boundary}><${Buggy} /></${Boundary}>`
+	}
+
+	assert.equal(renderComponentToString(App), '<p>fallback</p>')
+})

@@ -10,6 +10,7 @@ import {
 } from './html.js'
 import {
 	component,
+	captureBoundaryError,
 	createContextValues,
 	createComponentRuntime,
 	destroyComponentRuntime,
@@ -17,10 +18,13 @@ import {
 	flushMounts,
 	getCurrentOwnerRuntime,
 	getOrCreateChildStore,
+	isErrorBoundarySignal,
 	ref,
 	renderComponentRuntime,
+	runWithOwnerRuntime,
 	state,
 	syncComponentProps,
+	throwBoundaryError,
 } from './component-runtime.js'
 import {
 	compileComponentTemplate,
@@ -143,14 +147,22 @@ function createDomComponentValue(ownerRuntime, descriptor, values) {
 		const componentType = /** @type {PepperComponent} */ (values[descriptor.componentIndex])
 		const { key, props } = resolveComponentProps(descriptor.bindings, values)
 		const childrenSource = descriptor.childrenSource
-		if (childrenSource != null) {
-			props.children = () => renderSourceTemplate(/** @type {DomTags} */ (ownerRuntime.rootRecord.domTags).html, childrenSource, values)
-		}
 		const childKey = key ?? instanceKey
+		/** @type {ComponentRuntime | undefined} */
 		let runtime = store.get(childKey)
+		if (childrenSource != null) {
+			props.children = () => runWithOwnerRuntime(
+				/** @type {ComponentRuntime} */ (runtime),
+				() => renderSourceTemplate(/** @type {DomTags} */ (ownerRuntime.rootRecord.domTags).html, childrenSource, values),
+			)
+		}
 		if (!runtime || runtime.componentType !== componentType) {
 			if (runtime) destroyComponentRuntime(runtime)
-			runtime = createComponentRuntime(componentType, props, ownerRuntime.rootRecord, ownerRuntime)
+			try {
+				runtime = createComponentRuntime(componentType, props, ownerRuntime.rootRecord, ownerRuntime)
+			} catch (error) {
+				throwBoundaryError(ownerRuntime, error, true)
+			}
 			store.set(childKey, runtime)
 		} else {
 			syncComponentProps(runtime, props)
@@ -163,12 +175,13 @@ function createDomComponentValue(ownerRuntime, descriptor, values) {
 			!runtime.dirty &&
 			!runtime.hasDirtyDescendant &&
 			!runtime.pendingChangedProps.length
-		)
-			? runtime.currentNodes
-			: realizeDomRenderable(
-				renderComponentRuntime(runtime, /** @type {RuntimeTags} */ (ownerRuntime.rootRecord.domTags)),
-				runtime,
 			)
+				? runtime.currentNodes
+				: realizeDomRenderable(
+					renderComponentRuntime(runtime, /** @type {RuntimeTags} */ (ownerRuntime.rootRecord.domTags)),
+					runtime,
+					runtime.options.errorBoundary ? /** @type {ChildNode[] | null} */ (runtime.currentNodes) : null,
+				)
 		const debugKeyValue = ownerRuntime.rootRecord.options?.debugKeys === true && key != null ? String(key) : ''
 		if (runtime.debugKeyNodes)
 			for (const node of runtime.debugKeyNodes)
@@ -252,9 +265,35 @@ function flushDirtyRuntimes(rootRecord) {
 		})
 	rootRecord.dirtyRuntimes.clear()
 	for (const runtime of dirtyRuntimes) {
-		const renderable = renderComponentRuntime(runtime, rootRecord.domTags)
-		realizeDomRenderable(renderable, runtime)
-		finalizeComponentRuntime(runtime)
+		try {
+			const renderable = renderComponentRuntime(runtime, rootRecord.domTags)
+			const nodes = realizeDomRenderable(
+				renderable,
+				runtime,
+				runtime !== rootRecord.topRuntime && runtime.options.errorBoundary
+					? /** @type {ChildNode[] | null} */ (runtime.currentNodes)
+					: null,
+			)
+			if (runtime === rootRecord.topRuntime && nodes.some(node => node.parentNode !== rootRecord.container)) {
+				rootRecord.container.replaceChildren(...nodes)
+			}
+			finalizeComponentRuntime(runtime)
+		} catch (error) {
+			if (!isErrorBoundarySignal(error)) throw error
+			captureBoundaryError(error.boundary, error.error)
+			let retryRuntime = error.boundary
+			for (let parent = error.boundary.parentRuntime; parent; parent = parent.parentRuntime) {
+				if (parent !== runtime) continue
+				retryRuntime = runtime
+				break
+			}
+			const renderable = renderComponentRuntime(retryRuntime, rootRecord.domTags)
+			const nodes = retryRuntime === rootRecord.topRuntime
+				? realizeDomRenderable(renderable, retryRuntime)
+				: realizeDomRenderable(renderable, retryRuntime, /** @type {ChildNode[] | null} */ (retryRuntime.currentNodes))
+			if (retryRuntime === rootRecord.topRuntime) rootRecord.container.replaceChildren(...nodes)
+			finalizeComponentRuntime(retryRuntime)
+		}
 	}
 	flushMounts(rootRecord)
 	for (const callback of rootRecord.pendingCallbacks.splice(0)) callback()
@@ -280,8 +319,17 @@ function performRootRender(rootRecord, hydrateOnly = false) {
 	}
 	rootRecord.dirtyRuntimes.clear()
 	const liveNodes = hydrateOnly ? Array.from(rootRecord.container.childNodes) : null
-	const renderable = renderComponentRuntime(rootRecord.topRuntime, rootRecord.domTags)
-	const nodes = realizeDomRenderable(renderable, rootRecord.topRuntime, liveNodes && liveNodes.length ? liveNodes : null)
+	let renderable = renderComponentRuntime(rootRecord.topRuntime, rootRecord.domTags)
+	let nodes
+	try {
+		nodes = realizeDomRenderable(renderable, rootRecord.topRuntime, liveNodes && liveNodes.length ? liveNodes : null)
+	} catch (error) {
+		if (!isErrorBoundarySignal(error)) throw error
+		captureBoundaryError(error.boundary, error.error)
+		renderable = renderComponentRuntime(rootRecord.topRuntime, rootRecord.domTags)
+		nodes = realizeDomRenderable(renderable, rootRecord.topRuntime)
+		rootRecord.container.replaceChildren(...nodes)
+	}
 	finalizeComponentRuntime(rootRecord.topRuntime)
 	if (!rootRecord.mounted && !hydrateOnly) rootRecord.container.replaceChildren(...nodes)
 	rootRecord.mounted = true

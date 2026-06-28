@@ -103,6 +103,14 @@ const ContextComponent = component(
 	},
 )
 
+const ErrorBoundary = component(function ErrorBoundary({getError, getProps, resetError}: ComponentSetupApi) {
+	const error = getError()
+	const {children} = getProps() as {children?: (() => unknown) | undefined}
+	error
+	resetError
+	return tag => error ? tag`<button @click=${resetError}>retry</button>` : children?.()
+}, {errorBoundary: true})
+
 const typedRootOptions: RootOptions<AppContext> = {
 	context: {cart: {items: ['a']}, featureName: 'cart'},
 	debugKeys: true,
@@ -123,6 +131,7 @@ setCount(value => value + 1, () => {})
 
 render(ContextComponent, renderContainer, {}, typedRootOptions)
 render(ContextComponent, renderContainer, {}, typedContextMap)
+render(ErrorBoundary, renderContainer, {children: () => html`<span>ok</span>`})
 typedContextValue
 buttonRef.current
 nextCount

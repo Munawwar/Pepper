@@ -11,9 +11,11 @@ export type ComponentSetupApi<Props = Record<string, unknown>, Context extends P
 	getProps(): Props
 	getContext<Key extends Extract<keyof Context, string>>(key: Key): Context[Key]
 	getContext(key: string): unknown
+	getError(): unknown | null
 	hasContext(key: string): boolean
 	onMount(handler: () => void | (() => void)): void
 	onProps(handler: (changedProps: string[], oldProps: Props) => void): void
+	resetError(): void
 	setContext<Key extends Extract<keyof Context, string>>(key: Key, value: Context[Key]): Context[Key]
 	setContext<Key extends string, Value>(key: Exclude<Key, Extract<keyof Context, string>>, value: Value): Value
 	update(callback?: RenderCallback): void

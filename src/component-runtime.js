@@ -1,8 +1,11 @@
 import { isEqual } from './utils.js'
 
 const COMPONENT_SYMBOL = Symbol('pepper-component')
+const ERROR_BOUNDARY_SIGNAL = Symbol('pepper-error-boundary-signal')
+const NO_ERROR = Symbol('pepper-no-error')
 const defaultComponentOptions = {
 	autoEffectEvent: true,
+	errorBoundary: false,
 	memo: true,
 	propsComparator: null,
 }
@@ -20,9 +23,11 @@ let currentOwnerRuntime = null
  * @typedef {{
  *   getProps(): Record<string, unknown>,
  *   getContext(key: string): unknown,
+ *   getError(): unknown | null,
  *   hasContext(key: string): boolean,
  *   onMount(handler: () => void | (() => void)): void,
  *   onProps(handler: (changedProps: string[], oldProps: Record<string, unknown>) => void): void,
+ *   resetError(): void,
  *   setContext(key: string, value: unknown): unknown,
  *   update(callback?: RenderCallback): void,
  * }} ComponentSetupApi
@@ -30,6 +35,7 @@ let currentOwnerRuntime = null
  * @typedef {(api: ComponentSetupApi) => ComponentModel | ((html: TemplateTag) => unknown)} PepperComponent
  * @typedef {{
  *   autoEffectEvent: boolean,
+ *   errorBoundary: boolean,
  *   memo: boolean,
  *   propsComparator: ((previousProps: Record<string, unknown>, nextProps: Record<string, unknown>) => boolean) | null,
  * }} ComponentOptions
@@ -47,6 +53,7 @@ let currentOwnerRuntime = null
  * }} RootRecord
  * @typedef {{
  *   childStores: Map<unknown, Map<unknown, ComponentRuntime>>,
+ *   capturedError: unknown,
  *   componentType: PepperComponent,
  *   contextValues: Map<string, unknown> | null,
  *   currentNodes: Node[] | null,
@@ -72,6 +79,11 @@ let currentOwnerRuntime = null
  *   rootRecord: RootRecord,
  *   viewKey: symbol,
  * }} ComponentRuntime
+ * @typedef {{
+ *   [ERROR_BOUNDARY_SIGNAL]: true,
+ *   boundary: ComponentRuntime,
+ *   error: unknown,
+ * }} ErrorBoundarySignal
  */
 
 /**
@@ -80,12 +92,15 @@ let currentOwnerRuntime = null
  * @template {Record<string, unknown>} [Props=Record<string, unknown>]
  * @param {(api: {
  *   getProps(): Props,
+ *   getError(): unknown | null,
  *   onMount(handler: () => void | (() => void)): void,
  *   onProps(handler: (changedProps: string[], oldProps: Props) => void): void,
+ *   resetError(): void,
  *   update(callback?: (() => void)): void,
  * }) => { render(html: import('./html.js').html): unknown } | ((html: import('./html.js').html) => unknown)} factory
  * @param {{
  *   autoEffectEvent?: boolean,
+ *   errorBoundary?: boolean,
  *   memo?: boolean,
  *   propsComparator?: ((previousProps: Props, nextProps: Props) => boolean) | null,
  * }} [options]
@@ -104,6 +119,53 @@ function component(factory, options = {}) {
 		},
 	}
 	return wrapped
+}
+
+/**
+ * @param {unknown} value
+ * @returns {value is ErrorBoundarySignal}
+ */
+function isErrorBoundarySignal(value) {
+	return !!value && typeof value === 'object' && ERROR_BOUNDARY_SIGNAL in value
+}
+
+/**
+ * @param {ComponentRuntime} runtime
+ * @param {unknown} error
+ * @param {boolean} [includeSelf=false]
+ * @returns {never}
+ */
+function throwBoundaryError(runtime, error, includeSelf = false) {
+	let boundary = includeSelf ? runtime : runtime.parentRuntime
+	while (boundary && !boundary.options.errorBoundary) boundary = boundary.parentRuntime
+	if (!boundary) throw error
+	throw {[ERROR_BOUNDARY_SIGNAL]: true, boundary, error}
+}
+
+/**
+ * @param {ComponentRuntime} runtime
+ * @param {unknown} error
+ * @returns {void}
+ */
+function captureBoundaryError(runtime, error) {
+	runtime.capturedError = error
+	runtime.dirty = true
+}
+
+/**
+ * @template T
+ * @param {ComponentRuntime} runtime
+ * @param {() => T} callback
+ * @returns {T}
+ */
+function runWithOwnerRuntime(runtime, callback) {
+	const previousOwnerRuntime = currentOwnerRuntime
+	currentOwnerRuntime = runtime
+	try {
+		return callback()
+	} finally {
+		currentOwnerRuntime = previousOwnerRuntime
+	}
 }
 
 /**
@@ -283,6 +345,7 @@ function createComponentRuntime(componentType, props, rootRecord, parentRuntime 
 	/** @type {ComponentRuntime} */
 	const runtime = {
 		childStores: new Map(),
+		capturedError: NO_ERROR,
 		componentType,
 		contextValues: null,
 		currentNodes: null,
@@ -315,12 +378,18 @@ function createComponentRuntime(componentType, props, rootRecord, parentRuntime 
 	const setupApi = {
 		getProps: () => runtime.props,
 		getContext: key => getContextValue(runtime, key),
+		getError: () => runtime.capturedError === NO_ERROR ? null : runtime.capturedError,
 		hasContext: key => hasContextValue(runtime, key),
 		onMount: handler => {
 			runtime.mountHandlers.push(handler)
 		},
 		onProps: handler => {
 			runtime.propHandlers.push(handler)
+		},
+		resetError: () => {
+			if (runtime.capturedError === NO_ERROR) return
+			runtime.capturedError = NO_ERROR
+			markRuntimeDirty(runtime.parentRuntime || runtime)
 		},
 		setContext: (key, value) => {
 			if (!runtime.contextValues) runtime.contextValues = new Map()
@@ -365,16 +434,21 @@ function renderComponentRuntime(runtime, tags) {
 		for (const handler of runtime.propHandlers) handler(runtime.pendingChangedProps, runtime.pendingOldProps)
 	}
 	if (!runtime.model) throw new Error('Pepper component runtime is missing its model.')
+	const model = runtime.model
 
-	runtime.renderPassId++
-	const previousOwnerRuntime = currentOwnerRuntime
-	currentOwnerRuntime = runtime
-	try {
-		runtime.currentRenderable = runtime.model.render.call(runtime.model, tags.html)
-	} finally {
-		currentOwnerRuntime = previousOwnerRuntime
+	while (true) {
+		runtime.renderPassId++
+		try {
+			runtime.currentRenderable = runWithOwnerRuntime(runtime, () => model.render.call(model, tags.html))
+			return runtime.currentRenderable
+		} catch (error) {
+			if (isErrorBoundarySignal(error) && error.boundary === runtime && runtime.options.errorBoundary && runtime.capturedError === NO_ERROR) {
+				captureBoundaryError(runtime, error.error)
+				continue
+			}
+			throwBoundaryError(runtime, error)
+		}
 	}
-	return runtime.currentRenderable
 }
 
 /**
@@ -461,9 +535,13 @@ export {
 	flushMounts,
 	getCurrentOwnerRuntime,
 	getOrCreateChildStore,
+	captureBoundaryError,
+	isErrorBoundarySignal,
 	createContextValues,
 	ref,
 	renderComponentRuntime,
+	runWithOwnerRuntime,
 	state,
 	syncComponentProps,
+	throwBoundaryError,
 }

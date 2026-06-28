@@ -452,6 +452,57 @@ describe('Pepper component runtime', () => {
 		assertEquals(button.textContent, '1', 'Leaf DOM should still update correctly')
 	})
 
+	it('renders error boundary fallbacks and lets them reset', async () => {
+		const Boundary = component(function Boundary({getError, getProps, resetError}) {
+			return {
+				/** @param {HtmlTag} html */
+				render(html) {
+					const {children} = /** @type {{ children?: (() => unknown) | undefined }} */ (getProps())
+					return getError()
+						? html`<button class="reset" @click=${resetError}>Retry</button>`
+						: children?.()
+				},
+			}
+		}, {errorBoundary: true})
+
+		/** @param {{ getProps(): Record<string, unknown> }} param0 */
+		function Buggy({getProps}) {
+			/** @param {HtmlTag} html */
+			return html => {
+				if (/** @type {{ crash?: boolean }} */ (getProps()).crash) throw new Error('boom')
+				return html`<span class="ok">${'ok'}</span>`
+			}
+		}
+
+		function App() {
+			const [getCrash, setCrash] = state(false)
+			/** @param {HtmlTag} html */
+			return html => html`
+				<button class="toggle" @click=${() => setCrash(crash => !crash)}>Toggle crash</button>
+				<${Boundary}><${Buggy} crash=${getCrash()} /></${Boundary}>
+			`
+		}
+
+		const container = document.createElement('div')
+		document.body.append(container)
+		render(App, container)
+
+		assertEquals(container.querySelector('.ok')?.textContent, 'ok', 'Healthy children should render before any crash')
+
+		const toggleButton = /** @type {HTMLButtonElement} */ (container.querySelector('.toggle'))
+		toggleButton.click()
+		await flushRender()
+		assertEquals(container.querySelector('.reset')?.textContent, 'Retry', 'Boundary should render its fallback after a child throws')
+
+		toggleButton.click()
+		await flushRender()
+		const resetButton = /** @type {HTMLButtonElement} */ (container.querySelector('.reset'))
+		resetButton.click()
+		await flushRender()
+
+		assertEquals(container.querySelector('.ok')?.textContent, 'ok', 'resetError() should let the boundary try rendering its children again')
+	})
+
 	it('reuses unchanged child nodes without re-invoking child views on parent rerender', async () => {
 		let childViewCalls = 0
 

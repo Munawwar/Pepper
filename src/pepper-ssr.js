@@ -12,13 +12,17 @@ import {
 } from './html-ssr.js'
 import {
 	component,
+	captureBoundaryError,
 	createContextValues,
 	createComponentRuntime,
 	finalizeComponentRuntime,
 	getCurrentOwnerRuntime,
+	isErrorBoundarySignal,
 	ref,
 	renderComponentRuntime,
+	runWithOwnerRuntime,
 	state,
+	throwBoundaryError,
 } from './component-runtime.js'
 import {
 	compileComponentTemplate,
@@ -88,14 +92,32 @@ function createSsrComponentValue(rootRecord, ownerRuntime, descriptor, values) {
 		const componentType = /** @type {PepperComponent} */ (values[descriptor.componentIndex])
 		const { props } = resolveComponentProps(descriptor.bindings, values)
 		const childrenSource = descriptor.childrenSource
+		/** @type {ComponentRuntime | undefined} */
+		let runtime
 		if (childrenSource != null) {
-			props.children = () => renderSourceTemplate(/** @type {SsrTags} */ (rootRecord.ssrTags).html, childrenSource, values)
+			props.children = () => runWithOwnerRuntime(
+				/** @type {ComponentRuntime} */ (runtime),
+				() => renderSourceTemplate(/** @type {SsrTags} */ (rootRecord.ssrTags).html, childrenSource, values),
+			)
 		}
-		const runtime = createComponentRuntime(componentType, props, rootRecord, ownerRuntime)
-		const renderable = renderComponentRuntime(runtime, /** @type {SsrTags} */ (rootRecord.ssrTags))
-		const serialized = typeof renderable === 'function' ? renderable() : renderable
+		try {
+			runtime = createComponentRuntime(componentType, props, rootRecord, ownerRuntime)
+		} catch (error) {
+			if (!ownerRuntime) throw error
+			throwBoundaryError(ownerRuntime, error, true)
+		}
+		let renderable = renderComponentRuntime(runtime, /** @type {SsrTags} */ (rootRecord.ssrTags))
+		let serialized
+		try {
+			serialized = baseRenderToString(renderable)
+		} catch (error) {
+			if (!isErrorBoundarySignal(error) || error.boundary !== runtime) throw error
+			captureBoundaryError(runtime, error.error)
+			renderable = renderComponentRuntime(runtime, /** @type {SsrTags} */ (rootRecord.ssrTags))
+			serialized = baseRenderToString(renderable)
+		}
 		finalizeComponentRuntime(runtime)
-		return serialized
+		return unsafeHTML(serialized)
 	}
 }
 
@@ -129,8 +151,16 @@ function renderComponentToString(Component, props = {}, options = {}) {
 	}
 	rootRecord.ssrTags = createSsrTags(rootRecord)
 	const runtime = createComponentRuntime(Component, props, rootRecord, null)
-	const renderable = renderComponentRuntime(runtime, /** @type {SsrTags} */ (rootRecord.ssrTags))
-	const htmlString = baseRenderToString(renderable)
+	let renderable = renderComponentRuntime(runtime, /** @type {SsrTags} */ (rootRecord.ssrTags))
+	let htmlString
+	try {
+		htmlString = baseRenderToString(renderable)
+	} catch (error) {
+		if (!isErrorBoundarySignal(error) || error.boundary !== runtime) throw error
+		captureBoundaryError(runtime, error.error)
+		renderable = renderComponentRuntime(runtime, /** @type {SsrTags} */ (rootRecord.ssrTags))
+		htmlString = baseRenderToString(renderable)
+	}
 	finalizeComponentRuntime(runtime)
 	return htmlString
 }
