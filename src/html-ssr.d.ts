@@ -1,4 +1,6 @@
 export type TemplateMode = 'html' | 'svg' | 'mathml'
+export type WeakMapKey = symbol | object | Function
+export type TemplateKey = WeakMapKey
 
 declare const FORCE_SYMBOL: unique symbol
 declare const UNSAFE_HTML_SYMBOL: unique symbol
@@ -31,9 +33,13 @@ export type SsrTemplateResult = {
 	strings: TemplateStringsArray
 	values: readonly unknown[]
 }
+export type SsrTemplateMetadata = {
+	readonly mode: TemplateMode
+	readonly strings: TemplateStringsArray
+}
 
-export type SsrTemplateView = ((key?: any, liveNodes?: unknown[]) => SsrTemplateResult) & {
-	template?: {mode: TemplateMode; strings: TemplateStringsArray}
+export type SsrTemplateView = ((key?: TemplateKey, liveNodes?: readonly unknown[]) => SsrTemplateResult) & {
+	readonly template: SsrTemplateMetadata
 }
 
 /**

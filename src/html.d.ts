@@ -29,8 +29,12 @@ export type RawTextValue = {
 	[RAW_TEXT_SYMBOL]: string
 }
 
-export type TemplateView = ((key?: any, liveNodes?: Node[]) => TemplateNodes) & {
-	template?: object
+export type TemplateMetadata = {
+	readonly el?: HTMLTemplateElement
+}
+
+export type TemplateView = ((key?: TemplateKey, liveNodes?: readonly Node[]) => TemplateNodes) & {
+	readonly template?: TemplateMetadata
 }
 
 export type PrimitiveChild = string | number | boolean | bigint | null | undefined
@@ -88,20 +92,3 @@ export function unsafeMathML(value: string): UnsafeMathMLValue
  * Emit raw text content without entity escaping.
  */
 export function rawText(value: string): RawTextValue
-
-export type InterpolationValue = unknown
-export type InterpolationSite = {
-	node: Element | Text
-	type: 'text' | 'attribute' | 'event' | 'boolean-attribute' | 'property' | 'spread'
-	attributeName?: string
-	parts?: Array<string | number>
-	interpolationIndex?: number
-	insertedNodes?: Node[]
-	lastValue?: unknown
-	internalHandler?: EventListener
-	currentEventListener?: EventListener
-	skipEqualityCheck?: boolean
-	requiresUnwrapping?: boolean
-	spreadHandlers?: Map<string, {currentEventListener?: EventListener; internalHandler?: EventListener}>
-	preparedValue?: Record<string, unknown> | null
-}
