@@ -82,7 +82,7 @@ Install VSCode extension from `tooling/pepper-vscode/pepper-vscode.vsix`
 Setup API:
 
 - `getProps()`
-- `onProps(handler)`
+- `onProps(handler)` - runs on later prop changes, not on initial mount
 - `onMount(handler)`
 - `update(callback?)` - callback is called after a re-render
 

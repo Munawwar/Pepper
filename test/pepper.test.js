@@ -379,6 +379,31 @@ describe('Pepper component runtime', () => {
 		assertEquals(container.textContent, '1', 'Later rerender should pick up the silent state change')
 	})
 
+	it('runs onProps only after mount when props later change', () => {
+		/** @type {Array<{ changedProps: string[], oldProps: Record<string, unknown> }>} */
+		const calls = []
+
+		/** @param {{ getProps(): Record<string, unknown>, onProps(handler: (changedProps: string[], oldProps: Record<string, unknown>) => void): void }} param0 */
+		function App({getProps, onProps}) {
+			onProps((changedProps, oldProps) => {
+				calls.push({changedProps: [...changedProps], oldProps: {...oldProps}})
+			})
+			/** @param {HtmlTag} html */
+			return html => html`<span>${String(/** @type {{ value?: number }} */ (getProps()).value ?? '')}</span>`
+		}
+
+		const container = document.createElement('div')
+		document.body.append(container)
+
+		render(App, container, {value: 1})
+		assertEquals(calls.length, 0, 'Initial mount should not call onProps')
+
+		render(App, container, {value: 2})
+		assertEquals(calls.length, 1, 'Later prop changes should call onProps once')
+		assertEquals(calls[0].changedProps.join(','), 'value', 'Changed prop names should be reported')
+		assertEquals(calls[0].oldProps.value, 1, 'oldProps should expose the previous prop values')
+	})
+
 	it('does not rerender ancestors when a deep child updates local state', async () => {
 		let rootRenders = 0
 		let branchRenders = 0

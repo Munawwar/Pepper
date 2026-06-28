@@ -308,6 +308,8 @@ function createComponentRuntime(componentType, props, rootRecord, parentRuntime 
 		viewKey: Symbol('pepper-view'),
 	}
 	syncComponentProps(runtime, props, true)
+	runtime.pendingChangedProps = []
+	runtime.pendingOldProps = runtime.props
 
 	/** @type {ComponentSetupApi} */
 	const setupApi = {
