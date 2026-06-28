@@ -2,61 +2,71 @@
 
 Project status: work in progress.
 
-Pepper is a function-component runtime with DOM rendering, pseudo-hydration, and SSR.
+Pepper is a function-component runtime with DOM rendering, pseudo-hydration, SSR, portals, and error boundaries.
 
-```js
-import { hydrate, ref, render, renderToString, state } from '@pepper-js/pepper'
+```ts
+import {
+  hydrate,
+  ref,
+  render,
+  renderToString,
+  state,
+  type ComponentSetupApi,
+} from '@pepper-js/pepper'
 
-/** @param {import('@pepper-js/pepper').ComponentSetupApi<{ label: string }>} api */
-function TodoRow({ getProps }) {
-	return html => html`<li>${getProps().label}</li>`
+type TodoItem = {
+  id: number
+  label: string
 }
 
-/** @param {import('@pepper-js/pepper').ComponentSetupApi<Record<string, unknown>>} api */
-function TodoApp({ getProps, update, onMount, onProps }) {
-	const [getItems, setItems] = state([
-		{ id: 1, label: 'Write docs' },
-		{ id: 2, label: 'Ship demo' },
-	])
-	// or use `let` and manual update() like remix 3
-	const [getNextId, setNextId] = state(3)
-	/** @type {{ current: HTMLInputElement | null }} */
-	const inputRef = ref()
-
-	function addItem() {
-		const label = inputRef.current?.value?.trim()
-		if (!label) return
-		const nextId = getNextId()
-		setItems([...getItems(), { id: nextId, label }])
-		setNextId(nextId + 1)
-		inputRef.current.value = ''
-		inputRef.current.focus()
-	}
-
-	onProps((changedProps, oldProps) => {
-		// changedProps is list of top-level props that changed
-		// oldProps: previous props object
-		// use getProps() to always get latest props
-	})
-
-	onMount(() => {
-		console.log('mounted');
-		return () => console.log('unmounted');
-	})
-
-	// Return a render function. It receives a html tagged template literal for rendering purpose
-	return html => html`
-		<input ref=${inputRef} placeholder="New todo" />
-		<button @click=${addItem}>Add</button>
-		<ul>
-			${getItems().map(item => html`<${TodoRow} key=${item.id} label=${item.label} />`)}
-		</ul>
-	`
+type TodoRowProps = {
+  label: string
 }
 
-render(TodoApp, domNodeOrCssSelector, props)
-hydrate(TodoApp, domNodeOrCssSelector, props)
-renderToString(TodoApp, props)
+function TodoRow({ getProps }: ComponentSetupApi<TodoRowProps>) {
+  return html => html`<li>${getProps().label}</li>`
+}
+
+function TodoApp({ onMount, onProps }: ComponentSetupApi) {
+  const [getItems, setItems] = state<TodoItem[]>([
+    { id: 1, label: 'Write docs' },
+    { id: 2, label: 'Ship demo' },
+  ])
+  const [getNextId, setNextId] = state(3)
+  const inputRef = ref<HTMLInputElement>()
+
+  function addItem() {
+    const label = inputRef.current?.value.trim()
+    if (!label) return
+    const nextId = getNextId()
+    setItems([...getItems(), { id: nextId, label }])
+    setNextId(nextId + 1)
+    inputRef.current.value = ''
+    inputRef.current.focus()
+  }
+
+  onProps((changedProps, oldProps) => {
+    changedProps
+    oldProps
+  })
+
+  onMount(() => {
+    console.log('mounted')
+    return () => console.log('unmounted')
+  })
+
+  return html => html`
+    <input ref=${inputRef} placeholder="New todo" />
+    <button @click=${addItem}>Add</button>
+    <ul>
+      ${getItems().map(item => html`<${TodoRow} key=${item.id} label=${item.label} />`)}
+    </ul>
+  `
+}
+
+render(TodoApp, '#app')
+hydrate(TodoApp, document.getElementById('app'))
+renderToString(TodoApp)
 ```
 
 Note:
@@ -82,17 +92,20 @@ Install VSCode extension from `tooling/pepper-vscode/pepper-vscode.vsix`
 Setup API:
 
 - `getProps()`
+- `getError()` - returns the currently captured error for an error-boundary component, otherwise `null`
 - `onProps(handler)` - runs on later prop changes, not on initial mount
 - `onMount(handler)`
+- `resetError()` - clears the captured boundary error and retries rendering
 - `update(callback?)` - callback is called after a re-render
 
 Direct imports:
 
 - `const [getState, setState] = state(initialValue, comparator?)`
-	- `setState(newState, falseOrCallback?)`
-		- If 2nd param is false, then no re-render is scheduled.
-		- If 2nd param is a function, it's called after re-render.
+  - `setState(newState, falseOrCallback?)`
+    - If 2nd param is false, then no re-render is scheduled.
+    - If 2nd param is a function, it's called after re-render.
 - `ref()`
+- `portal(target, renderable)`
 
 Components may return:
 
@@ -103,13 +116,13 @@ Do not reuse one `html\`...\`` output in multiple holes:
 
 ```js
 function BadExample() {
-	return html => {
-		const icon = html`<span>!</span>`
-		return html`
-			<div>${icon}</div>
-			<div>${icon}</div>
-		`
-	}
+  return html => {
+    const icon = html`<span>!</span>`
+    return html`
+      <div>${icon}</div>
+      <div>${icon}</div>
+    `
+  }
 }
 ```
 
@@ -117,10 +130,10 @@ Instead, create a fresh `html\`...\`` value per hole:
 
 ```js
 function GoodExample() {
-	return html => html`
-		<div>${html`<span>!</span>`}</div>
-		<div>${html`<span>!</span>`}</div>
-	`
+  return html => html`
+    <div>${html`<span>!</span>`}</div>
+    <div>${html`<span>!</span>`}</div>
+  `
 }
 ```
 
@@ -132,41 +145,41 @@ Pepper roots accept a 4th-param `context` object. This is the intended way to pa
 import { Store, hydrate, renderToString } from '@pepper-js/pepper'
 
 type CartItem = {
-	id: string
-	qty: number
+  id: string
+  qty: number
 }
 
 type CartData = {
-	items: CartItem[]
+  items: CartItem[]
 }
 
 type CartStore = Store & {
-	data: CartData
-	assign(partial: Partial<CartData>): void
+  data: CartData
+  assign(partial: Partial<CartData>): void
 }
 
 type AppContext = {
-	cart: CartStore
+  cart: CartStore
 }
 
 function CartCount({ getContext, onMount, update }: import('@pepper-js/pepper').ComponentSetupApi<{}, AppContext>) {
-	const cart = getContext('cart')
-	const onCartChange = () => update()
+  const cart = getContext('cart')
+  const onCartChange = () => update()
 
-	onMount(() => {
-		cart.subscribe(['items'], onCartChange)
-		return () => cart.unsubscribe(onCartChange)
-	})
+  onMount(() => {
+    cart.subscribe(['items'], onCartChange)
+    return () => cart.unsubscribe(onCartChange)
+  })
 
-	return html => html`${cart.data.items.length}`
+  return html => html`${cart.data.items.length}`
 }
 
 function HeaderCart() {
-	return html => html`<span>Cart: <${CartCount} /></span>`
+  return html => html`<span>Cart: <${CartCount} /></span>`
 }
 
 function SidebarCart() {
-	return html => html`<aside>Items: <${CartCount} /></aside>`
+  return html => html`<aside>Items: <${CartCount} /></aside>`
 }
 
 // client: two islands sharing the same Store instance
@@ -199,7 +212,7 @@ cart.data = { items: ['a'] }
 cart.assign({ items: ['a', 'b'] })
 
 const onCartChange = changedProps => {
-	console.log(changedProps)
+  console.log(changedProps)
 }
 
 cart.subscribe(['items'], onCartChange)
@@ -226,9 +239,9 @@ When you want to opt out, wrap the component:
 import { component } from '@pepper-js/pepper'
 
 const Unmemoized = component(function Unmemoized(api) {
-	return html => html`<div />`
+  return html => html`<div />`
 }, {
-	memo: false,
+  memo: false,
 })
 ```
 
@@ -237,6 +250,7 @@ Supported options:
 - `memo: boolean`
 - `propsComparator(prevProps, nextProps)`
 - `autoEffectEvent: boolean`
+- `errorBoundary: boolean`
 
 ## Layout components / children()
 
@@ -244,20 +258,20 @@ Pepper supports paired component tags for layout-style composition:
 
 ```js
 function Layout({ getProps }) {
-	return html => html`
-		<section class="layout">
-			<header>${getProps().title}</header>
-			<main>${getProps().children?.()}</main>
-		</section>
-	`
+  return html => html`
+    <section class="layout">
+      <header>${getProps().title}</header>
+      <main>${getProps().children?.()}</main>
+    </section>
+  `
 }
 
 function Screen() {
-	return html => html`
-		<${Layout} title=${'Settings'}>
-			<span>${'inside'}</span>
-		</${Layout}>
-	`
+  return html => html`
+    <${Layout} title=${'Settings'}>
+      <span>${'inside'}</span>
+    </${Layout}>
+  `
 }
 ```
 
@@ -267,6 +281,78 @@ Rules:
 - `...${spreadProps}` works on child component tags
 - paired tags pass lazy `children()` to the child component
 - named slots are not supported yet
+
+## Portals
+
+Use `portal(target, renderable)` to render a subtree into another DOM container while keeping it owned by the current Pepper component.
+
+```js
+import { portal } from '@pepper-js/pepper'
+
+function Dialog({ getProps }) {
+  return html => html`
+    <section class="dialog">
+      ${getProps().title}
+    </section>
+  `
+}
+
+function App() {
+  return html => html`
+    <div>${'page content'}</div>
+    ${portal('#modal-root', html`<${Dialog} title=${'Settings'} />`)}
+  `
+}
+```
+
+Notes:
+
+- `target` can be a DOM element or selector
+- portal children still get normal Pepper lifecycle and context
+- SSR omits portal output
+
+## Error boundaries
+
+Wrap a component with `component(..., { errorBoundary: true })` to let it catch descendant render/setup errors and render fallback UI.
+
+```js
+import { component } from '@pepper-js/pepper'
+
+const ErrorBoundary = component(function ErrorBoundary({ getError, getProps, resetError }) {
+  return {
+    render(html) {
+      const error = getError()
+      if (error) {
+        return html`<button @click=${resetError}>Retry</button>`
+      }
+      return getProps().children?.()
+    },
+  }
+}, {
+  errorBoundary: true,
+})
+
+function Buggy({ getProps }) {
+  return html => {
+    if (getProps().crash) throw new Error('boom')
+    return html`<span>${'ok'}</span>`
+  }
+}
+
+function App() {
+  return html => html`
+    <${ErrorBoundary}>
+      <${Buggy} crash=${true} />
+    </${ErrorBoundary}>
+  `
+}
+```
+
+Notes:
+
+- boundaries catch descendant render/setup failures, not event-handler errors
+- `getError()` returns `null` when healthy
+- `resetError()` clears the boundary state and retries rendering
 
 ## Tooling
 
