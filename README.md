@@ -96,6 +96,31 @@ Components may return:
 - a render function
 - an object with `render(html)`
 
+Do not reuse one `html\`...\`` output in multiple holes:
+
+```js
+function BadExample() {
+	return html => {
+		const icon = html`<span>!</span>`
+		return html`
+			<div>${icon}</div>
+			<div>${icon}</div>
+		`
+	}
+}
+```
+
+Instead, create a fresh `html\`...\`` value per hole:
+
+```js
+function GoodExample() {
+	return html => html`
+		<div>${html`<span>!</span>`}</div>
+		<div>${html`<span>!</span>`}</div>
+	`
+}
+```
+
 ## SSR / Store / Context
 
 Pepper roots accept a 4th-param `context` object. This is the intended way to pass request-local stores through the tree for both SSR and hydration.

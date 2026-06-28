@@ -1160,6 +1160,7 @@ function createComponentRuntime(componentType, props, rootRecord, parentRuntime 
     childStores: /* @__PURE__ */ new Map(),
     componentType,
     contextValues: null,
+    currentNodes: null,
     currentRenderable: null,
     destroyed: false,
     dirty: true,
@@ -1181,7 +1182,7 @@ function createComponentRuntime(componentType, props, rootRecord, parentRuntime 
     viewKey: /* @__PURE__ */ Symbol("pepper-view")
   };
   syncComponentProps(runtime, props, true);
-  const api = {
+  const setupApi = {
     getProps: () => runtime.props,
     getContext: (key) => getContextValue(runtime, key),
     hasContext: (key) => hasContextValue(runtime, key),
@@ -1203,7 +1204,7 @@ function createComponentRuntime(componentType, props, rootRecord, parentRuntime 
   const previousRuntime = currentSetupRuntime;
   currentSetupRuntime = runtime;
   try {
-    const model = definition.factory(api);
+    const model = definition.factory(setupApi);
     runtime.model = typeof model === "function" ? { render: model } : model;
     if (!runtime.model || typeof runtime.model.render !== "function") {
       throw new Error("Pepper components must return a render function or an object with a render(html) method.");
@@ -1251,6 +1252,7 @@ function destroyComponentRuntime(runtime) {
     store.clear();
   }
   runtime.childStores.clear();
+  runtime.currentNodes = null;
   for (const cleanup of runtime.mountCleanups.splice(0)) cleanup();
   for (const runtimeRef of runtime.refs) runtimeRef.current = null;
 }
@@ -2001,6 +2003,7 @@ var Store = class {
 
 // src/index.js
 var rootMap = /* @__PURE__ */ new WeakMap();
+var ENABLE_COMPONENT_NODE_CACHE = true;
 var singleValueStrings = (
   /** @type {TemplateStringsArray} */
   Object.assign(
@@ -2017,7 +2020,9 @@ function realizeDomRenderable(renderable, runtime, liveNodes = null) {
       runtime.rootRecord.domTags.html(singleValueStrings, renderable)
     )
   );
-  return liveNodes ? view(runtime.viewKey, liveNodes) : view(runtime.viewKey);
+  const nodes = liveNodes ? view(runtime.viewKey, liveNodes) : view(runtime.viewKey);
+  runtime.currentNodes = nodes;
+  return nodes;
 }
 function createDomTags() {
   return {
@@ -2079,12 +2084,14 @@ function createDomComponentValue(ownerRuntime, descriptor, values) {
       syncComponentProps(runtime, props);
     }
     runtime.lastSeen = ownerRuntime.renderPassId;
-    const renderable = renderComponentRuntime(
-      runtime,
-      /** @type {RuntimeTags} */
-      ownerRuntime.rootRecord.domTags
+    const nodes = ENABLE_COMPONENT_NODE_CACHE && runtime.currentNodes && !runtime.dirty && !runtime.hasDirtyDescendant && !runtime.pendingChangedProps.length ? runtime.currentNodes : realizeDomRenderable(
+      renderComponentRuntime(
+        runtime,
+        /** @type {RuntimeTags} */
+        ownerRuntime.rootRecord.domTags
+      ),
+      runtime
     );
-    const nodes = realizeDomRenderable(renderable, runtime);
     const debugKeyValue = ownerRuntime.rootRecord.options?.debugKeys === true && key != null ? String(key) : "";
     if (runtime.debugKeyNodes) {
       for (const node of runtime.debugKeyNodes)

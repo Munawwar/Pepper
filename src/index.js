@@ -65,6 +65,10 @@ import { Store } from './store.js'
 
 /** @type {WeakMap<Element, RootRecord>} */
 const rootMap = new WeakMap()
+
+// Feature flags
+const ENABLE_COMPONENT_NODE_CACHE = true
+
 /** @type {TemplateStringsArray} */
 const singleValueStrings = /** @type {TemplateStringsArray} */ (
 	Object.assign(/** @type {MutableTemplateStringsArray} */ (['', '']), {raw: ['', '']})
@@ -82,7 +86,9 @@ function realizeDomRenderable(renderable, runtime, liveNodes = null) {
 			? renderable
 			: /** @type {DomTags} */ (runtime.rootRecord.domTags).html(singleValueStrings, renderable)
 	)
-	return liveNodes ? view(runtime.viewKey, liveNodes) : view(runtime.viewKey)
+	const nodes = liveNodes ? view(runtime.viewKey, liveNodes) : view(runtime.viewKey)
+	runtime.currentNodes = nodes
+	return nodes
 }
 
 /**
@@ -150,8 +156,18 @@ function createDomComponentValue(ownerRuntime, descriptor, values) {
 		}
 
 		runtime.lastSeen = ownerRuntime.renderPassId
-		const renderable = renderComponentRuntime(runtime, /** @type {RuntimeTags} */ (ownerRuntime.rootRecord.domTags))
-		const nodes = realizeDomRenderable(renderable, runtime)
+		const nodes = (
+			ENABLE_COMPONENT_NODE_CACHE &&
+			runtime.currentNodes &&
+			!runtime.dirty &&
+			!runtime.hasDirtyDescendant &&
+			!runtime.pendingChangedProps.length
+		)
+			? runtime.currentNodes
+			: realizeDomRenderable(
+				renderComponentRuntime(runtime, /** @type {RuntimeTags} */ (ownerRuntime.rootRecord.domTags)),
+				runtime,
+			)
 		const debugKeyValue = ownerRuntime.rootRecord.options?.debugKeys === true && key != null ? String(key) : ''
 		if (runtime.debugKeyNodes)
 			for (const node of runtime.debugKeyNodes)

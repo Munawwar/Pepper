@@ -427,6 +427,44 @@ describe('Pepper component runtime', () => {
 		assertEquals(button.textContent, '1', 'Leaf DOM should still update correctly')
 	})
 
+	it('reuses unchanged child nodes without re-invoking child views on parent rerender', async () => {
+		let childViewCalls = 0
+
+		function Child() {
+			/** @param {HtmlTag} html */
+			return html => {
+				const view = /** @type {(key?: symbol, liveNodes?: Node[]) => Node[]} */ (html`<span>child</span>`)
+				return (
+					/** @type {symbol | undefined} */ key,
+					/** @type {Node[] | undefined} */ liveNodes,
+				) => {
+					childViewCalls++
+					return view(key, liveNodes)
+				}
+			}
+		}
+
+		function App() {
+			const [getCount, setCount] = state(0)
+			/** @param {HtmlTag} html */
+			return html => html`
+				<button @click=${() => setCount(getCount() + 1)}>${getCount()}</button>
+				<${Child} />
+			`
+		}
+
+		const container = document.createElement('div')
+		document.body.append(container)
+		render(App, container)
+		assertEquals(childViewCalls, 1, 'Initial render should invoke the child view once')
+
+		const button = /** @type {HTMLButtonElement} */ (container.querySelector('button'))
+		button.click()
+		await flushRender()
+
+		assertEquals(childViewCalls, 1, 'Parent local state updates should reuse cached child nodes without re-invoking the child view')
+	})
+
 	it('reads stores from context and rerenders subscribed consumers', async () => {
 		/**
 		 * @param {{

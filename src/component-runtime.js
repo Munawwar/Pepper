@@ -49,6 +49,7 @@ let currentOwnerRuntime = null
  *   childStores: Map<unknown, Map<unknown, ComponentRuntime>>,
  *   componentType: PepperComponent,
  *   contextValues: Map<string, unknown> | null,
+ *   currentNodes: Node[] | null,
  *   currentRenderable: unknown,
  *   debugKeyNodes?: Element[],
  *   destroyed: boolean,
@@ -283,6 +284,7 @@ function createComponentRuntime(componentType, props, rootRecord, parentRuntime 
 		childStores: new Map(),
 		componentType,
 		contextValues: null,
+		currentNodes: null,
 		currentRenderable: null,
 		destroyed: false,
 		dirty: true,
@@ -306,7 +308,7 @@ function createComponentRuntime(componentType, props, rootRecord, parentRuntime 
 	syncComponentProps(runtime, props, true)
 
 	/** @type {ComponentSetupApi} */
-	const api = {
+	const setupApi = {
 		getProps: () => runtime.props,
 		getContext: key => getContextValue(runtime, key),
 		hasContext: key => hasContextValue(runtime, key),
@@ -329,7 +331,7 @@ function createComponentRuntime(componentType, props, rootRecord, parentRuntime 
 	const previousRuntime = currentSetupRuntime
 	currentSetupRuntime = runtime
 	try {
-		const model = definition.factory(api)
+		const model = definition.factory(setupApi)
 		runtime.model = typeof model === 'function' ? { render: model } : model
 		if (!runtime.model || typeof runtime.model.render !== 'function') {
 			throw new Error('Pepper components must return a render function or an object with a render(html) method.')
@@ -401,6 +403,7 @@ function destroyComponentRuntime(runtime) {
 		store.clear()
 	}
 	runtime.childStores.clear()
+	runtime.currentNodes = null
 	for (const cleanup of runtime.mountCleanups.splice(0)) cleanup()
 	for (const runtimeRef of runtime.refs) runtimeRef.current = null
 }
