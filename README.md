@@ -7,10 +7,12 @@ Pepper is a function-component runtime with DOM rendering, pseudo-hydration, and
 ```js
 import { hydrate, ref, render, renderToString, state } from '@pepper-js/pepper'
 
+/** @param {import('@pepper-js/pepper').ComponentSetupApi<{ label: string }>} api */
 function TodoRow({ getProps }) {
 	return html => html`<li>${getProps().label}</li>`
 }
 
+/** @param {import('@pepper-js/pepper').ComponentSetupApi<Record<string, unknown>>} api */
 function TodoApp({ getProps, update, onMount, onProps }) {
 	const [getItems, setItems] = state([
 		{ id: 1, label: 'Write docs' },
@@ -18,6 +20,7 @@ function TodoApp({ getProps, update, onMount, onProps }) {
 	])
 	// or use `let` and manual update() like remix 3
 	const [getNextId, setNextId] = state(3)
+	/** @type {{ current: HTMLInputElement | null }} */
 	const inputRef = ref()
 
 	function addItem() {
@@ -125,10 +128,28 @@ function GoodExample() {
 
 Pepper roots accept a 4th-param `context` object. This is the intended way to pass request-local stores through the tree for both SSR and hydration.
 
-```js
+```ts
 import { Store, hydrate, renderToString } from '@pepper-js/pepper'
 
-function CartCount({ getContext, onMount, update }) {
+type CartItem = {
+	id: string
+	qty: number
+}
+
+type CartData = {
+	items: CartItem[]
+}
+
+type CartStore = Store & {
+	data: CartData
+	assign(partial: Partial<CartData>): void
+}
+
+type AppContext = {
+	cart: CartStore
+}
+
+function CartCount({ getContext, onMount, update }: import('@pepper-js/pepper').ComponentSetupApi<{}, AppContext>) {
 	const cart = getContext('cart')
 	const onCartChange = () => update()
 
@@ -149,13 +170,13 @@ function SidebarCart() {
 }
 
 // client: two islands sharing the same Store instance
-const cart = new Store(window.initialCart)
+const cart = new Store(window.initialCart as CartData) as CartStore
 
 hydrate(HeaderCart, '#header-cart', {}, { context: { cart } })
 hydrate(SidebarCart, '#sidebar-cart', {}, { context: { cart } })
 
 // server: same API, but per-request data
-const ssrCart = new Store(cartData)
+const ssrCart = new Store(cartData) as CartStore
 const headerHtml = renderToString(HeaderCart, {}, { context: { cart: ssrCart } })
 const sidebarHtml = renderToString(SidebarCart, {}, { context: { cart: ssrCart } })
 ```
