@@ -2,7 +2,7 @@
 
 NOTE: Project is still a work-in-progress
 
-Pepper is a function-component runtime with DOM rendering, pseudo-hydration, SSR, portals, and error boundaries.
+Pepper is a JS view library with DOM rendering, components, pseudo-hydration, SSR, portals, and error boundaries.
 
 Bundle size - 10 KB gzipped. Add +1 KB if you use `pepper/store`.
 
