@@ -34,8 +34,6 @@ import {
 	renderSourceTemplate,
 	resolveComponentProps,
 } from './component-syntax.js'
-import { renderComponentToString } from './pepper-ssr.js'
-import { Store } from './store.js'
 
 /**
  * @typedef {string[] & { raw: string[] }} MutableTemplateStringsArray
@@ -417,18 +415,6 @@ function render(Component, container, props = {}, options = {}) {
 }
 
 /**
- * Render a Pepper component to an HTML string using the SSR backend.
- *
- * @param {PepperComponent} Component
- * @param {Record<string, unknown>} [props={}]
- * @param {RenderOptions} [options={}]
- * @returns {string}
- */
-function renderToString(Component, props = {}, options = {}) {
-	return renderComponentToString(Component, props, options)
-}
-
-/**
  * Render a Pepper subtree into another DOM container while keeping ownership,
  * context, and lifecycle under the current component runtime.
  *
@@ -509,10 +495,8 @@ export {
 	rawText,
 	ref,
 	render,
-	renderToString,
 	portal,
 	state,
-	Store,
 	svg,
 	unsafeHTML,
 	unsafeMathML,

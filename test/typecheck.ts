@@ -8,7 +8,8 @@ import type {
 } from '../src/html.js'
 import {force, html} from '../src/html.js'
 import type {ComponentSetupApi, PepperContext, PortalTarget, RootContainer, RootOptions} from '../index.js'
-import {component, hydrate, portal, ref, render, renderToString, state, stableId} from '../index.js'
+import {component, hydrate, portal, ref, render, state, stableId} from '../index.js'
+import {Store} from '../pepper-store'
 
 const key = Symbol()
 const text = 'hello'
@@ -125,6 +126,7 @@ const typedContextMap: RootOptions<AppContext> = {
 const typedContextValue: PepperContext = {cart: {items: ['a']}, featureName: 'cart'}
 const buttonRef = ref<HTMLButtonElement>()
 const generatedId: string = stableId()
+const store = new Store({items: ['a']})
 const [getCount, setCount] = state(0)
 const nextCount = getCount()
 setCount(nextCount + 1)
@@ -137,10 +139,8 @@ render(ErrorBoundary, renderContainer, {children: () => html`<span>ok</span>`})
 typedContextValue
 buttonRef.current
 generatedId
+store.data
 nextCount
-
-const renderedMarkup: string = renderToString(ContextComponent, {}, typedRootOptions)
-renderedMarkup
 
 const focused: boolean = modelRoot.focus()
 const hydratedFocused: boolean = hydratedModelRoot.focus()

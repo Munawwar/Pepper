@@ -13,13 +13,17 @@
     "./ssr": {
       "types": "./pepper-ssr.d.ts",
       "default": "./dist/ssr.js"
+    },
+    "./store": {
+      "types": "./pepper-store.d.ts",
+      "default": "./dist/store.js"
     }
   },
   "directories": {
     "test": "test"
   },
   "scripts": {
-    "build": "rm -fr dist && mkdir -p dist && esbuild src/index.js --outfile=dist/index.js --bundle --target=es2022 --format=esm --sourcemap && esbuild src/pepper-ssr.js --outfile=dist/ssr.js --bundle --target=es2022 --format=esm --sourcemap",
+    "build": "rm -fr dist && mkdir -p dist && esbuild src/index.js --outfile=dist/index.js --bundle --target=es2022 --format=esm --sourcemap && esbuild src/pepper-ssr.js --outfile=dist/ssr.js --bundle --target=es2022 --format=esm --sourcemap && esbuild src/store.js --outfile=dist/store.js --bundle --target=es2022 --format=esm --sourcemap",
     "demo": "browser-sync start --server --port 3005 --startPath=examples/components.html --watch --files=examples,src",
     "lint": "npm run typecheck && npm run lint:js",
     "lint:js": "npx oxlint@^1.62.0 src examples",

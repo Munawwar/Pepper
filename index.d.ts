@@ -1,5 +1,4 @@
 export * from './src/html.js'
-export { Store } from './src/store.js'
 
 export type RenderCallback = () => void
 export type PepperContext = Record<string, unknown>
@@ -93,13 +92,3 @@ export function hydrate<
 	props?: Props,
 	options?: RootOptions<Context>,
 ): ResolvedComponentModel<Result>
-
-export function renderToString<
-	Props = Record<string, unknown>,
-	Result extends ComponentFactoryResult = ComponentFactoryResult,
-	Context extends PepperContext = PepperContext,
->(
-	componentType: PepperComponent<Props, Result, Context>,
-	props?: Props,
-	options?: RootOptions<Context>,
-): string

@@ -1,8 +1,10 @@
 # Pepper
 
-Project status: work in progress.
+NOTE: Project is still a work-in-progress
 
 Pepper is a function-component runtime with DOM rendering, pseudo-hydration, SSR, portals, and error boundaries.
+
+Bundle size - 10 KB gzipped. Add +1 KB if you use `pepper/store`.
 
 ```ts
 import {
@@ -11,11 +13,11 @@ import {
   stableId, // like useId()
 
   render,
-  renderToString,
   hydrate,
 
   type ComponentSetupApi,
 } from '@pepper-js/pepper'
+import { renderComponentToString } from '@pepper-js/pepper/ssr'
 
 type TodoItem = {
   id: number
@@ -69,7 +71,7 @@ function TodoApp({ onMount, onProps }: ComponentSetupApi) {
 
 render(TodoApp, '#app')
 hydrate(TodoApp, document.getElementById('app'))
-renderToString(TodoApp)
+renderComponentToString(TodoApp)
 ```
 
 ## Demo
@@ -155,7 +157,9 @@ function Field() {
 When a page has multiple SSR roots, pass the same `identifierPrefix` to server render and client hydrate for each root:
 
 ```js
-const html = renderToString(Field, {}, { identifierPrefix: 'checkout-' })
+import { renderComponentToString } from '@pepper-js/pepper/ssr'
+
+const html = renderComponentToString(Field, {}, { identifierPrefix: 'checkout-' })
 hydrate(Field, '#checkout-field', {}, { identifierPrefix: 'checkout-' })
 ```
 
@@ -201,7 +205,9 @@ function GoodExample() {
 Pepper roots accept a 4th-param `context` object. This is the intended way to pass request-local stores through the tree for both SSR and hydration.
 
 ```ts
-import { Store, hydrate, renderToString } from '@pepper-js/pepper'
+import { hydrate } from '@pepper-js/pepper'
+import { renderComponentToString } from '@pepper-js/pepper/ssr'
+import { Store } from '@pepper-js/pepper/store'
 
 type CartItem = {
   id: string
@@ -249,8 +255,8 @@ hydrate(SidebarCart, '#sidebar-cart', {}, { context: { cart } })
 
 // server: same API, but per-request data
 const ssrCart = new Store(cartData) as CartStore
-const headerHtml = renderToString(HeaderCart, {}, { context: { cart: ssrCart } })
-const sidebarHtml = renderToString(SidebarCart, {}, { context: { cart: ssrCart } })
+const headerHtml = renderComponentToString(HeaderCart, {}, { context: { cart: ssrCart } })
+const sidebarHtml = renderComponentToString(SidebarCart, {}, { context: { cart: ssrCart } })
 ```
 
 Context API available inside components:
@@ -264,6 +270,8 @@ Context API available inside components:
 `Store` is a small external state container intended to be passed through Pepper context.
 
 ```js
+import { Store } from '@pepper-js/pepper/store'
+
 const cart = new Store({ items: [] })
 
 cart.data

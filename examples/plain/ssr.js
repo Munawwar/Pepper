@@ -1,4 +1,4 @@
-import { renderToString } from '../../src/index.js';
+import { renderComponentToString } from '../../src/pepper-ssr.js';
 import CounterDemo from './page.js';
 
 function renderPage() {
@@ -46,7 +46,7 @@ function renderPage() {
             <main class="demo">
                 <h1>Pepper Hydration Demo</h1>
                 <p>Click the button to confirm the server-rendered event handler hydrates correctly.</p>
-                <div id="app">${renderToString(CounterDemo, initialProps)}</div>
+                <div id="app">${renderComponentToString(CounterDemo, initialProps)}</div>
             </main>
             <script>window.initialProps = ${JSON.stringify(initialProps)};</script>
             <script type="module">

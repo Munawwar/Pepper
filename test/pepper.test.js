@@ -1,4 +1,5 @@
-import {component, hydrate, portal, ref, render, state, Store, stableId} from '../src/index.js'
+import {component, hydrate, portal, ref, render, state, stableId} from '../src/index.js'
+import {Store} from '../src/store.js'
 
 /**
  * @typedef {(strings: TemplateStringsArray, ...values: readonly unknown[]) => unknown} HtmlTag
