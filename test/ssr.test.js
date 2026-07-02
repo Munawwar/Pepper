@@ -18,6 +18,7 @@ import {
 	unsafeHTML,
 	unsafeMathML,
 	unsafeSVG,
+	stableId,
 } from '../src/pepper-ssr.js'
 
 test('renders text content and trims top-level formatting whitespace', () => {
@@ -254,6 +255,41 @@ test('renders component roots to strings through Pepper SSR runtime', () => {
 	})
 
 	assert.equal(renderComponentToString(Counter, {count: 3}), '<button>3</button>')
+})
+
+test('renders deterministic component-scoped ids during SSR', () => {
+	function Field() {
+		const id = stableId()
+		return h => h`<label for=${id}>Name</label><input id=${id}>`
+	}
+
+	function App() {
+		return h => h`<section><${Field} /><${Field} /></section>`
+	}
+
+	const output = renderComponentToString(App, {}, {identifierPrefix: 'checkout-'})
+	const ids = [...output.matchAll(/id="([^"]+)"/g)].map(match => match[1])
+
+	assert.equal(ids.length, 2)
+	assert.equal(new Set(ids).size, 2)
+	assert.equal(output.includes(`for="${ids[0]}"`), true)
+	assert.equal(output.includes(`for="${ids[1]}"`), true)
+	assert.equal(ids.every(id => id.startsWith('checkout-p-')), true)
+	assert.equal(renderComponentToString(App, {}, {identifierPrefix: 'checkout-'}), output)
+})
+
+test('renders generated ids for top-level SSR component tags', () => {
+	function Field() {
+		const id = stableId()
+		return h => h`<input id=${id}>`
+	}
+
+	const output = renderToString(html`<${Field} /><${Field} />`)
+	const ids = [...output.matchAll(/id="([^"]+)"/g)].map(match => match[1])
+
+	assert.equal(ids.length, 2)
+	assert.equal(new Set(ids).size, 2)
+	assert.equal(renderToString(html`<${Field} /><${Field} />`), output)
 })
 
 test('omits portal content during SSR', () => {

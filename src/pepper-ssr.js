@@ -13,6 +13,7 @@ import {
 import {
 	component,
 	captureBoundaryError,
+	createChildIdPath,
 	createContextValues,
 	createComponentRuntime,
 	finalizeComponentRuntime,
@@ -23,6 +24,7 @@ import {
 	runWithOwnerRuntime,
 	state,
 	throwBoundaryError,
+	stableId,
 } from './component-runtime.js'
 import {
 	compileComponentTemplate,
@@ -43,6 +45,9 @@ import {
  * }} SsrTags
  * @typedef {{
  *   context: Map<string, unknown>,
+ *   identifierPrefix?: string,
+ *   idChildCounters: Map<string, number>,
+ *   idPath: string[],
  *   pendingCallbacks: Array<() => void>,
  *   pendingMounts: ComponentRuntime[],
  *   scheduleRender(): void,
@@ -53,6 +58,9 @@ import {
 /** @type {SsrRootRecord} */
 const publicSsrTagsHolder = {
 	context: new Map(),
+	identifierPrefix: '',
+	idChildCounters: new Map(),
+	idPath: [],
 	pendingCallbacks: [],
 	pendingMounts: [],
 	scheduleRender() {},
@@ -69,8 +77,8 @@ function createSsrTags(rootRecord) {
 			const compiled = compileComponentTemplate(strings)
 			if (!compiled) return baseHtml(strings, ...values)
 			const ownerRuntime = getCurrentOwnerRuntime()
-			const lowered = lowerComponentTemplate(compiled, values, entry => (
-				createSsrComponentValue(rootRecord, ownerRuntime, entry, values)
+			const lowered = lowerComponentTemplate(compiled, values, (entry, loweredValues, index) => (
+				createSsrComponentValue(rootRecord, ownerRuntime, entry, loweredValues, index)
 			))
 			if (!lowered) return baseHtml(strings, ...values)
 			return baseHtml(lowered.strings, ...lowered.values)
@@ -85,13 +93,15 @@ function createSsrTags(rootRecord) {
  * @param {ComponentRuntime | null} ownerRuntime
  * @param {ComponentDescriptor} descriptor
  * @param {unknown[]} values
+ * @param {number} descriptorIndex
  * @returns {() => unknown}
  */
-function createSsrComponentValue(rootRecord, ownerRuntime, descriptor, values) {
+function createSsrComponentValue(rootRecord, ownerRuntime, descriptor, values, descriptorIndex) {
 	return function renderComponentValue() {
 		const componentType = /** @type {PepperComponent} */ (values[descriptor.componentIndex])
-		const { props } = resolveComponentProps(descriptor.bindings, values)
+		const { key, props } = resolveComponentProps(descriptor.bindings, values)
 		const childrenSource = descriptor.childrenSource
+		const idPath = createChildIdPath(ownerRuntime || rootRecord, descriptorIndex, key)
 		/** @type {ComponentRuntime | undefined} */
 		let runtime
 		if (childrenSource != null) {
@@ -101,7 +111,7 @@ function createSsrComponentValue(rootRecord, ownerRuntime, descriptor, values) {
 			)
 		}
 		try {
-			runtime = createComponentRuntime(componentType, props, rootRecord, ownerRuntime)
+			runtime = createComponentRuntime(componentType, props, rootRecord, ownerRuntime, idPath)
 		} catch (error) {
 			if (!ownerRuntime) throw error
 			throwBoundaryError(ownerRuntime, error, true)
@@ -137,13 +147,16 @@ function html(strings, ...values) {
  *
  * @param {PepperComponent} Component
  * @param {Record<string, unknown>} [props={}]
- * @param {{ context?: import('./component-runtime.js').ContextInput }} [options={}]
+ * @param {{ context?: import('./component-runtime.js').ContextInput, identifierPrefix?: string }} [options={}]
  * @returns {string}
  */
 function renderComponentToString(Component, props = {}, options = {}) {
 	/** @type {SsrRootRecord} */
 	const rootRecord = {
 		context: createContextValues(options.context),
+		identifierPrefix: options.identifierPrefix || '',
+		idChildCounters: new Map(),
+		idPath: [],
 		pendingCallbacks: [],
 		pendingMounts: [],
 		scheduleRender() {},
@@ -172,6 +185,7 @@ function renderComponentToString(Component, props = {}, options = {}) {
  * @returns {string}
  */
 function renderToString(value) {
+	publicSsrTagsHolder.idChildCounters.clear()
 	return baseRenderToString(value)
 }
 
@@ -206,4 +220,5 @@ export {
 	unsafeHTML,
 	unsafeMathML,
 	unsafeSVG,
+	stableId,
 }

@@ -11,6 +11,7 @@ import {
 import {
 	component,
 	captureBoundaryError,
+	createChildIdPath,
 	createContextValues,
 	createComponentRuntime,
 	destroyComponentRuntime,
@@ -25,6 +26,7 @@ import {
 	state,
 	syncComponentProps,
 	throwBoundaryError,
+	stableId,
 } from './component-runtime.js'
 import {
 	compileComponentTemplate,
@@ -40,6 +42,7 @@ import { Store } from './store.js'
  * @typedef {{
  *   context?: import('./component-runtime.js').ContextInput,
  *   debugKeys?: boolean,
+ *   identifierPrefix?: string,
  * }} RenderOptions
  * @typedef {string | Element} PortalTarget
  * @typedef {import('./component-runtime.js').ComponentRuntime} ComponentRuntime
@@ -54,6 +57,7 @@ import { Store } from './store.js'
  *   dirtyRuntimes: Set<ComponentRuntime>,
  *   domTags: DomTags,
  *   flushScheduled: boolean,
+ *   identifierPrefix: string,
  *   mounted: boolean,
  *   options: RenderOptions,
  *   pendingCallbacks: Array<() => void>,
@@ -108,8 +112,8 @@ function createDomTags() {
 			if (!ownerRuntime) {
 				throw new Error('Pepper component tags can only be used while rendering a Pepper component.')
 			}
-			const lowered = lowerComponentTemplate(compiled, values, entry => (
-				createDomComponentValue(ownerRuntime, entry, values)
+			const lowered = lowerComponentTemplate(compiled, values, (entry, loweredValues, index) => (
+				createDomComponentValue(ownerRuntime, entry, loweredValues, index)
 			))
 			if (!lowered) return baseHtml(strings, ...values)
 			if (compiled.strings.every(string => string === '')) {
@@ -139,15 +143,17 @@ const domTags = createDomTags()
  * @param {ComponentRuntime} ownerRuntime
  * @param {ComponentDescriptor} descriptor
  * @param {unknown[]} values
+ * @param {number} descriptorIndex
  * @returns {(instanceKey?: symbol) => Node[]}
  */
-function createDomComponentValue(ownerRuntime, descriptor, values) {
+function createDomComponentValue(ownerRuntime, descriptor, values, descriptorIndex) {
 	return function renderComponentValue(instanceKey = Symbol()) {
 		const store = getOrCreateChildStore(ownerRuntime, descriptor)
 		const componentType = /** @type {PepperComponent} */ (values[descriptor.componentIndex])
 		const { key, props } = resolveComponentProps(descriptor.bindings, values)
 		const childrenSource = descriptor.childrenSource
 		const childKey = key ?? instanceKey
+		const idPath = createChildIdPath(ownerRuntime, descriptorIndex, key)
 		/** @type {ComponentRuntime | undefined} */
 		let runtime = store.get(childKey)
 		if (childrenSource != null) {
@@ -159,7 +165,7 @@ function createDomComponentValue(ownerRuntime, descriptor, values) {
 		if (!runtime || runtime.componentType !== componentType) {
 			if (runtime) destroyComponentRuntime(runtime)
 			try {
-				runtime = createComponentRuntime(componentType, props, ownerRuntime.rootRecord, ownerRuntime)
+				runtime = createComponentRuntime(componentType, props, ownerRuntime.rootRecord, ownerRuntime, idPath)
 			} catch (error) {
 				throwBoundaryError(ownerRuntime, error, true)
 			}
@@ -219,6 +225,7 @@ function createRootRecord(Component, container, props, options) {
 		pendingCallbacks: [],
 		pendingMounts: [],
 		options,
+		identifierPrefix: options.identifierPrefix || '',
 		scheduleRender() {},
 		topRuntime: null,
 	}
@@ -376,6 +383,7 @@ function mountRoot(Component, container, props = {}, options = {}, hydrateOnly =
 	}
 
 	rootRecord.options = options
+	rootRecord.identifierPrefix = options.identifierPrefix || ''
 	syncComponentProps(/** @type {ComponentRuntime} */ (rootRecord.topRuntime), props)
 	performRootRender(rootRecord, hydrateOnly && !rootRecord.mounted)
 	if (!rootRecord.topRuntime?.model) throw new Error('Pepper root did not produce a component model.')
@@ -509,4 +517,5 @@ export {
 	unsafeHTML,
 	unsafeMathML,
 	unsafeSVG,
+	stableId,
 }

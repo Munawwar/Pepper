@@ -1,5 +1,5 @@
 import type {HtmlTag, SsrRenderOptions} from '../pepper-ssr'
-import {component, portal, renderComponentToString} from '../pepper-ssr'
+import {component, portal, renderComponentToString, stableId} from '../pepper-ssr'
 import type {SsrTemplateView} from '../src/html-ssr.js'
 import {html} from '../src/html-ssr.js'
 
@@ -17,14 +17,17 @@ ssrResult
 const SsrComponent = component<Record<string, never>, (tag: HtmlTag) => unknown, AppContext>(
 	function SsrComponent({getContext}) {
 		const requestId = getContext('requestId')
+		const generatedId: string = stableId()
 		const idLength: number = requestId.length
 		idLength
-		return tag => tag`<div>${requestId}</div>`
+		generatedId
+		return tag => tag`<div id=${generatedId}>${requestId}</div>`
 	},
 )
 
 const options: SsrRenderOptions<AppContext> = {
 	context: {requestId: 'req-1'},
+	identifierPrefix: 'ssr-',
 }
 const markup: string = renderComponentToString(SsrComponent, {}, options)
 const ssrPortal = portal('#modal', html`<div>modal</div>`)

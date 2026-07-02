@@ -1,4 +1,4 @@
-import {component, hydrate, portal, ref, render, state, Store} from '../src/index.js'
+import {component, hydrate, portal, ref, render, state, Store, stableId} from '../src/index.js'
 
 /**
  * @typedef {(strings: TemplateStringsArray, ...values: readonly unknown[]) => unknown} HtmlTag
@@ -622,5 +622,94 @@ describe('Pepper component runtime', () => {
 
 		assertEquals(outlet.textContent, '', 'Turning the portal off should remove its target DOM')
 		assertEquals(portalUnmounts, 1, 'Portal child components should run unmount cleanup when removed')
+	})
+
+	it('creates stable component-scoped ids across rerenders', async () => {
+		function App() {
+			const id = stableId()
+			const [getCount, setCount] = state(0)
+			/** @param {HtmlTag} html */
+			return html => html`
+				<label for=${id}>Count</label>
+				<button id=${id} @click=${() => setCount(getCount() + 1)}>${getCount()}</button>
+			`
+		}
+
+		const container = document.createElement('div')
+		document.body.append(container)
+		render(App, container)
+		const button = /** @type {HTMLButtonElement} */ (container.querySelector('button'))
+		const id = button.id
+
+		button.click()
+		await flushRender()
+
+		assertEquals(button.id, id, 'stableId() should not change after a local state rerender')
+		assertEquals(container.querySelector('label')?.getAttribute('for'), id, 'Related attributes should keep matching')
+	})
+
+	it('keeps keyed inserted children from duplicating generated ids', async () => {
+		function Row() {
+			const id = stableId()
+			/** @param {HtmlTag} html */
+			return html => html`<li id=${id}>row</li>`
+		}
+
+		const App = component(function App() {
+			const [getItems, setItems] = state([1, 2])
+			return {
+				addFront() {
+					setItems([0, ...getItems()])
+				},
+				/** @param {HtmlTag} html */
+				render(html) {
+					return html`<ul>${getItems().map(item => html`<${Row} key=${item} />`)}</ul>`
+				},
+			}
+		})
+
+		const container = document.createElement('div')
+		document.body.append(container)
+		const model = /** @type {{ addFront(): void }} */ (/** @type {unknown} */ (render(App, container)))
+
+		model.addFront()
+		await flushRender()
+
+		const ids = Array.from(container.querySelectorAll('li'), item => item.id)
+		assertEquals(new Set(ids).size, ids.length, 'Keyed insertions should not create duplicate stableId() values')
+	})
+
+	it('hydrates server-rendered generated ids without changing them', () => {
+		function Field() {
+			const id = stableId()
+			/** @param {HtmlTag} html */
+			return html => html`<label for=${id}>Name</label><input id=${id} />`
+		}
+
+		function App() {
+			/** @param {HtmlTag} html */
+			return html => html`<section><${Field} /></section>`
+		}
+
+		const container = document.createElement('div')
+		container.innerHTML = '<section><label for="root-pending">Name</label><input id="root-pending"></section>'
+		document.body.append(container)
+		hydrate(App, container, {}, {identifierPrefix: 'root-'})
+		const input = /** @type {HTMLInputElement | null} */ (container.querySelector('input'))
+		const label = container.querySelector('label')
+
+		if (!input || !label) throw new Error('Expected hydrated field elements to exist')
+		assertTrue(input.id.startsWith('root-p-'), 'identifierPrefix should be included in generated ids')
+		assertEquals(label.getAttribute('for'), input.id, 'Hydrated generated ids should match related attributes')
+	})
+
+	it('throws when stableId() is called outside component setup', () => {
+		let threw = false
+		try {
+			stableId()
+		} catch (error) {
+			threw = /stableId\(\)/.test(String(error))
+		}
+		assertTrue(threw, 'stableId() should only be available while creating a component')
 	})
 })

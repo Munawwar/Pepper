@@ -6,11 +6,14 @@ Pepper is a function-component runtime with DOM rendering, pseudo-hydration, SSR
 
 ```ts
 import {
-  hydrate,
+  state,
   ref,
+  stableId, // like useId()
+
   render,
   renderToString,
-  state,
+  hydrate,
+
   type ComponentSetupApi,
 } from '@pepper-js/pepper'
 
@@ -69,9 +72,6 @@ hydrate(TodoApp, document.getElementById('app'))
 renderToString(TodoApp)
 ```
 
-Note:
-- pass 4th param `{ debugKeys: true }` to `render()` or `hydrate()` to stamp keyed child roots with `x-key="..."`
-
 ## Demo
 
 ```
@@ -86,6 +86,30 @@ npm install @pepper-js/pepper
 ```
 
 Install VSCode extension from `tooling/pepper-vscode/pepper-vscode.vsix`
+
+## Import From CDN
+
+Pepper's browser build is an ES module, so it can be imported directly from a CDN:
+
+```html
+<script type="module">
+  import { html, render, state } from 'https://unpkg.com/@pepper-js/pepper/dist/index.js'
+
+  function Counter() {
+    const [getCount, setCount] = state(0)
+
+    return html => html`
+      <button @click=${() => setCount(getCount() + 1)}>
+        ${getCount()}
+      </button>
+    `
+  }
+
+  render(Counter, '#app')
+</script>
+```
+
+Pepper v0.3 does not publish a global/IIFE build; use a module script or bundle the package.
 
 ## Component API
 
@@ -105,12 +129,47 @@ Direct imports:
     - If 2nd param is false, then no re-render is scheduled.
     - If 2nd param is a function, it's called after re-render.
 - `ref()`
+- `stableId()`
 - `portal(target, renderable)`
 
 Components may return:
 
 - a render function
 - an object with `render(html)`
+
+Use `stableId()` during component setup when related DOM attributes need the same deterministic id across rerenders, SSR, and hydration (it's similar to react `useId()`):
+
+```js
+import { stableId } from '@pepper-js/pepper'
+
+function Field() {
+  const id = stableId()
+
+  return html => html`
+    <label for=${id}>Name</label>
+    <input id=${id} />
+  `
+}
+```
+
+When a page has multiple SSR roots, pass the same `identifierPrefix` to server render and client hydrate for each root:
+
+```js
+const html = renderToString(Field, {}, { identifierPrefix: 'checkout-' })
+hydrate(Field, '#checkout-field', {}, { identifierPrefix: 'checkout-' })
+```
+
+## Debugging
+
+Pass `{ debugKeys: true }` to `render()` or `hydrate()` to stamp keyed child component root elements with `x-key="..."`:
+
+```js
+render(App, '#app', {}, { debugKeys: true })
+```
+
+This is intended for inspecting keyed component identity in devtools. Do not rely on `x-key` in application code.
+
+## Footguns!
 
 Do not reuse one `html\`...\`` output in multiple holes:
 

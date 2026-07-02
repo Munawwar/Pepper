@@ -46,6 +46,7 @@ let currentOwnerRuntime = null
  *   pendingCallbacks: RenderCallback[],
  *   dirtyRuntimes?: Set<ComponentRuntime>,
  *   pendingMounts: ComponentRuntime[],
+ *   identifierPrefix?: string,
  *   scheduleRender(): void,
  *   domTags?: RuntimeTags,
  *   options?: { debugKeys?: boolean },
@@ -62,6 +63,10 @@ let currentOwnerRuntime = null
  *   destroyed: boolean,
  *   dirty: boolean,
  *   hasDirtyDescendant: boolean,
+ *   idBase: string | null,
+ *   idChildCounters: Map<string, number>,
+ *   idLocalCounter: number,
+ *   idPath: string[],
  *   lastSeen: number,
  *   model: ComponentModel | null,
  *   mountCleanups: Array<() => void>,
@@ -262,6 +267,49 @@ function ref() {
 }
 
 /**
+ * Create a deterministic DOM id scoped to the current component instance.
+ *
+ * @returns {string}
+ */
+function stableId() {
+	const runtime = currentSetupRuntime
+	if (!runtime) throw new Error('stableId() can only be used while creating a Pepper component.')
+	if (runtime.idBase == null) runtime.idBase = hashIdPath(runtime.idPath)
+	return `${runtime.rootRecord.identifierPrefix || ''}p-${runtime.idBase}-${runtime.idLocalCounter++}`
+}
+
+/**
+ * @param {string[]} parts
+ * @returns {string}
+ */
+function hashIdPath(parts) {
+	let hash = 0x811c9dc5
+	for (const part of parts) {
+		for (let index = 0; index < part.length; index++) {
+			hash ^= part.charCodeAt(index)
+			hash = Math.imul(hash, 0x01000193)
+		}
+		hash ^= 0xff
+		hash = Math.imul(hash, 0x01000193)
+	}
+	return (hash >>> 0).toString(36)
+}
+
+/**
+ * @param {{ idPath: string[], idChildCounters: Map<string, number> }} ownerRuntime
+ * @param {number} descriptorIndex
+ * @param {unknown} key
+ * @returns {string[]}
+ */
+function createChildIdPath(ownerRuntime, descriptorIndex, key) {
+	const site = `c${descriptorIndex}`
+	if (key != null) return [...ownerRuntime.idPath, `${site}:key:${String(key)}`]
+	const count = ownerRuntime.idChildCounters.get(site) || 0
+	ownerRuntime.idChildCounters.set(site, count + 1)
+	return [...ownerRuntime.idPath, `${site}:index:${count}`]
+}
+
+/**
  * @param {ComponentRuntime} runtime
  * @param {RenderCallback} [callback]
  * @returns {void}
@@ -338,9 +386,10 @@ function syncComponentProps(runtime, nextProps = {}, forceAll = false) {
  * @param {Props} props
  * @param {RootRecord} rootRecord
  * @param {ComponentRuntime | null} [parentRuntime=null]
+ * @param {string[]} [idPath]
  * @returns {ComponentRuntime}
  */
-function createComponentRuntime(componentType, props, rootRecord, parentRuntime = null) {
+function createComponentRuntime(componentType, props, rootRecord, parentRuntime = null, idPath = parentRuntime?.idPath || []) {
 	const definition = getComponentDefinition(componentType)
 	/** @type {ComponentRuntime} */
 	const runtime = {
@@ -353,6 +402,10 @@ function createComponentRuntime(componentType, props, rootRecord, parentRuntime 
 		destroyed: false,
 		dirty: true,
 		hasDirtyDescendant: false,
+		idBase: null,
+		idChildCounters: new Map(),
+		idLocalCounter: 0,
+		idPath,
 		lastSeen: 0,
 		model: null,
 		mountCleanups: [],
@@ -438,6 +491,7 @@ function renderComponentRuntime(runtime, tags) {
 
 	while (true) {
 		runtime.renderPassId++
+		runtime.idChildCounters.clear()
 		try {
 			runtime.currentRenderable = runWithOwnerRuntime(runtime, () => model.render.call(model, tags.html))
 			return runtime.currentRenderable
@@ -529,6 +583,7 @@ function getOrCreateChildStore(ownerRuntime, descriptor) {
 
 export {
 	component,
+	createChildIdPath,
 	createComponentRuntime,
 	destroyComponentRuntime,
 	finalizeComponentRuntime,
@@ -544,4 +599,5 @@ export {
 	state,
 	syncComponentProps,
 	throwBoundaryError,
+	stableId,
 }

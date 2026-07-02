@@ -1,4 +1,4 @@
-import {ref, render, state} from '../src/index.js'
+import {ref, render, stableId, state} from '../src/index.js'
 
 const app = /** @type {HTMLDivElement} */ (document.getElementById('app'))
 
@@ -18,6 +18,7 @@ function DemoFrame({getProps}) {
 /** @param {{ getProps(): { path: string, depth: number, maxDepth: number } }} api */
 function TreeNode({getProps}) {
 	const nodeRef = ref()
+	const id = stableId()
 	const [getValue, setValue] = state(0)
 	let renderCount = 0
 	let flashTimer = 0
@@ -37,7 +38,7 @@ function TreeNode({getProps}) {
 		})
 		return html`
 			<li class="tree-branch">
-				<article ref=${nodeRef} class="tree-node">
+				<article id=${id} ref=${nodeRef} class="tree-node">
 					<span class="tree-node__render">r${renderCount}</span>
 					<div class="tree-node__value">${getValue()}</div>
 					<div class="tree-node__controls">

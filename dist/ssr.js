@@ -369,8 +369,11 @@ function isEqual(value1, value2) {
 
 // src/component-runtime.js
 var COMPONENT_SYMBOL = /* @__PURE__ */ Symbol("pepper-component");
+var ERROR_BOUNDARY_SIGNAL = /* @__PURE__ */ Symbol("pepper-error-boundary-signal");
+var NO_ERROR = /* @__PURE__ */ Symbol("pepper-no-error");
 var defaultComponentOptions = {
   autoEffectEvent: true,
+  errorBoundary: false,
   memo: true,
   propsComparator: null
 };
@@ -399,6 +402,28 @@ function component(factory, options = {}) {
     }
   };
   return wrapped;
+}
+function isErrorBoundarySignal(value) {
+  return !!value && typeof value === "object" && ERROR_BOUNDARY_SIGNAL in value;
+}
+function throwBoundaryError(runtime, error, includeSelf = false) {
+  let boundary = includeSelf ? runtime : runtime.parentRuntime;
+  while (boundary && !boundary.options.errorBoundary) boundary = boundary.parentRuntime;
+  if (!boundary) throw error;
+  throw { [ERROR_BOUNDARY_SIGNAL]: true, boundary, error };
+}
+function captureBoundaryError(runtime, error) {
+  runtime.capturedError = error;
+  runtime.dirty = true;
+}
+function runWithOwnerRuntime(runtime, callback) {
+  const previousOwnerRuntime = currentOwnerRuntime;
+  currentOwnerRuntime = runtime;
+  try {
+    return callback();
+  } finally {
+    currentOwnerRuntime = previousOwnerRuntime;
+  }
 }
 function getComponentDefinition(componentType) {
   if (typeof componentType !== "function") throw new TypeError("Pepper component tags expect a function component.");
@@ -459,6 +484,31 @@ function ref() {
   runtime.refs.push(refObject);
   return refObject;
 }
+function stableId() {
+  const runtime = currentSetupRuntime;
+  if (!runtime) throw new Error("stableId() can only be used while creating a Pepper component.");
+  if (runtime.idBase == null) runtime.idBase = hashIdPath(runtime.idPath);
+  return `${runtime.rootRecord.identifierPrefix || ""}p-${runtime.idBase}-${runtime.idLocalCounter++}`;
+}
+function hashIdPath(parts) {
+  let hash = 2166136261;
+  for (const part of parts) {
+    for (let index = 0; index < part.length; index++) {
+      hash ^= part.charCodeAt(index);
+      hash = Math.imul(hash, 16777619);
+    }
+    hash ^= 255;
+    hash = Math.imul(hash, 16777619);
+  }
+  return (hash >>> 0).toString(36);
+}
+function createChildIdPath(ownerRuntime, descriptorIndex, key) {
+  const site = `c${descriptorIndex}`;
+  if (key != null) return [...ownerRuntime.idPath, `${site}:key:${String(key)}`];
+  const count = ownerRuntime.idChildCounters.get(site) || 0;
+  ownerRuntime.idChildCounters.set(site, count + 1);
+  return [...ownerRuntime.idPath, `${site}:index:${count}`];
+}
 function markRuntimeDirty(runtime, callback) {
   if (callback && runtime.rootRecord.pendingCallbacks) runtime.rootRecord.pendingCallbacks.push(callback);
   runtime.dirty = true;
@@ -506,10 +556,11 @@ function syncComponentProps(runtime, nextProps = {}, forceAll = false) {
   runtime.pendingOldProps = oldProps;
   return changedProps.length > 0;
 }
-function createComponentRuntime(componentType, props, rootRecord, parentRuntime = null) {
+function createComponentRuntime(componentType, props, rootRecord, parentRuntime = null, idPath = parentRuntime?.idPath || []) {
   const definition = getComponentDefinition(componentType);
   const runtime = {
     childStores: /* @__PURE__ */ new Map(),
+    capturedError: NO_ERROR,
     componentType,
     contextValues: null,
     currentNodes: null,
@@ -517,6 +568,10 @@ function createComponentRuntime(componentType, props, rootRecord, parentRuntime 
     destroyed: false,
     dirty: true,
     hasDirtyDescendant: false,
+    idBase: null,
+    idChildCounters: /* @__PURE__ */ new Map(),
+    idLocalCounter: 0,
+    idPath,
     lastSeen: 0,
     model: null,
     mountCleanups: [],
@@ -535,15 +590,23 @@ function createComponentRuntime(componentType, props, rootRecord, parentRuntime 
     viewKey: /* @__PURE__ */ Symbol("pepper-view")
   };
   syncComponentProps(runtime, props, true);
+  runtime.pendingChangedProps = [];
+  runtime.pendingOldProps = runtime.props;
   const setupApi = {
     getProps: () => runtime.props,
     getContext: (key) => getContextValue(runtime, key),
+    getError: () => runtime.capturedError === NO_ERROR ? null : runtime.capturedError,
     hasContext: (key) => hasContextValue(runtime, key),
     onMount: (handler) => {
       runtime.mountHandlers.push(handler);
     },
     onProps: (handler) => {
       runtime.propHandlers.push(handler);
+    },
+    resetError: () => {
+      if (runtime.capturedError === NO_ERROR) return;
+      runtime.capturedError = NO_ERROR;
+      markRuntimeDirty(runtime.parentRuntime || runtime);
     },
     setContext: (key, value) => {
       if (!runtime.contextValues) runtime.contextValues = /* @__PURE__ */ new Map();
@@ -574,15 +637,21 @@ function renderComponentRuntime(runtime, tags) {
     for (const handler of runtime.propHandlers) handler(runtime.pendingChangedProps, runtime.pendingOldProps);
   }
   if (!runtime.model) throw new Error("Pepper component runtime is missing its model.");
-  runtime.renderPassId++;
-  const previousOwnerRuntime = currentOwnerRuntime;
-  currentOwnerRuntime = runtime;
-  try {
-    runtime.currentRenderable = runtime.model.render.call(runtime.model, tags.html);
-  } finally {
-    currentOwnerRuntime = previousOwnerRuntime;
+  const model = runtime.model;
+  while (true) {
+    runtime.renderPassId++;
+    runtime.idChildCounters.clear();
+    try {
+      runtime.currentRenderable = runWithOwnerRuntime(runtime, () => model.render.call(model, tags.html));
+      return runtime.currentRenderable;
+    } catch (error) {
+      if (isErrorBoundarySignal(error) && error.boundary === runtime && runtime.options.errorBoundary && runtime.capturedError === NO_ERROR) {
+        captureBoundaryError(runtime, error.error);
+        continue;
+      }
+      throwBoundaryError(runtime, error);
+    }
   }
-  return runtime.currentRenderable;
 }
 function finalizeComponentRuntime(runtime) {
   for (const store of runtime.childStores.values()) {
@@ -880,6 +949,9 @@ function resolveComponentProps(bindings, values) {
 // src/pepper-ssr.js
 var publicSsrTagsHolder = {
   context: /* @__PURE__ */ new Map(),
+  identifierPrefix: "",
+  idChildCounters: /* @__PURE__ */ new Map(),
+  idPath: [],
   pendingCallbacks: [],
   pendingMounts: [],
   scheduleRender() {
@@ -892,7 +964,7 @@ function createSsrTags(rootRecord) {
       const compiled = compileComponentTemplate(strings);
       if (!compiled) return html(strings, ...values);
       const ownerRuntime = getCurrentOwnerRuntime();
-      const lowered = lowerComponentTemplate(compiled, values, (entry) => createSsrComponentValue(rootRecord, ownerRuntime, entry, values));
+      const lowered = lowerComponentTemplate(compiled, values, (entry, loweredValues, index) => createSsrComponentValue(rootRecord, ownerRuntime, entry, loweredValues, index));
       if (!lowered) return html(strings, ...values);
       return html(lowered.strings, ...lowered.values);
     },
@@ -900,31 +972,54 @@ function createSsrTags(rootRecord) {
     svg
   };
 }
-function createSsrComponentValue(rootRecord, ownerRuntime, descriptor, values) {
+function createSsrComponentValue(rootRecord, ownerRuntime, descriptor, values, descriptorIndex) {
   return function renderComponentValue() {
     const componentType = (
       /** @type {PepperComponent} */
       values[descriptor.componentIndex]
     );
-    const { props } = resolveComponentProps(descriptor.bindings, values);
+    const { key, props } = resolveComponentProps(descriptor.bindings, values);
     const childrenSource = descriptor.childrenSource;
+    const idPath = createChildIdPath(ownerRuntime || rootRecord, descriptorIndex, key);
+    let runtime;
     if (childrenSource != null) {
-      props.children = () => renderSourceTemplate(
-        /** @type {SsrTags} */
-        rootRecord.ssrTags.html,
-        childrenSource,
-        values
+      props.children = () => runWithOwnerRuntime(
+        /** @type {ComponentRuntime} */
+        runtime,
+        () => renderSourceTemplate(
+          /** @type {SsrTags} */
+          rootRecord.ssrTags.html,
+          childrenSource,
+          values
+        )
       );
     }
-    const runtime = createComponentRuntime(componentType, props, rootRecord, ownerRuntime);
-    const renderable = renderComponentRuntime(
+    try {
+      runtime = createComponentRuntime(componentType, props, rootRecord, ownerRuntime, idPath);
+    } catch (error) {
+      if (!ownerRuntime) throw error;
+      throwBoundaryError(ownerRuntime, error, true);
+    }
+    let renderable = renderComponentRuntime(
       runtime,
       /** @type {SsrTags} */
       rootRecord.ssrTags
     );
-    const serialized = typeof renderable === "function" ? renderable() : renderable;
+    let serialized;
+    try {
+      serialized = renderToString(renderable);
+    } catch (error) {
+      if (!isErrorBoundarySignal(error) || error.boundary !== runtime) throw error;
+      captureBoundaryError(runtime, error.error);
+      renderable = renderComponentRuntime(
+        runtime,
+        /** @type {SsrTags} */
+        rootRecord.ssrTags
+      );
+      serialized = renderToString(renderable);
+    }
     finalizeComponentRuntime(runtime);
-    return serialized;
+    return unsafeHTML(serialized);
   };
 }
 function html2(strings, ...values) {
@@ -936,6 +1031,9 @@ function html2(strings, ...values) {
 function renderComponentToString(Component, props = {}, options = {}) {
   const rootRecord = {
     context: createContextValues(options.context),
+    identifierPrefix: options.identifierPrefix || "",
+    idChildCounters: /* @__PURE__ */ new Map(),
+    idPath: [],
     pendingCallbacks: [],
     pendingMounts: [],
     scheduleRender() {
@@ -944,16 +1042,29 @@ function renderComponentToString(Component, props = {}, options = {}) {
   };
   rootRecord.ssrTags = createSsrTags(rootRecord);
   const runtime = createComponentRuntime(Component, props, rootRecord, null);
-  const renderable = renderComponentRuntime(
+  let renderable = renderComponentRuntime(
     runtime,
     /** @type {SsrTags} */
     rootRecord.ssrTags
   );
-  const htmlString = renderToString(renderable);
+  let htmlString;
+  try {
+    htmlString = renderToString(renderable);
+  } catch (error) {
+    if (!isErrorBoundarySignal(error) || error.boundary !== runtime) throw error;
+    captureBoundaryError(runtime, error.error);
+    renderable = renderComponentRuntime(
+      runtime,
+      /** @type {SsrTags} */
+      rootRecord.ssrTags
+    );
+    htmlString = renderToString(renderable);
+  }
   finalizeComponentRuntime(runtime);
   return htmlString;
 }
 function renderToString2(value) {
+  publicSsrTagsHolder.idChildCounters.clear();
   return renderToString(value);
 }
 function portal() {
@@ -973,6 +1084,7 @@ export {
   ref,
   renderComponentToString,
   renderToString2 as renderToString,
+  stableId,
   state,
   svg2 as svg,
   unsafeHTML,

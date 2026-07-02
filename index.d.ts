@@ -51,6 +51,7 @@ export type PortalRenderable = (key?: import('./src/html.js').TemplateKey) => []
 export type RootOptions<Context extends PepperContext = PepperContext> = {
 	context?: ContextInput<Context>
 	debugKeys?: boolean
+	identifierPrefix?: string
 }
 
 export function component<
@@ -68,6 +69,7 @@ export function state<T>(
 ): [() => T, (valueOrSetter: T | ((value: T) => T), callback?: false | RenderCallback) => void]
 
 export function ref<T = Node>(): { current: T | null }
+export function stableId(): string
 export function portal(target: PortalTarget, renderable: unknown): PortalRenderable
 
 export function render<

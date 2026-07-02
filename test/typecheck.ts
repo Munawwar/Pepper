@@ -8,7 +8,7 @@ import type {
 } from '../src/html.js'
 import {force, html} from '../src/html.js'
 import type {ComponentSetupApi, PepperContext, PortalTarget, RootContainer, RootOptions} from '../index.js'
-import {component, hydrate, portal, ref, render, renderToString, state} from '../index.js'
+import {component, hydrate, portal, ref, render, renderToString, state, stableId} from '../index.js'
 
 const key = Symbol()
 const text = 'hello'
@@ -114,6 +114,7 @@ const ErrorBoundary = component(function ErrorBoundary({getError, getProps, rese
 const typedRootOptions: RootOptions<AppContext> = {
 	context: {cart: {items: ['a']}, featureName: 'cart'},
 	debugKeys: true,
+	identifierPrefix: 'cart-',
 }
 const typedContextMap: RootOptions<AppContext> = {
 	context: new Map<keyof AppContext, AppContext[keyof AppContext]>([
@@ -123,6 +124,7 @@ const typedContextMap: RootOptions<AppContext> = {
 }
 const typedContextValue: PepperContext = {cart: {items: ['a']}, featureName: 'cart'}
 const buttonRef = ref<HTMLButtonElement>()
+const generatedId: string = stableId()
 const [getCount, setCount] = state(0)
 const nextCount = getCount()
 setCount(nextCount + 1)
@@ -134,6 +136,7 @@ render(ContextComponent, renderContainer, {}, typedContextMap)
 render(ErrorBoundary, renderContainer, {children: () => html`<span>ok</span>`})
 typedContextValue
 buttonRef.current
+generatedId
 nextCount
 
 const renderedMarkup: string = renderToString(ContextComponent, {}, typedRootOptions)

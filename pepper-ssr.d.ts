@@ -1,5 +1,5 @@
 export * from './src/html-ssr.js'
-export { ref, state } from './index.js'
+export { ref, state, stableId } from './index.js'
 
 export type RenderCallback = () => void
 export type PepperContext = Record<string, unknown>
@@ -38,6 +38,7 @@ export type PepperComponent<
 export type PortalRenderable = (key?: import('./src/html-ssr.js').TemplateKey) => []
 export type SsrRenderOptions<Context extends PepperContext = PepperContext> = {
 	context?: ContextInput<Context>
+	identifierPrefix?: string
 }
 
 export function component<
