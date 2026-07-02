@@ -1,1 +1,0 @@
-(window.mustacheTemplates=window.mustacheTemplates||{}).button={render:function(e){return'<button on-click="onClick">\n  <span ref="spanEl">'+(t=e.text,String(t).replace(/&/g,"&amp;").replace(/"/g,"&quot;").replace(/</g,"&lt;").replace(/>/g,"&gt;")+"</span>\n</button>");var t}};

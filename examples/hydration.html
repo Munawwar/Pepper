@@ -1,0 +1,104 @@
+<!doctype html>
+<html lang="en">
+	<head>
+		<meta charset="utf-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1" />
+		<title>pepper hydration example</title>
+		<style>
+			:root {
+				font-family: system-ui, sans-serif;
+				color: #1f2937;
+				background: #f3f4f6;
+			}
+
+			body {
+				margin: 0;
+				min-height: 100vh;
+				display: grid;
+				place-items: center;
+				padding: 24px;
+			}
+
+			#app {
+				width: min(100%, 540px);
+			}
+
+			.demo {
+				padding: 24px;
+				border-radius: 16px;
+				background: white;
+				box-shadow: 0 18px 50px rgba(15, 23, 42, 0.12);
+			}
+
+			h1 {
+				margin: 0 0 8px;
+				font-size: 1.4rem;
+			}
+
+			p {
+				margin: 0 0 12px;
+				line-height: 1.5;
+			}
+
+			.field {
+				display: grid;
+				gap: 8px;
+				margin: 18px 0;
+			}
+
+			.nested {
+				padding: 14px;
+				border-radius: 12px;
+				background: #f8fafc;
+				border: 1px solid #e2e8f0;
+			}
+
+			label {
+				font-size: 0.95rem;
+				font-weight: 600;
+			}
+
+			input {
+				width: 100%;
+				box-sizing: border-box;
+				padding: 10px 12px;
+				border: 1px solid #cbd5e1;
+				border-radius: 10px;
+				font: inherit;
+			}
+
+			code {
+				font-family: ui-monospace, monospace;
+				background: #eff6ff;
+				padding: 0.15em 0.35em;
+				border-radius: 6px;
+			}
+
+			.result {
+				margin-top: 16px;
+				padding: 12px 14px;
+				border-radius: 12px;
+				background: #ecfeff;
+				border: 1px solid #a5f3fc;
+			}
+		</style>
+	</head>
+	<body>
+		<div id="app">
+			<div class="demo">
+				<h1>Pseudo-hydration preserves live input state</h1>
+				<p>
+					The server markup starts with <code>value="hello"</code>. We simulate a user typing before hydration runs.
+				</p>
+				<div class="nested">
+					<div class="field">
+						<label for="greeting">Greeting</label>
+						<input id="greeting" value="hello" />
+					</div>
+				</div>
+				<div class="result">Did hydration preserve "hello world"? Wait for it...</div>
+			</div>
+		</div>
+		<script type="module" src="./hydration.js"></script>
+	</body>
+</html>

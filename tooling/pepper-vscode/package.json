@@ -1,0 +1,116 @@
+{
+	"name": "pepper-vscode",
+	"private": true,
+	"displayName": "pepper",
+	"description": "Syntax highlighting plus TypeScript diagnostics for pepper tagged templates",
+	"version": "0.1.0",
+	"publisher": "pepper",
+	"license": "MIT",
+	"repository": {
+		"url": "https://github.com/lume/pepper.git"
+	},
+	"keywords": [
+		"pepper",
+		"html",
+		"svg",
+		"mathml",
+		"typescript",
+		"vscode"
+	],
+	"engines": {
+		"vscode": "^1.89.0"
+	},
+	"categories": [
+		"Programming Languages"
+	],
+	"contributes": {
+		"grammars": [
+			{
+				"injectTo": [
+					"source.js",
+					"source.js.jsx",
+					"source.jsx",
+					"source.ts",
+					"source.tsx",
+					"text.html.basic"
+				],
+				"scopeName": "inline.pepper",
+				"path": "./syntaxes/pepper.json",
+				"embeddedLanguages": {
+					"meta.embedded.block.html": "html",
+					"meta.embedded.block.css": "css",
+					"source.css": "css"
+				}
+			},
+			{
+				"injectTo": [
+					"source.js",
+					"source.js.jsx",
+					"source.jsx",
+					"source.ts",
+					"source.tsx",
+					"text.html.basic"
+				],
+				"scopeName": "inline.pepper.string.injection",
+				"path": "./syntaxes/pepper-string-injection.json",
+				"embeddedLanguages": {
+					"meta.template.expression.ts": "typescript"
+				}
+			},
+			{
+				"injectTo": [
+					"source.js",
+					"source.js.jsx",
+					"source.jsx",
+					"source.ts",
+					"source.tsx",
+					"text.html.basic"
+				],
+				"scopeName": "inline.pepper.style.injection",
+				"path": "./syntaxes/pepper-style-injection.json",
+				"embeddedLanguages": {
+					"meta.template.expression.ts": "typescript"
+				}
+			},
+			{
+				"injectTo": [
+					"source.js",
+					"source.js.jsx",
+					"source.jsx",
+					"source.ts",
+					"source.tsx",
+					"text.html.basic"
+				],
+				"scopeName": "inline.pepper-svg",
+				"path": "./syntaxes/pepper-svg.json",
+				"embeddedLanguages": {
+					"meta.embedded.block.svg": "xml"
+				}
+			},
+			{
+				"injectTo": [
+					"source.js",
+					"source.js.jsx",
+					"source.jsx",
+					"source.ts",
+					"source.tsx",
+					"text.html.basic"
+				],
+				"scopeName": "inline.pepper-mathml",
+				"path": "./syntaxes/pepper-mathml.json",
+				"embeddedLanguages": {
+					"meta.embedded.block.mathml": "xml"
+				}
+			}
+		],
+		"typescriptServerPlugins": [
+			{
+				"name": "pepper-typescript-plugin",
+				"enableForWorkspaceTypeScriptVersions": true
+			}
+		]
+	},
+	"dependencies": {
+		"pepper-typescript-plugin": "0.1.0"
+	}
+}

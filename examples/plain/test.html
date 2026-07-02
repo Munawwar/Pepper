@@ -1,23 +1,63 @@
-<html>
-    <head>
-        <link rel="modulepreload" href="../../src/index.js" />
-        <link rel="modulepreload" href="./page.js" />
-    </head>
-    <body>
-        <div id="myview1"><span>Counter = 1</span></div>
-        <div id="myview2"><span>Counter = 1</span></div>
-        <script>window.initialState = {"count":1};</script>
-        <script type="module">
-            import initializePage from './page.js';
-            const page = initializePage(window.initialState);
-            page.view1.hydrate();
-            page.view2.hydrate();
-            // update count
-            window.setInterval(() => {
-                page.store.assign({
-                    count: page.store.data.count + 1,
-                });
-            }, 1000);
-        </script>
-    </body>
-</html>
+
+    <html>
+        <head>
+            <link rel="modulepreload" href="../../src/index.js" />
+            <link rel="modulepreload" href="./page.js" />
+            <style>
+                body {
+                    font-family: sans-serif;
+                    line-height: 1.4;
+                    margin: 24px;
+                }
+
+                h1 {
+                    font-size: 20px;
+                    margin: 0 0 8px;
+                }
+
+                p {
+                    margin: 0 0 16px;
+                }
+
+                .demo {
+                    display: grid;
+                    gap: 12px;
+                }
+
+                .counter-block {
+                    display: grid;
+                    gap: 6px;
+                }
+
+                .counter-row {
+                    display: flex;
+                    gap: 12px;
+                    align-items: center;
+                    flex-wrap: wrap;
+                }
+            </style>
+        </head>
+        <body>
+            <main class="demo">
+                <h1>Pepper Hydration Demo</h1>
+                <p>Click the button to confirm the server-rendered event handler hydrates correctly.</p>
+                <div id="app"><div class="counter-block">
+        <div>Hydrated counter</div>
+        <div class="counter-row">
+          <button>Increase</button>
+          <span>Counter = 1</span>
+        </div>
+      </div><div class="counter-block">
+        <div>Mirrored value</div>
+        <span>Counter = 1</span>
+      </div></div>
+            </main>
+            <script>window.initialProps = {"initialCount":1};</script>
+            <script type="module">
+                import { hydrate } from '../../src/index.js';
+                import CounterDemo from './page.js';
+                hydrate(CounterDemo, '#app', window.initialProps);
+            </script>
+        </body>
+    </html>
+  

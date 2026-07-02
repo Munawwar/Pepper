@@ -1,44 +1,67 @@
 {
   "name": "@pepper-js/pepper",
   "version": "0.2.5",
-  "description": "Bring your server-side templates to life",
-  "source": "./src/index.js",
+  "description": "Declarative DOM templates and function components with SSR and pseudo-hydration",
   "type": "module",
-  "unpkg": "./dist/browser/esm/index.min.js",
+  "main": "./dist/index.js",
+  "types": "./index.d.ts",
+  "files": [
+    "dist",
+    "src",
+    "index.d.ts",
+    "pepper-ssr.d.ts",
+    "pepper-store.d.ts"
+  ],
   "exports": {
-    "default": "./src/index.js",
-    "import": "./src/index.js",
-    "browser": "./dist/browser/esm/index.min.js",
-    "require": "./dist/cjs/index.cjs"
-  },
-  "directories": {
-    "test": "test"
+    ".": {
+      "types": "./index.d.ts",
+      "import": "./dist/index.js",
+      "default": "./dist/index.js"
+    },
+    "./ssr": {
+      "types": "./pepper-ssr.d.ts",
+      "import": "./dist/ssr.js",
+      "default": "./dist/ssr.js"
+    },
+    "./store": {
+      "types": "./pepper-store.d.ts",
+      "import": "./dist/store.js",
+      "default": "./dist/store.js"
+    }
   },
   "scripts": {
-    "build": "./build.sh",
-    "demo": " browser-sync start --server --port 3005 --startPath=examples/plain/test.html --watch --files=pepper.js,examples"
+    "build": "rm -fr dist && mkdir -p dist && esbuild src/index.js --outfile=dist/index.js --bundle --target=es2022 --format=esm --sourcemap && esbuild src/pepper-ssr.js --outfile=dist/ssr.js --bundle --target=es2022 --format=esm --sourcemap && esbuild src/store.js --outfile=dist/store.js --bundle --target=es2022 --format=esm --sourcemap",
+    "demo": "browser-sync start --server --port 3005 --startPath=examples/components.html --watch --files=examples,src",
+    "lint": "npm run typecheck && npm run lint:js",
+    "lint:js": "npx oxlint@^1.62.0 src examples",
+    "lint:fix": "npx oxlint@^1.62.0 --fix src examples",
+    "lint:templates": "node tooling/pepper-lint/bin.js",
+    "test:dom": "web-test-runner --config test/web-test-runner.unit.config.mjs --files test/pepper.test.js",
+    "test:ssr": "node --test test/ssr.test.js",
+    "test:tooling": "node --test tooling/test/*.test.js",
+    "typecheck": "tsc -p tsconfig.json --pretty false --noEmit",
+    "vscode:prepare": "node tooling/pepper-vscode/scripts/local-dev.js prepare",
+    "vscode:package": "node tooling/pepper-vscode/scripts/local-dev.js package",
+    "vscode:install": "node tooling/pepper-vscode/scripts/local-dev.js install",
+    "vscode:dev": "node tooling/pepper-vscode/scripts/local-dev.js dev"
   },
   "keywords": [
-    "sprinkle some js"
+    "html",
+    "ssr",
+    "hydration",
+    "components"
   ],
   "author": "Munawwar",
   "license": "MIT",
   "devDependencies": {
+    "@types/mocha": "^10.0.10",
+    "@web/dev-server-import-maps": "^0.2.1",
+    "@web/test-runner": "^0.20.2",
     "browser-sync": "^2.29.1",
-    "esbuild": "^0.17.15",
-    "eslint": "^8.10.0"
+    "esbuild": "^0.28.0",
+    "five-server": "^0.4.4",
+    "solid-js": "^1.9.9",
+    "typescript": "^5.9.2"
   },
-  "repository": "github:Munawwar/pepper",
-  "eslintConfig": {
-    "env": {
-      "browser": true,
-      "es2021": true
-    },
-    "extends": "eslint:recommended",
-    "parserOptions": {
-      "ecmaVersion": "latest",
-      "sourceType": "module"
-    },
-    "rules": {}
-  }
+  "repository": "github:Munawwar/pepper"
 }

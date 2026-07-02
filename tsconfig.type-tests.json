@@ -1,0 +1,12 @@
+{
+	"compilerOptions": {
+		"target": "ES2023",
+		"module": "ES2022",
+		"moduleResolution": "Node",
+		"lib": ["DOM", "DOM.Iterable", "ES2023"],
+		"strict": true,
+		"noEmit": true,
+		"skipLibCheck": true
+	},
+	"include": ["test/typecheck*.ts"]
+}

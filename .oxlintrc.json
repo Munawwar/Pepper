@@ -1,0 +1,14 @@
+{
+  "$schema": "./node_modules/oxlint/configuration_schema.json",
+  "env": {
+    "browser": true,
+    "node": true,
+    "es2022": true
+  },
+  "ignorePatterns": ["dist/**"],
+  "rules": {
+    "no-undef": "error",
+    "no-unused-vars": ["error", { "args": "all" }],
+    "no-var": "error"
+  }
+}

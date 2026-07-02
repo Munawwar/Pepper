@@ -1,352 +1,505 @@
-// utils
 import {
-	from,
-	objectAssign,
-	each,
-	isCustomElement,
-	keys
-} from './utils.js';
-import { patchDom } from './dom-diff.js';
-import { Store } from './store.js';
-import { html } from './html.js';
-
-// Deep merge helper
-function merge(out, ...args) {
-	out = out || {};
-	for (let argIndex = 0; argIndex < args.length; argIndex++) {
-		let obj = args[argIndex];
-		if (!obj || typeof obj !== 'object') {
-			continue;
-		}
-		let objectKeys = keys(obj);
-		for (let keyIndex = 0; keyIndex < objectKeys.length; keyIndex++) {
-			let key = objectKeys[keyIndex];
-			let val = obj[key];
-			out[key] = (val && typeof val === 'object')
-				? merge(out[key], val)
-				: val;
-		}
-	}
-	return out;
-}
-/**
- * Converts html string to a document fragment.
- * @param {String} html
- * @return {DocumentFragment}
- * @method dom
- */
-function parseAsFragment(html) {
-	var templateTag = document.createElement('template');
-	templateTag.innerHTML = html;
-	return templateTag.content;
-}
+	force,
+	html as baseHtml,
+	mathml as baseMathml,
+	rawText,
+	svg as baseSvg,
+	unsafeHTML,
+	unsafeMathML,
+	unsafeSVG,
+} from './html.js'
+import {
+	component,
+	captureBoundaryError,
+	createChildIdPath,
+	createContextValues,
+	createComponentRuntime,
+	destroyComponentRuntime,
+	finalizeComponentRuntime,
+	flushMounts,
+	getCurrentOwnerRuntime,
+	getOrCreateChildStore,
+	isErrorBoundarySignal,
+	ref,
+	renderComponentRuntime,
+	runWithOwnerRuntime,
+	state,
+	syncComponentProps,
+	throwBoundaryError,
+	stableId,
+} from './component-runtime.js'
+import {
+	compileComponentTemplate,
+	lowerComponentTemplate,
+	renderSourceTemplate,
+	resolveComponentProps,
+} from './component-syntax.js'
 
 /**
- * Traverse elements of a tree in order of visibility (pre-order traversal)
- * @param {Node} parentNode
- * @param {(Node) => void} onNextNode
+ * @typedef {string[] & { raw: string[] }} MutableTemplateStringsArray
+ * @typedef {{
+ *   context?: import('./component-runtime.js').ContextInput,
+ *   debugKeys?: boolean,
+ *   identifierPrefix?: string,
+ * }} RenderOptions
+ * @typedef {string | Element} PortalTarget
+ * @typedef {import('./component-runtime.js').ComponentRuntime} ComponentRuntime
+ * @typedef {import('./component-runtime.js').ComponentModel} ComponentModel
+ * @typedef {import('./component-runtime.js').PepperComponent} PepperComponent
+ * @typedef {import('./component-runtime.js').RuntimeTags} RuntimeTags
+ * @typedef {import('./component-syntax.js').ComponentDescriptor} ComponentDescriptor
+ * @typedef {{
+ *   Component: PepperComponent,
+ *   container: Element,
+ *   context: Map<string, unknown>,
+ *   dirtyRuntimes: Set<ComponentRuntime>,
+ *   domTags: DomTags,
+ *   flushScheduled: boolean,
+ *   identifierPrefix: string,
+ *   mounted: boolean,
+ *   options: RenderOptions,
+ *   pendingCallbacks: Array<() => void>,
+ *   pendingMounts: ComponentRuntime[],
+ *   scheduleRender(): void,
+ *   topRuntime: ComponentRuntime | null,
+ * }} RootRecord
+ * @typedef {{
+ *   html(strings: TemplateStringsArray, ...values: unknown[]): ReturnType<typeof baseHtml>,
+  *   mathml: typeof baseMathml,
+  *   svg: typeof baseSvg,
+ * }} DomTags
  */
-function traverseElements(parentNode, onNextNode) {
-	var treeWalker = document.createTreeWalker(parentNode, NodeFilter.SHOW_ELEMENT),
-			node = treeWalker.nextNode();
-	while (node) {
-		// dont touch the inner nodes of custom elements
-		if (isCustomElement(node)) {
-			node = treeWalker.nextSibling();
-			continue;
-		}
-		onNextNode(node);
-		node = treeWalker.nextNode();
-	}
+
+/** @type {WeakMap<Element, RootRecord>} */
+const rootMap = new WeakMap()
+
+// Feature flags
+const ENABLE_COMPONENT_NODE_CACHE = true
+
+/** @type {TemplateStringsArray} */
+const singleValueStrings = /** @type {TemplateStringsArray} */ (
+	Object.assign(/** @type {MutableTemplateStringsArray} */ (['', '']), {raw: ['', '']})
+)
+
+/**
+ * @param {unknown} renderable
+ * @param {ComponentRuntime} runtime
+ * @param {ChildNode[] | null} [liveNodes=null]
+ * @returns {Node[]}
+ */
+function realizeDomRenderable(renderable, runtime, liveNodes = null) {
+	const view = /** @type {(key?: symbol, liveNodes?: ChildNode[]) => Node[]} */ (
+		typeof renderable === 'function'
+			? renderable
+			: /** @type {DomTags} */ (runtime.rootRecord.domTags).html(singleValueStrings, renderable)
+	)
+	const nodes = liveNodes ? view(runtime.viewKey, liveNodes) : view(runtime.viewKey)
+	runtime.currentNodes = nodes
+	return nodes
 }
 
 /**
- * @template DataType
- * @param {Object} config 
- * @param {HTMLElement} config.target
- * @param {DataType} config.data
- * @param {(data: DataType) => String} config.getHtml
- * @param {Boolean} [config.mount=false]
- * @param {Boolean} [config.hydrate=false]
- * @param {{ [storeKey: string]: { store: Store, props: String[] } }|null} [config.stores]
+ * @returns {DomTags}
  */
-function Pepper(config) {
-	var self = this;
-	self._data = (typeof config.data === 'object' && config.data) || {};
-	var mount = config.mount;
-	var hydrate = config.hydrate;
-	
-	delete config.data;
-	delete config.mount;
-	delete config.hydrate;
-	objectAssign(self, config);
-	Object.defineProperty(self, 'data', {
-		configurable: false,
-		set(data) {
-			self._data = data;
-			// TODO: only render if there is a change
-			self.render();
+function createDomTags() {
+	return {
+		html(strings, ...values) {
+			const compiled = compileComponentTemplate(strings)
+			if (!compiled) return baseHtml(strings, ...values)
+			const ownerRuntime = getCurrentOwnerRuntime()
+			if (!ownerRuntime) {
+				throw new Error('Pepper component tags can only be used while rendering a Pepper component.')
+			}
+			const lowered = lowerComponentTemplate(compiled, values, (entry, loweredValues, index) => (
+				createDomComponentValue(ownerRuntime, entry, loweredValues, index)
+			))
+			if (!lowered) return baseHtml(strings, ...values)
+			if (compiled.strings.every(string => string === '')) {
+				const keyedInstanceIds = new Map()
+				return function renderComponentOnlyTemplate(key = Symbol()) {
+					let instanceIds = keyedInstanceIds.get(key)
+					if (!instanceIds) keyedInstanceIds.set(key, (instanceIds = []))
+					return lowered.values.flatMap((value, index) => {
+						if (typeof value === 'function') {
+							let instanceId = instanceIds[index]
+							if (!instanceId) instanceIds[index] = instanceId = Symbol(`pepper-component-hole-${index}`)
+							return value(instanceId)
+						}
+						return Array.isArray(value) ? value.flat(Infinity) : value == null ? [] : [value]
+					})
+				}
+			}
+			return baseHtml(lowered.strings, ...lowered.values)
 		},
-		get() {
-			return self._data;
+		mathml: baseMathml,
+		svg: baseSvg,
+	}
+}
+const domTags = createDomTags()
+
+/**
+ * @param {ComponentRuntime} ownerRuntime
+ * @param {ComponentDescriptor} descriptor
+ * @param {unknown[]} values
+ * @param {number} descriptorIndex
+ * @returns {(instanceKey?: symbol) => Node[]}
+ */
+function createDomComponentValue(ownerRuntime, descriptor, values, descriptorIndex) {
+	return function renderComponentValue(instanceKey = Symbol()) {
+		const store = getOrCreateChildStore(ownerRuntime, descriptor)
+		const componentType = /** @type {PepperComponent} */ (values[descriptor.componentIndex])
+		const { key, props } = resolveComponentProps(descriptor.bindings, values)
+		const childrenSource = descriptor.childrenSource
+		const childKey = key ?? instanceKey
+		const idPath = createChildIdPath(ownerRuntime, descriptorIndex, key)
+		/** @type {ComponentRuntime | undefined} */
+		let runtime = store.get(childKey)
+		if (childrenSource != null) {
+			props.children = () => runWithOwnerRuntime(
+				/** @type {ComponentRuntime} */ (runtime),
+				() => renderSourceTemplate(/** @type {DomTags} */ (ownerRuntime.rootRecord.domTags).html, childrenSource, values),
+			)
 		}
-	});
-	if (hydrate) {
-		self.hydrate()
-	} else if (mount) {
-		self.mount();
+		if (!runtime || runtime.componentType !== componentType) {
+			if (runtime) destroyComponentRuntime(runtime)
+			try {
+				runtime = createComponentRuntime(componentType, props, ownerRuntime.rootRecord, ownerRuntime, idPath)
+			} catch (error) {
+				throwBoundaryError(ownerRuntime, error, true)
+			}
+			store.set(childKey, runtime)
+		} else {
+			syncComponentProps(runtime, props)
+		}
+
+		runtime.lastSeen = ownerRuntime.renderPassId
+		const nodes = (
+			ENABLE_COMPONENT_NODE_CACHE &&
+			runtime.currentNodes &&
+			!runtime.dirty &&
+			!runtime.hasDirtyDescendant &&
+			!runtime.pendingChangedProps.length
+			)
+				? runtime.currentNodes
+				: realizeDomRenderable(
+					renderComponentRuntime(runtime, /** @type {RuntimeTags} */ (ownerRuntime.rootRecord.domTags)),
+					runtime,
+					runtime.options.errorBoundary ? /** @type {ChildNode[] | null} */ (runtime.currentNodes) : null,
+				)
+		const debugKeyValue = ownerRuntime.rootRecord.options?.debugKeys === true && key != null ? String(key) : ''
+		if (runtime.debugKeyNodes)
+			for (const node of runtime.debugKeyNodes)
+				if (node instanceof Element && (!debugKeyValue || !nodes.includes(node))) node.removeAttribute('x-key')
+		runtime.debugKeyNodes = []
+		if (debugKeyValue)
+			for (const node of nodes)
+				if (node instanceof Element) {
+					node.setAttribute('x-key', debugKeyValue)
+					runtime.debugKeyNodes.push(node)
+				}
+		finalizeComponentRuntime(runtime)
+		return nodes
 	}
 }
 
-// private
-var handlerMap = new WeakMap();
 /**
- * Helper to attach handleEvent object event listener to element.
- * @param {HTMLElement} node
- * @param {Object} context
- * @param {String} eventName
- * @param {Function} func
+ * @template {Record<string, unknown>} [Props=Record<string, unknown>]
+ * @param {PepperComponent} Component
+ * @param {Element} container
+ * @param {Props} props
+ * @param {RenderOptions} options
+ * @returns {RootRecord}
  */
-function attachHandler(node, context, eventName, func) {
-	if (!func) return;
-	var newMap = handlerMap.get(node) || {};
-	newMap[eventName] = func;
-	handlerMap.set(node, newMap);
-	node.addEventListener(eventName, context);
+function createRootRecord(Component, container, props, options) {
+	/** @type {RootRecord} */
+	const rootRecord = {
+		Component,
+		container,
+		context: createContextValues(options.context),
+		dirtyRuntimes: new Set(),
+		domTags,
+		flushScheduled: false,
+		mounted: false,
+		pendingCallbacks: [],
+		pendingMounts: [],
+		options,
+		identifierPrefix: options.identifierPrefix || '',
+		scheduleRender() {},
+		topRuntime: null,
+	}
+	rootRecord.scheduleRender = () => scheduleRootRender(rootRecord)
+	rootRecord.topRuntime = createComponentRuntime(Component, props, rootRecord, null)
+	return rootRecord
 }
+
 /**
- * Removes all event handlers on node. Ensure same context is passed as it
- * was for attachHandler() function, else the event listeners wont get removed.
+ * @param {Element | null} target
+ * @param {ChildNode[]} nodes
+ * @returns {void}
  */
-function removeAllHandlers(node, context) {
-	Object.keys(handlerMap.get(node) || {}).forEach((eventName) => {
-		node.removeEventListener(eventName, context);
-	});
-	handlerMap.delete(node);
-}
-/**
- * Invokes an event handler that was registered via attachHandler
- * @param {Pepper} context 
- * @param {Event} event 
- */
-function callHandler(context, event) {
-	var node = event.currentTarget;
-	var func = (handlerMap.get(node) || {})[event.type];
-	if (func) {
-		func.call(context, event);
+function removeOwnedNodes(target, nodes) {
+	if (!target) return
+	for (const node of nodes) {
+		if (node.parentNode === target) node.remove()
 	}
 }
 
-// Methods and properties
-Pepper.prototype = {
-	/**
-	 * The data object.
-	 * This is a private variable accessed through this.data
-	 * setter/getter.
-	 */
-	_data: null,
+/**
+ * @param {string | Element} container
+ * @param {string} errorPrefix
+ * @returns {Element}
+ */
+function resolveElementTarget(container, errorPrefix) {
+	const target = typeof container === 'string' ? document.querySelector(container) : container
+	if (!(target instanceof Element)) throw new Error(`${errorPrefix} must be a DOM element or selector.`)
+	return target
+}
 
-	/**
-	 * (Optional) The element to replace (on first render).
-	 */
-	target: null,
-
-	/**
-	 * (Optional) A Pepper store and array of props to listen to. The properties will be added to
-	 * `data.stores` passed to this.getHtml() function.
-	 * This instance will re-render (when mounted) when the specified props change in the store
-	 * Example: ['cart', 'wishlist']
-	 * @type {{
-	 * 	[storeKey: string]: {
-	 * 	  store: Store,
-	 *    props: string[]
-	 *  }
-	 * }|null}
-	 */
-	stores: null,
-
-	/**
-	 * Function that returns component's html to be rendered
-	 * @param {any} data combined data from this.data and subscribed stores
-	 * @returns {string}
-	 */
-	getHtml() { return ''; },
-	
-	/**
-	 * Set data on this.data (using Object.assign), and re-render.
-	 */
-	assign(...args) {
-		objectAssign(this.data, ...args);
-		// TODO: only render if there is a change
-		this.render();
-	},
-
-	/**
-	 * Deep merge data with this.data, and re-render.
-	 */
-	merge(data) {
-		merge(this.data, data);
-		// TODO: only render if there is a change
-		this.render();
-	},
-
-	handleEvent(event) {
-		callHandler(this, event);
-	},
-
-	toString: function renderToString() {
-		var self = this;
-		var stores = self.stores;
-		const storeData = keys(stores).reduce((acc, storeKey) => {
-			var { store, props } = stores[storeKey];
-			var storeData = (store && store._data) || {};
-			acc[storeKey] = (props || []).reduce((acc2, prop) => {
-				acc2[prop] = storeData[prop];
-				return acc2;
-			}, {});
-			return acc;
-		}, {});
-		var data = objectAssign({ stores: storeData }, self.data);
-		return self.getHtml(data);
-	},
-
-	/**
-	 * Render view.
-	 * If this.target or node parameter is specified, then replaces that node and attaches the
-	 * rendered DOM to document (or document fragment).
-	 *
-	 * @private
-	 */
-	render() {
-		// Step 1: Remove event listeners and refs
-		// Step 2: Note the currently focused element
-		// Step 3: Render/Update UI.
-		// Step 4: Resolve references
-		// Step 5: Re-focus
-		// Step 6: Re-attach listeners
-		
-		var self = this;
-		var target = self.el;
-
-		// Step 1: Find input field focus, remember it's id attribute, so that it
-		// can be refocused later.
-		var focusId = document.activeElement.id;
-
-		// Step 2: Remove event listeners and refs before patch.
-		if (target) {
-			traverseElements(target, (node) => {
-				var refVal = node.getAttribute('ref');
-				if (refVal && self[refVal] instanceof Node) {
-					delete self[refVal];
-				}
-				if (handlerMap.has(node)) {
-					removeAllHandlers(node, self);
-				}
-			});
-		}
-
-		// Step 3: Render/Update UI
-		var frag = parseAsFragment(self.toString());
-		var els = from(frag.childNodes)
-		// var el = frag.firstElementChild;
-
-		// Update existing DOM.
-		if (target) {
-			patchDom(target, els);
-		}
-
-		// Step 4: Re-focus
-		if (focusId) {
-			var focusEl = document.getElementById(focusId);
-			if (focusEl) {
-				focusEl.focus();
+/**
+ * @param {RootRecord} rootRecord
+ * @returns {void}
+ */
+function flushDirtyRuntimes(rootRecord) {
+	const dirtyRuntimes = [...rootRecord.dirtyRuntimes]
+		.filter(runtime => runtime.dirty && !runtime.destroyed)
+		.filter(runtime => {
+			for (let parent = runtime.parentRuntime; parent; parent = parent.parentRuntime) {
+				if (rootRecord.dirtyRuntimes.has(parent) && parent.dirty && !parent.destroyed) return false
 			}
-		}
-
-		self.domHydrate();
-	},
-
-	/**
-	 * @private
-	 */
-	domHydrate() {
-		// Doing step 5 and 6 from render() function
-		// Step 5: Resolve refs
-		// Step 6: Attach event listeners
-
-		var self = this;
-		// TODO: only set this on debug mode
-		self.el.pepperInstance = self;
-
-		// Note: ref creates a reference to the node as property on the view.
-		traverseElements(self.el, (node) => {
-			var refVal = node.getAttribute('ref');
-			if (refVal) {
-				self[refVal] = node;
+			return true
+		})
+	rootRecord.dirtyRuntimes.clear()
+	for (const runtime of dirtyRuntimes) {
+		try {
+			const renderable = renderComponentRuntime(runtime, rootRecord.domTags)
+			const nodes = realizeDomRenderable(
+				renderable,
+				runtime,
+				runtime !== rootRecord.topRuntime && runtime.options.errorBoundary
+					? /** @type {ChildNode[] | null} */ (runtime.currentNodes)
+					: null,
+			)
+			if (runtime === rootRecord.topRuntime && nodes.some(node => node.parentNode !== rootRecord.container)) {
+				rootRecord.container.replaceChildren(...nodes)
 			}
-			each(node.attributes, (attr) => {
-				if (attr.name.startsWith('on-')) {
-					var eventName = attr.name.replace(/on-/, '');
-					attachHandler(node, self, eventName, self[attr.value]);
-				}
-			});
-		});
-	},
-
-	/**
-	 * @param {Boolean} [hydrateOnly=false] does a full render by default. 'Hydration' only
-	 * attaches event listeners and resolves refs.
-	 * @returns 
-	 */
-	mount(hydrateOnly = false) {
-		var self = this;
-		var stores = self.stores;
-		if (stores) {
-			keys(stores).forEach((storeKey) => {
-				const { store, props } = stores[storeKey];
-				store.subscribe(props, self.render, self);
-			});
-		}
-
-		var node = self.target;
-		if (typeof node === 'string') {
-			node = document.querySelector(node);
-		}
-
-		// Return if already mounted.
-		if (self.el && node === self.el) {
-			return false;
-		}
-
-		if (node) {
-			self.el = node;
-			if (hydrateOnly) {
-				self.domHydrate();
-			} else { // full render
-				self.render();
+			finalizeComponentRuntime(runtime)
+		} catch (error) {
+			if (!isErrorBoundarySignal(error)) throw error
+			captureBoundaryError(error.boundary, error.error)
+			let retryRuntime = error.boundary
+			for (let parent = error.boundary.parentRuntime; parent; parent = parent.parentRuntime) {
+				if (parent !== runtime) continue
+				retryRuntime = runtime
+				break
 			}
-			return true;
+			const renderable = renderComponentRuntime(retryRuntime, rootRecord.domTags)
+			const nodes = retryRuntime === rootRecord.topRuntime
+				? realizeDomRenderable(renderable, retryRuntime)
+				: realizeDomRenderable(renderable, retryRuntime, /** @type {ChildNode[] | null} */ (retryRuntime.currentNodes))
+			if (retryRuntime === rootRecord.topRuntime) rootRecord.container.replaceChildren(...nodes)
+			finalizeComponentRuntime(retryRuntime)
 		}
-		return false;
-	},
-
-	hydrate(data) {
-		if (data && typeof data === 'object') {
-			this._data = data;
-		}
-		this.mount(true);
-	},
-
-	unmount() {
-		var self = this;
-		var stores = self.stores;
-		if (stores) {
-			keys(stores).forEach((storeKey) => {
-				stores[storeKey].store.unsubscribe(self.render, self);
-			});
-		}
-		self.el.replaceChildren(); // empty replaceChildren removes all child elements
 	}
-};
+	flushMounts(rootRecord)
+	for (const callback of rootRecord.pendingCallbacks.splice(0)) callback()
+}
 
-export { Pepper, Store, html };
+/**
+ * @param {RootRecord} rootRecord
+ * @param {boolean} [hydrateOnly=false]
+ * @returns {void}
+ */
+function performRootRender(rootRecord, hydrateOnly = false) {
+	if (!rootRecord.topRuntime) throw new Error('Pepper root is missing its top runtime.')
+	if (
+		!hydrateOnly &&
+		rootRecord.mounted &&
+		!rootRecord.topRuntime.dirty &&
+		!rootRecord.topRuntime.hasDirtyDescendant &&
+		!rootRecord.topRuntime.pendingChangedProps.length &&
+		rootRecord.dirtyRuntimes.size
+	) {
+		flushDirtyRuntimes(rootRecord)
+		return
+	}
+	rootRecord.dirtyRuntimes.clear()
+	const liveNodes = hydrateOnly ? Array.from(rootRecord.container.childNodes) : null
+	let renderable = renderComponentRuntime(rootRecord.topRuntime, rootRecord.domTags)
+	let nodes
+	try {
+		nodes = realizeDomRenderable(renderable, rootRecord.topRuntime, liveNodes && liveNodes.length ? liveNodes : null)
+	} catch (error) {
+		if (!isErrorBoundarySignal(error)) throw error
+		captureBoundaryError(error.boundary, error.error)
+		renderable = renderComponentRuntime(rootRecord.topRuntime, rootRecord.domTags)
+		nodes = realizeDomRenderable(renderable, rootRecord.topRuntime)
+		rootRecord.container.replaceChildren(...nodes)
+	}
+	finalizeComponentRuntime(rootRecord.topRuntime)
+	if (!rootRecord.mounted && !hydrateOnly) rootRecord.container.replaceChildren(...nodes)
+	rootRecord.mounted = true
+	flushMounts(rootRecord)
+	for (const callback of rootRecord.pendingCallbacks.splice(0)) callback()
+}
+
+/**
+ * @param {RootRecord} rootRecord
+ * @returns {void}
+ */
+function scheduleRootRender(rootRecord) {
+	if (rootRecord.flushScheduled) return
+	rootRecord.flushScheduled = true
+	queueMicrotask(() => {
+		rootRecord.flushScheduled = false
+		if (!rootRecord.topRuntime) throw new Error('Pepper root is missing its top runtime.')
+		flushDirtyRuntimes(rootRecord)
+	})
+}
+
+/**
+ * @param {PepperComponent} Component
+ * @param {string | Element} container
+ * @param {Record<string, unknown>} [props={}]
+ * @param {RenderOptions} [options={}]
+ * @param {boolean} [hydrateOnly=false]
+ * @returns {ComponentModel}
+ */
+function mountRoot(Component, container, props = {}, options = {}, hydrateOnly = false) {
+	const target = resolveElementTarget(container, 'Pepper render/hydrate target')
+
+	let rootRecord = rootMap.get(target)
+	if (!rootRecord || rootRecord.Component !== Component) {
+		if (rootRecord) {
+			destroyComponentRuntime(rootRecord.topRuntime)
+			rootMap.delete(rootRecord.container)
+		}
+		rootRecord = createRootRecord(Component, target, props, options)
+		rootMap.set(target, rootRecord)
+		performRootRender(rootRecord, hydrateOnly)
+		if (!rootRecord.topRuntime?.model) throw new Error('Pepper root did not produce a component model.')
+		return rootRecord.topRuntime.model
+	}
+
+	rootRecord.options = options
+	rootRecord.identifierPrefix = options.identifierPrefix || ''
+	syncComponentProps(/** @type {ComponentRuntime} */ (rootRecord.topRuntime), props)
+	performRootRender(rootRecord, hydrateOnly && !rootRecord.mounted)
+	if (!rootRecord.topRuntime?.model) throw new Error('Pepper root did not produce a component model.')
+	return rootRecord.topRuntime.model
+}
+
+/**
+ * Hydrate a Pepper component tree into existing server-rendered DOM.
+ *
+ * @param {PepperComponent} Component
+ * @param {string | Element} container
+ * @param {Record<string, unknown>} [props={}]
+ * @param {RenderOptions} [options={}]
+ * @returns {ComponentModel}
+ */
+function hydrate(Component, container, props = {}, options = {}) {
+	return mountRoot(Component, container, props, options, true)
+}
+
+/**
+ * Render a Pepper component tree into a DOM container.
+ *
+ * @param {PepperComponent} Component
+ * @param {string | Element} container
+ * @param {Record<string, unknown>} [props={}]
+ * @param {RenderOptions} [options={}]
+ * @returns {ComponentModel}
+ */
+function render(Component, container, props = {}, options = {}) {
+	return mountRoot(Component, container, props, options, false)
+}
+
+/**
+ * Render a Pepper subtree into another DOM container while keeping ownership,
+ * context, and lifecycle under the current component runtime.
+ *
+ * Server rendering omits portal output.
+ *
+ * @param {PortalTarget} target
+ * @param {unknown} renderable
+ * @returns {(instanceKey?: symbol) => []}
+ */
+function portal(target, renderable) {
+	const ownerRuntime = getCurrentOwnerRuntime()
+	if (!ownerRuntime) throw new Error('portal() can only be used while rendering a Pepper component.')
+	if (!ownerRuntime.rootRecord.domTags || typeof document === 'undefined') return () => []
+	return function renderPortalValue(instanceKey = Symbol()) {
+		let portalRuntime = ownerRuntime.portals.get(instanceKey)
+		if (!portalRuntime) {
+			const createdPortalRuntime = {
+				currentNodes: [],
+				currentTarget: null,
+				viewKey: Symbol(`pepper-portal-${ownerRuntime.renderPassId}`),
+				lastSeen: 0,
+				destroy() {
+					removeOwnedNodes(createdPortalRuntime.currentTarget, createdPortalRuntime.currentNodes)
+					createdPortalRuntime.currentNodes = []
+					createdPortalRuntime.currentTarget = null
+				},
+			}
+			portalRuntime = createdPortalRuntime
+			ownerRuntime.portals.set(instanceKey, portalRuntime)
+		}
+
+		const nextTarget = resolveElementTarget(target, 'Pepper portal target')
+		const portalState = /** @type {{ currentNodes: ChildNode[], currentTarget: Element | null, viewKey: symbol, lastSeen: number, destroy(): void }} */ (portalRuntime)
+		const liveNodes = portalState.currentTarget === nextTarget && portalState.currentNodes.length ? portalState.currentNodes : null
+		if (!liveNodes && portalState.currentTarget && portalState.currentTarget !== nextTarget) {
+			removeOwnedNodes(portalState.currentTarget, portalState.currentNodes)
+			portalState.currentNodes = []
+		}
+		const view = /** @type {(key?: symbol, liveNodes?: ChildNode[]) => Node[]} */ (
+			typeof renderable === 'function'
+				? renderable
+				: /** @type {DomTags} */ (ownerRuntime.rootRecord.domTags).html(singleValueStrings, renderable)
+		)
+		const nodes = /** @type {ChildNode[]} */ (liveNodes ? view(portalState.viewKey, portalState.currentNodes) : view(portalState.viewKey))
+		if (!liveNodes) for (const node of nodes) nextTarget.append(node)
+		portalState.currentNodes = nodes
+		portalState.currentTarget = nextTarget
+		portalState.lastSeen = ownerRuntime.renderPassId
+		return []
+	}
+}
+
+/**
+ * A Pepper `html` template tag function for component-aware DOM rendering and hydration.
+ *
+ * @type {typeof baseHtml}
+ */
+const html = domTags.html
+/**
+ * A Pepper `svg` template tag function for DOM rendering and hydration.
+ *
+ * @type {typeof baseSvg}
+ */
+const svg = baseSvg
+/**
+ * A Pepper `mathml` template tag function for DOM rendering and hydration.
+ *
+ * @type {typeof baseMathml}
+ */
+const mathml = baseMathml
+
+export {
+	component,
+	force,
+	html,
+	hydrate,
+	mathml,
+	rawText,
+	ref,
+	render,
+	portal,
+	state,
+	svg,
+	unsafeHTML,
+	unsafeMathML,
+	unsafeSVG,
+	stableId,
+}
