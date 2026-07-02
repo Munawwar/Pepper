@@ -1,6 +1,6 @@
 {
   "name": "@pepper-js/pepper",
-  "version": "0.2.5",
+  "version": "0.3.0",
   "description": "Declarative DOM templates and function components with SSR and pseudo-hydration",
   "type": "module",
   "main": "./dist/index.js",
