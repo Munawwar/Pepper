@@ -272,12 +272,24 @@ var Template = class {
     const templateInstance = this.getInstance(key);
     templateInstance.applyValues(this.values);
     const adoptionMap = /* @__PURE__ */ new Map();
+    const managedCustomElements = /* @__PURE__ */ new WeakSet();
+    for (const site of templateInstance.sites) {
+      let parent = site.node.parentElement;
+      while (parent) {
+        if (parent.localName.includes("-")) {
+          managedCustomElements.add(parent);
+          break;
+        }
+        parent = parent.parentElement;
+      }
+    }
     reconcileHydrationNodes(
       container,
       liveNodes,
       /** @type {Node[]} */
       [...templateInstance.nodes],
       adoptionMap,
+      managedCustomElements,
       liveNodes[liveNodes.length - 1]?.nextSibling || null
     );
     templateInstance.absorb(adoptionMap);
@@ -598,7 +610,7 @@ function canHydrateNode(liveNode, targetNode) {
   for (const attr of targetElement.attributes) if (liveElement.getAttribute(attr.name) !== attr.value) return false;
   return true;
 }
-function reconcileHydrationNodes(parentNode, liveNodes, targetNodes, adoptionMap, nextSibling = null) {
+function reconcileHydrationNodes(parentNode, liveNodes, targetNodes, adoptionMap, managedCustomElements, nextSibling = null) {
   let liveIndex = 0;
   let targetIndex = 0;
   while (liveIndex < liveNodes.length || targetIndex < targetNodes.length) {
@@ -649,13 +661,27 @@ function reconcileHydrationNodes(parentNode, liveNodes, targetNodes, adoptionMap
         /** @type {Element} */
         liveNode
       );
-      reconcileHydrationNodes(
-        liveElement,
-        Array.from(liveElement.childNodes),
-        Array.from(targetNode.childNodes),
-        adoptionMap,
-        null
+      const targetElement = (
+        /** @type {Element} */
+        targetNode
       );
+      let hydrateChildren = !liveElement.localName.includes("-") || managedCustomElements.has(targetElement);
+      if (!hydrateChildren) {
+        for (const child of targetElement.childNodes)
+          if (child.nodeType !== Node.TEXT_NODE || child.nodeValue?.trim()) {
+            hydrateChildren = true;
+            break;
+          }
+      }
+      if (hydrateChildren)
+        reconcileHydrationNodes(
+          liveElement,
+          Array.from(liveElement.childNodes),
+          Array.from(targetElement.childNodes),
+          adoptionMap,
+          managedCustomElements,
+          null
+        );
     }
     liveIndex++;
     targetIndex++;

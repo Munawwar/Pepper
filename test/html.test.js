@@ -445,6 +445,59 @@ describe('html template function', () => {
 		assertEquals(eventsFired, 2, 'Hydration should attach spread event listeners')
 	})
 
+	it('preserves custom-element-owned light DOM during hydration', () => {
+		const container = document.createElement('div')
+		container.innerHTML = '<light-boundary-el><span class="owned">keep me</span></light-boundary-el>'
+		const liveCustom = /** @type {HTMLElement} */ (container.firstElementChild)
+		const key = Symbol()
+
+		const [custom] = /** @type {[HTMLElement]} */ (
+			html`<light-boundary-el></light-boundary-el>`(key, Array.from(container.childNodes))
+		)
+
+		assertEquals(custom, liveCustom, 'Hydration should reuse the custom element host')
+		assertEquals(custom.innerHTML, '<span class="owned">keep me</span>', 'Hydration should not clear custom-element light DOM')
+	})
+
+	it('hydrates Pepper-declared custom element light DOM', () => {
+		const container = document.createElement('div')
+		container.innerHTML = '<light-boundary-el><span>server</span></light-boundary-el>'
+		const key = Symbol()
+		let label = 'client'
+
+		const render = () => /** @type {[HTMLElement]} */ (
+			html`<light-boundary-el><span>${label}</span></light-boundary-el>`(key, Array.from(container.childNodes))
+		)
+
+		const [custom] = render()
+		const span = /** @type {HTMLSpanElement} */ (custom.firstElementChild)
+		assertEquals(span.textContent, 'client', 'Hydration should update declared light DOM children')
+
+		label = 'updated'
+		render()
+		assertEquals(custom.firstElementChild, span, 'Updates should keep the adopted light DOM child')
+		assertEquals(span.textContent, 'updated', 'Updates should keep dynamic declared light DOM working')
+	})
+
+	it('hydrates empty dynamic custom element light DOM sites', () => {
+		const container = document.createElement('div')
+		container.innerHTML = '<light-boundary-el></light-boundary-el>'
+		const key = Symbol()
+		/** @type {string | null} */
+		let label = null
+
+		const render = () => /** @type {[HTMLElement]} */ (
+			html`<light-boundary-el>${label}</light-boundary-el>`(key, Array.from(container.childNodes))
+		)
+
+		const [custom] = render()
+		assertEquals(custom.textContent, '', 'Initial empty dynamic light DOM should hydrate')
+
+		label = 'loaded'
+		render()
+		assertEquals(custom.textContent, 'loaded', 'Later dynamic light DOM updates should reach the live custom element')
+	})
+
 	it('returns different instances for different keys', () => {
 		const key1 = Symbol()
 		const key2 = Symbol()

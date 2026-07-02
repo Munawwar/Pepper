@@ -545,11 +545,23 @@ class Template {
 
 		/** @type {Map<Node, Node>} */
 		const adoptionMap = new Map()
+		const managedCustomElements = new WeakSet()
+		for (const site of templateInstance.sites) {
+			let parent = site.node.parentElement
+			while (parent) {
+				if (parent.localName.includes('-')) {
+					managedCustomElements.add(parent)
+					break
+				}
+				parent = parent.parentElement
+			}
+		}
 		reconcileHydrationNodes(
 			container,
 			liveNodes,
 			/** @type {Node[]} */ ([...templateInstance.nodes]),
 			adoptionMap,
+			managedCustomElements,
 			liveNodes[liveNodes.length - 1]?.nextSibling || null,
 		)
 
@@ -1043,9 +1055,10 @@ function canHydrateNode(liveNode, targetNode) {
  * @param {Node[]} liveNodes
  * @param {Node[]} targetNodes
  * @param {Map<Node, Node>} adoptionMap
+ * @param {WeakSet<Element>} managedCustomElements
  * @param {Node | null} nextSibling
  */
-function reconcileHydrationNodes(parentNode, liveNodes, targetNodes, adoptionMap, nextSibling = null) {
+function reconcileHydrationNodes(parentNode, liveNodes, targetNodes, adoptionMap, managedCustomElements, nextSibling = null) {
 	let liveIndex = 0
 	let targetIndex = 0
 
@@ -1106,13 +1119,23 @@ function reconcileHydrationNodes(parentNode, liveNodes, targetNodes, adoptionMap
 			if (liveNode.nodeValue !== targetNode.nodeValue) liveNode.nodeValue = targetNode.nodeValue
 		} else if (liveNode.nodeType === Node.ELEMENT_NODE) {
 			const liveElement = /** @type {Element} */ (liveNode)
-			reconcileHydrationNodes(
-				liveElement,
-				Array.from(liveElement.childNodes),
-				Array.from(targetNode.childNodes),
-				adoptionMap,
-				null,
-			)
+			const targetElement = /** @type {Element} */ (targetNode)
+			let hydrateChildren = !liveElement.localName.includes('-') || managedCustomElements.has(targetElement)
+			if (!hydrateChildren)
+				for (const child of targetElement.childNodes)
+					if (child.nodeType !== Node.TEXT_NODE || child.nodeValue?.trim()) {
+						hydrateChildren = true
+						break
+					}
+			if (hydrateChildren)
+				reconcileHydrationNodes(
+					liveElement,
+					Array.from(liveElement.childNodes),
+					Array.from(targetElement.childNodes),
+					adoptionMap,
+					managedCustomElements,
+					null,
+				)
 		}
 
 		liveIndex++
