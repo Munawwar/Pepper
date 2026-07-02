@@ -5,22 +5,29 @@
   "type": "module",
   "main": "./dist/index.js",
   "types": "./index.d.ts",
+  "files": [
+    "dist",
+    "src",
+    "index.d.ts",
+    "pepper-ssr.d.ts",
+    "pepper-store.d.ts"
+  ],
   "exports": {
     ".": {
       "types": "./index.d.ts",
+      "import": "./dist/index.js",
       "default": "./dist/index.js"
     },
     "./ssr": {
       "types": "./pepper-ssr.d.ts",
+      "import": "./dist/ssr.js",
       "default": "./dist/ssr.js"
     },
     "./store": {
       "types": "./pepper-store.d.ts",
+      "import": "./dist/store.js",
       "default": "./dist/store.js"
     }
-  },
-  "directories": {
-    "test": "test"
   },
   "scripts": {
     "build": "rm -fr dist && mkdir -p dist && esbuild src/index.js --outfile=dist/index.js --bundle --target=es2022 --format=esm --sourcemap && esbuild src/pepper-ssr.js --outfile=dist/ssr.js --bundle --target=es2022 --format=esm --sourcemap && esbuild src/store.js --outfile=dist/store.js --bundle --target=es2022 --format=esm --sourcemap",
