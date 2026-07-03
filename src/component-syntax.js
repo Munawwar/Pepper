@@ -353,6 +353,7 @@ function resolveComponentProps(bindings, values) {
 
 export {
 	compileComponentTemplate,
+	getSourceTemplate,
 	lowerComponentTemplate,
 	renderSourceTemplate,
 	resolveComponentProps,

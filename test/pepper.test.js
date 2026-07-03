@@ -210,6 +210,48 @@ describe('Pepper component runtime', () => {
 		assertEquals(container.querySelectorAll('ul').length, 1, 'Rerender should not duplicate list containers')
 	})
 
+	it('memoizes paired-tag children by referenced child values', async () => {
+		let frameRenders = 0
+
+		/** @param {{ getProps(): Record<string, unknown> }} param0 */
+		function Frame({getProps}) {
+			/** @param {HtmlTag} html */
+			return html => {
+				frameRenders++
+				return html`<section>${/** @type {{ children?: (() => unknown) | undefined }} */ (getProps()).children?.()}</section>`
+			}
+		}
+
+		function App() {
+			const [getOutside, setOutside] = state(0)
+			const [getInside, setInside] = state(0)
+
+			/** @param {HtmlTag} html */
+			return html => html`
+				<button class="outside" @click=${() => setOutside(getOutside() + 1)}>${getOutside()}</button>
+				<button class="inside" @click=${() => setInside(getInside() + 1)}>inside</button>
+				<${Frame}>
+					<span>${getInside()}</span>
+				</${Frame}>
+			`
+		}
+
+		const container = document.createElement('div')
+		document.body.append(container)
+		render(App, container)
+
+		const outsideButton = /** @type {HTMLButtonElement} */ (container.querySelector('.outside'))
+		const insideButton = /** @type {HTMLButtonElement} */ (container.querySelector('.inside'))
+		outsideButton.click()
+		await flushRender()
+		assertEquals(frameRenders, 1, 'Unrelated parent values should not rerender layout children')
+
+		insideButton.click()
+		await flushRender()
+		assertEquals(frameRenders, 2, 'Referenced child values should rerender layout children')
+		assertEquals(container.querySelector('section')?.textContent?.trim(), '1', 'Layout should render updated child content')
+	})
+
 	it('hydrates nested component tags and keeps refs bound to adopted nodes', async () => {
 		/** @type {{ current: HTMLButtonElement | null } | null} */
 		let latestButtonRef = null

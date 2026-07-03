@@ -1280,7 +1280,8 @@ function createComponentRuntime(componentType, props, rootRecord, parentRuntime 
     resetError: () => {
       if (runtime.capturedError === NO_ERROR) return;
       runtime.capturedError = NO_ERROR;
-      markRuntimeDirty(runtime.parentRuntime || runtime);
+      markRuntimeDirty(runtime);
+      if (runtime.parentRuntime) markRuntimeDirty(runtime.parentRuntime);
     },
     setContext: (key, value) => {
       if (!runtime.contextValues) runtime.contextValues = /* @__PURE__ */ new Map();
@@ -1605,10 +1606,6 @@ function getSourceTemplate(source) {
   sourceTemplateCache.set(source, compiled);
   return compiled;
 }
-function renderSourceTemplate(tag, source, values) {
-  const compiled = getSourceTemplate(source);
-  return tag(compiled.strings, ...compiled.indices.map((index) => values[index]));
-}
 function lowerComponentTemplate(compiled, values, createComponentValue) {
   if (!compiled) return null;
   return {
@@ -1704,17 +1701,28 @@ function createDomComponentValue(ownerRuntime, descriptor, values, descriptorInd
     const childKey = key ?? instanceKey;
     const idPath = createChildIdPath(ownerRuntime, descriptorIndex, key);
     let runtime = store.get(childKey);
-    if (childrenSource != null) {
-      props.children = () => runWithOwnerRuntime(
-        /** @type {ComponentRuntime} */
-        runtime,
-        () => renderSourceTemplate(
-          /** @type {DomTags} */
-          ownerRuntime.rootRecord.domTags.html,
-          childrenSource,
-          values
-        )
-      );
+    const childTemplate = childrenSource == null ? null : getSourceTemplate(childrenSource);
+    const childValues = childTemplate ? childTemplate.indices.map((index) => values[index]) : null;
+    const reusableRuntime = runtime?.componentType === componentType ? runtime : null;
+    let childrenChanged = false;
+    if (reusableRuntime && childValues) {
+      const oldChildValues = reusableRuntime.childrenValues || [];
+      childrenChanged = oldChildValues.length !== childValues.length || oldChildValues.some((value, index) => !Object.is(value, childValues[index]));
+      props.children = reusableRuntime.props.children;
+    } else if (childTemplate) {
+      props.children = () => {
+        const childRuntime = (
+          /** @type {ComponentRuntime} */
+          runtime
+        );
+        return runWithOwnerRuntime(
+          childRuntime,
+          () => (
+            /** @type {DomTags} */
+            childRuntime.rootRecord.domTags.html(childTemplate.strings, ...childRuntime.childrenValues || [])
+          )
+        );
+      };
     }
     if (!runtime || runtime.componentType !== componentType) {
       if (runtime) destroyComponentRuntime(runtime);
@@ -1723,9 +1731,12 @@ function createDomComponentValue(ownerRuntime, descriptor, values, descriptorInd
       } catch (error) {
         throwBoundaryError(ownerRuntime, error, true);
       }
+      if (childValues) runtime.childrenValues = childValues;
       store.set(childKey, runtime);
     } else {
       syncComponentProps(runtime, props);
+      if (childValues) runtime.childrenValues = childValues;
+      if (childrenChanged && !runtime.pendingChangedProps.includes("children")) runtime.pendingChangedProps.push("children");
     }
     runtime.lastSeen = ownerRuntime.renderPassId;
     const nodes = ENABLE_COMPONENT_NODE_CACHE && runtime.currentNodes && !runtime.dirty && !runtime.hasDirtyDescendant && !runtime.pendingChangedProps.length ? runtime.currentNodes : realizeDomRenderable(

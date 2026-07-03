@@ -59,6 +59,7 @@ let currentOwnerRuntime = null
  *   contextValues: Map<string, unknown> | null,
  *   currentNodes: Node[] | null,
  *   currentRenderable: unknown,
+ *   childrenValues?: unknown[],
  *   debugKeyNodes?: Element[],
  *   destroyed: boolean,
  *   dirty: boolean,
@@ -442,7 +443,8 @@ function createComponentRuntime(componentType, props, rootRecord, parentRuntime 
 		resetError: () => {
 			if (runtime.capturedError === NO_ERROR) return
 			runtime.capturedError = NO_ERROR
-			markRuntimeDirty(runtime.parentRuntime || runtime)
+			markRuntimeDirty(runtime)
+			if (runtime.parentRuntime) markRuntimeDirty(runtime.parentRuntime)
 		},
 		setContext: (key, value) => {
 			if (!runtime.contextValues) runtime.contextValues = new Map()
