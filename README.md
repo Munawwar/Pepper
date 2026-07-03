@@ -128,6 +128,7 @@ Direct imports:
 
 - `const [getState, setState] = state(initialValue, comparator?)`
   - `setState(newState, falseOrCallback?)`
+    - Updates are batched into a JS [microtask](https://developer.mozilla.org/en-US/docs/Web/API/HTML_DOM_API/Microtask_guide).
     - If 2nd param is false, then no re-render is scheduled.
     - If 2nd param is a function, it's called after re-render.
 - `ref()`
@@ -297,28 +298,19 @@ Notes:
 
 Plain function components use Pepper’s default runtime behavior:
 
-- deep prop memoization
-- automatic ignoring of `onX` function props for memo comparisons
+- props are deep-compared before parent-driven rerenders
+- function props named `onX` (`onSave`, `onChange`) are ignored in that comparison
 
-When you want to opt out, wrap the component:
-
-```js
-import { component } from '@pepper-js/pepper'
-
-const Unmemoized = component(function Unmemoized(api) {
-  return html => html`<div />`
-}, {
-  memo: false,
-})
-```
+Wrap a component with `component(factory, options)` to change this.
 
 Supported options:
 
-- `memo: boolean`
-- `propsComparator(prevProps, nextProps)`
-- `autoEffectEvent: boolean`
-- `errorBoundary: boolean`
+- `memo` defaults to `true`; props are deep-compared and equal props skip parent-driven rerenders. Set `false` to compare by reference with `Object.is`
+- `autoEffectEvent` defaults to `true`; `onX` function props are treated like effect events: their latest value is stored, but changing only them does not rerender the child¹. Set `false` to include them in memo checks
+- `propsComparator` defaults to `null`; when provided, return `true` to skip rerender
+- `errorBoundary` defaults to `false`; set `true` to catch descendant setup/render errors
 
+¹ By the way, template event bindings already keeps one DOM listener and update its current callback when the template rerenders, so handler changes do not need remove/add listener churn. However autoEffectEvent is added optimization at the component boundary level.
 ## Layout components / children()
 
 Pepper supports paired component tags for layout-style composition:
