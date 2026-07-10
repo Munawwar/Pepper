@@ -1,3 +1,4 @@
+import * as htmlRuntime from './html.js'
 import {
 	force,
 	html as baseHtml,
@@ -34,6 +35,12 @@ import {
 	lowerComponentTemplate,
 	resolveComponentProps,
 } from './component-syntax.js'
+
+const {componentBoundaries, reconcileDom, replaceNodeOwnership} = /** @type {{
+ * componentBoundaries: WeakSet<Node>,
+ * reconcileDom(parentNode: Element | DocumentFragment | Document, oldNodes: Node[], newNodes: Node[], endBoundaryNode?: Node | null): Node[],
+ * replaceNodeOwnership(boundary: Node, previousNodes: Node[], nextNodes: Node[]): boolean,
+ * }} */ (/** @type {unknown} */ (htmlRuntime))
 
 /**
  * @typedef {string[] & { raw: string[] }} MutableTemplateStringsArray
@@ -88,14 +95,52 @@ const singleValueStrings = /** @type {TemplateStringsArray} */ (
  * @returns {Node[]}
  */
 function realizeDomRenderable(renderable, runtime, liveNodes = null) {
-	const view = /** @type {(key?: symbol, liveNodes?: ChildNode[]) => Node[]} */ (
+	const view = /** @type {((key?: symbol, liveNodes?: ChildNode[]) => Node[]) & {template?: {getInstance(key: symbol): {getRenderedNodes(includeInterpolationAnchors?: boolean): Node[]}}}} */ (
 		typeof renderable === 'function'
 			? renderable
 			: /** @type {DomTags} */ (runtime.rootRecord.domTags).html(singleValueStrings, renderable)
 	)
-	const nodes = liveNodes ? view(runtime.viewKey, liveNodes) : view(runtime.viewKey)
+	const renderedNodes = liveNodes ? view(runtime.viewKey, liveNodes) : view(runtime.viewKey)
+	const ownedNodes = runtime.domBoundary && view.template
+		? view.template.getInstance(runtime.viewKey).getRenderedNodes(true)
+		: renderedNodes
+	const nodes = runtime.domBoundary ? [...ownedNodes, runtime.domBoundary] : ownedNodes
 	runtime.currentNodes = nodes
 	return nodes
+}
+
+/**
+ * @param {ComponentRuntime} runtime
+ * @param {Node[]} previousNodes
+ * @param {Node[]} nextNodes
+ */
+function commitRuntimeNodes(runtime, previousNodes, nextNodes) {
+	const boundary = runtime.domBoundary
+	if (!boundary?.parentNode || previousNodes.at(-1) !== boundary || nextNodes.at(-1) !== boundary) return
+	reconcileDom(
+		/** @type {Element | DocumentFragment | Document} */ (boundary.parentNode),
+		previousNodes.slice(0, -1),
+		nextNodes.slice(0, -1),
+		boundary,
+	)
+
+	let ownerRuntime = runtime
+	let previousOwnedNodes = previousNodes
+	let nextOwnedNodes = nextNodes
+	while (ownerRuntime.parentRuntime) {
+		if (replaceNodeOwnership(/** @type {Text} */ (ownerRuntime.domBoundary), previousOwnedNodes, nextOwnedNodes)) break
+		const ownerNodes = ownerRuntime.parentRuntime.currentNodes
+		const boundaryIndex = ownerNodes?.indexOf(/** @type {Text} */ (ownerRuntime.domBoundary)) ?? -1
+		const startIndex = boundaryIndex - previousOwnedNodes.length + 1
+		if (!ownerNodes || startIndex < 0) break
+		const updatedOwnerNodes = [...ownerNodes]
+		updatedOwnerNodes.splice(startIndex, previousOwnedNodes.length, ...nextOwnedNodes)
+		const parentRuntime = ownerRuntime.parentRuntime
+		previousOwnedNodes = /** @type {Node[]} */ (parentRuntime.currentNodes)
+		parentRuntime.currentNodes = updatedOwnerNodes
+		nextOwnedNodes = updatedOwnerNodes
+		ownerRuntime = parentRuntime
+	}
 }
 
 /**
@@ -186,6 +231,10 @@ function createDomComponentValue(ownerRuntime, descriptor, values, descriptorInd
 			if (childrenChanged && !runtime.pendingChangedProps.includes('children')) runtime.pendingChangedProps.push('children')
 		}
 
+		if (!runtime.domBoundary) {
+			runtime.domBoundary = new Text()
+			componentBoundaries.add(runtime.domBoundary)
+		}
 		runtime.lastSeen = ownerRuntime.renderPassId
 		const nodes = (
 			ENABLE_COMPONENT_NODE_CACHE &&
@@ -198,7 +247,9 @@ function createDomComponentValue(ownerRuntime, descriptor, values, descriptorInd
 				: realizeDomRenderable(
 					renderComponentRuntime(runtime, /** @type {RuntimeTags} */ (ownerRuntime.rootRecord.domTags)),
 					runtime,
-					runtime.options.errorBoundary ? /** @type {ChildNode[] | null} */ (runtime.currentNodes) : null,
+					runtime.options.errorBoundary
+						? /** @type {ChildNode[] | null} */ (runtime.currentNodes?.filter(node => node !== runtime.domBoundary) || null)
+						: null,
 				)
 		const debugKeyValue = ownerRuntime.rootRecord.options?.debugKeys === true && key != null ? String(key) : ''
 		if (runtime.debugKeyNodes)
@@ -285,14 +336,16 @@ function flushDirtyRuntimes(rootRecord) {
 	rootRecord.dirtyRuntimes.clear()
 	for (const runtime of dirtyRuntimes) {
 		try {
+			const previousNodes = runtime.currentNodes || []
 			const renderable = renderComponentRuntime(runtime, rootRecord.domTags)
 			const nodes = realizeDomRenderable(
 				renderable,
 				runtime,
 				runtime !== rootRecord.topRuntime && runtime.options.errorBoundary
-					? /** @type {ChildNode[] | null} */ (runtime.currentNodes)
+					? /** @type {ChildNode[] | null} */ (previousNodes.filter(node => node !== runtime.domBoundary))
 					: null,
 			)
+			commitRuntimeNodes(runtime, previousNodes, nodes)
 			if (runtime === rootRecord.topRuntime && nodes.some(node => node.parentNode !== rootRecord.container)) {
 				rootRecord.container.replaceChildren(...nodes)
 			}
@@ -306,10 +359,16 @@ function flushDirtyRuntimes(rootRecord) {
 				retryRuntime = runtime
 				break
 			}
+			const previousNodes = retryRuntime.currentNodes || []
 			const renderable = renderComponentRuntime(retryRuntime, rootRecord.domTags)
 			const nodes = retryRuntime === rootRecord.topRuntime
 				? realizeDomRenderable(renderable, retryRuntime)
-				: realizeDomRenderable(renderable, retryRuntime, /** @type {ChildNode[] | null} */ (retryRuntime.currentNodes))
+				: realizeDomRenderable(
+					renderable,
+					retryRuntime,
+					/** @type {ChildNode[]} */ (previousNodes.filter(node => node !== retryRuntime.domBoundary)),
+				)
+			commitRuntimeNodes(retryRuntime, previousNodes, nodes)
 			if (retryRuntime === rootRecord.topRuntime) rootRecord.container.replaceChildren(...nodes)
 			finalizeComponentRuntime(retryRuntime)
 		}

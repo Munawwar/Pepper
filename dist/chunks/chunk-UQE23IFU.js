@@ -1,3 +1,9 @@
+var __defProp = Object.defineProperty;
+var __export = (target, all) => {
+  for (var name in all)
+    __defProp(target, name, { get: all[name], enumerable: true });
+};
+
 // src/utils.js
 function keys(obj) {
   if (!obj) return [];
@@ -643,6 +649,7 @@ var UNSAFE_MATHML_SYMBOL = /* @__PURE__ */ Symbol("unsafe-mathml");
 var RAW_TEXT_SYMBOL = /* @__PURE__ */ Symbol("raw-text");
 
 export {
+  __export,
   FORCE_SYMBOL,
   UNSAFE_HTML_SYMBOL,
   UNSAFE_SVG_SYMBOL,
@@ -672,4 +679,4 @@ export {
   lowerComponentTemplate,
   resolveComponentProps
 };
-//# sourceMappingURL=chunk-MN4X5FTW.js.map
+//# sourceMappingURL=chunk-UQE23IFU.js.map

@@ -59,6 +59,7 @@ let currentOwnerRuntime = null
  *   contextValues: Map<string, unknown> | null,
  *   currentNodes: Node[] | null,
  *   currentRenderable: unknown,
+ *   domBoundary?: Text,
  *   childrenValues?: unknown[],
  *   debugKeyNodes?: Element[],
  *   destroyed: boolean,

@@ -4,6 +4,7 @@ import {
   UNSAFE_HTML_SYMBOL,
   UNSAFE_MATHML_SYMBOL,
   UNSAFE_SVG_SYMBOL,
+  __export,
   captureBoundaryError,
   compileComponentTemplate,
   component,
@@ -26,9 +27,23 @@ import {
   state,
   syncComponentProps,
   throwBoundaryError
-} from "./chunks/chunk-MN4X5FTW.js";
+} from "./chunks/chunk-UQE23IFU.js";
 
 // src/html.js
+var html_exports = {};
+__export(html_exports, {
+  componentBoundaries: () => componentBoundaries,
+  force: () => force,
+  html: () => html,
+  mathml: () => mathml,
+  rawText: () => rawText,
+  reconcileDom: () => reconcileDom,
+  replaceNodeOwnership: () => replaceNodeOwnership,
+  svg: () => svg,
+  unsafeHTML: () => unsafeHTML,
+  unsafeMathML: () => unsafeMathML,
+  unsafeSVG: () => unsafeSVG
+});
 function html(strings, ...values) {
   return handleTemplateTag("html", strings, ...values);
 }
@@ -439,6 +454,8 @@ function arrayEquals(a, b) {
 }
 var siteIndexKeys = /* @__PURE__ */ new WeakMap();
 var nodeTemplateInstances = /* @__PURE__ */ new WeakMap();
+var nodeHostSites = /* @__PURE__ */ new WeakMap();
+var componentBoundaries = /* @__PURE__ */ new WeakSet();
 function getStableNestedKey(site, index) {
   let indexKeys = siteIndexKeys.get(site);
   if (!indexKeys) siteIndexKeys.set(site, indexKeys = []);
@@ -448,6 +465,19 @@ function getStableNestedKey(site, index) {
 }
 function trackTemplateInstanceNodes(templateInstance, nodes) {
   for (const node of nodes) nodeTemplateInstances.set(node, templateInstance);
+}
+function replaceNodeOwnership(boundary, previousNodes, nextNodes) {
+  const site = nodeHostSites.get(boundary);
+  const siteNodes = site?.insertedNodes;
+  if (!siteNodes) return false;
+  const boundaryIndex = siteNodes.indexOf(boundary);
+  const startIndex = boundaryIndex - previousNodes.length + 1;
+  if (startIndex < 0) return false;
+  const updatedSiteNodes = [...siteNodes];
+  updatedSiteNodes.splice(startIndex, previousNodes.length, ...nextNodes);
+  site.insertedNodes = updatedSiteNodes;
+  for (const node of nextNodes) if (componentBoundaries.has(node)) nodeHostSites.set(node, site);
+  return true;
 }
 function getBindingKey(type, name) {
   if (type === "boolean-attribute") return `?${name}`;
@@ -496,11 +526,13 @@ function reconcileDom(parentNode, oldNodes, newNodes, endBoundaryNode = null) {
   const startBoundaryNode = oldNodes[0]?.previousSibling || endBoundaryNode?.previousSibling || null;
   while (oldStart < oldEnd || newStart < newEnd) {
     if (oldEnd === oldStart) {
+      const retainedNode = newNodes[newEnd];
+      const insertBefore = retainedNode?.parentNode === parentNode ? retainedNode : endBoundaryNode;
       while (newStart < newEnd) {
         const node = newNodes[newStart++];
         if ("moveBefore" in parentNode && node.parentNode === parentNode)
-          parentNode.moveBefore(node, endBoundaryNode);
-        else parentNode.insertBefore(node, endBoundaryNode);
+          parentNode.moveBefore(node, insertBefore);
+        else parentNode.insertBefore(node, insertBefore);
       }
     } else if (newEnd === newStart) {
       while (oldStart < oldEnd) oldNodes[oldStart++].remove();
@@ -530,7 +562,8 @@ function reconcileDom(parentNode, oldNodes, newNodes, endBoundaryNode = null) {
       }
     } else {
       const lastSettledNode = newNodes[newStart - 1] || null;
-      const endBoundary = newNodes[newEnd] || endBoundaryNode;
+      const retainedNode = newNodes[newEnd];
+      const endBoundary = retainedNode?.parentNode === parentNode ? retainedNode : endBoundaryNode;
       const firstPendingNode = newNodes[newStart] || endBoundary;
       while (newStart < newEnd) {
         const node2 = newNodes[newStart++];
@@ -604,6 +637,7 @@ function interpolateTextSite(site, value) {
     );
     site.node.textContent = "";
     site.insertedNodes = reconciledNodes.length ? reconciledNodes : void 0;
+    for (const node of reconciledNodes) if (componentBoundaries.has(node)) nodeHostSites.set(node, site);
   }
 }
 function adoptSubtree(adoptionMap, root) {
@@ -785,6 +819,9 @@ var TemplateInstance = class {
       nestedAdoptionMap.set(templateNode, liveNode);
     }
     for (const [templateInstance, nestedAdoptionMap] of nestedAdoptionMaps) templateInstance.absorb(nestedAdoptionMap);
+    for (const site of this.sites)
+      for (const node of site.insertedNodes || [])
+        if (componentBoundaries.has(node)) nodeHostSites.set(node, site);
     trackTemplateInstanceNodes(this, this.getRenderedNodes());
     return this;
   }
@@ -1009,14 +1046,15 @@ var TemplateInstance = class {
     }
     flushElementBindings();
   }
-  getRenderedNodes() {
+  /** @param {boolean} [includeInterpolationAnchors=false] */
+  getRenderedNodes(includeInterpolationAnchors = false) {
     return (
       /** @type {TemplateNodes} */
       Object.freeze(
         this.nodes.flatMap((node) => {
           for (const site of this.sites) {
             if (site.type !== "text" || site.node !== node || !site.insertedNodes?.length) continue;
-            return site.insertedNodes;
+            return includeInterpolationAnchors ? [...site.insertedNodes, node] : site.insertedNodes;
           }
           return [node];
         })
@@ -1026,6 +1064,15 @@ var TemplateInstance = class {
 };
 
 // src/index.js
+var { componentBoundaries: componentBoundaries2, reconcileDom: reconcileDom2, replaceNodeOwnership: replaceNodeOwnership2 } = (
+  /** @type {{
+  * componentBoundaries: WeakSet<Node>,
+  * reconcileDom(parentNode: Element | DocumentFragment | Document, oldNodes: Node[], newNodes: Node[], endBoundaryNode?: Node | null): Node[],
+  * replaceNodeOwnership(boundary: Node, previousNodes: Node[], nextNodes: Node[]): boolean,
+  * }} */
+  /** @type {unknown} */
+  html_exports
+);
 var rootMap = /* @__PURE__ */ new WeakMap();
 var ENABLE_COMPONENT_NODE_CACHE = true;
 var singleValueStrings = (
@@ -1038,15 +1085,54 @@ var singleValueStrings = (
 );
 function realizeDomRenderable(renderable, runtime, liveNodes = null) {
   const view = (
-    /** @type {(key?: symbol, liveNodes?: ChildNode[]) => Node[]} */
+    /** @type {((key?: symbol, liveNodes?: ChildNode[]) => Node[]) & {template?: {getInstance(key: symbol): {getRenderedNodes(includeInterpolationAnchors?: boolean): Node[]}}}} */
     typeof renderable === "function" ? renderable : (
       /** @type {DomTags} */
       runtime.rootRecord.domTags.html(singleValueStrings, renderable)
     )
   );
-  const nodes = liveNodes ? view(runtime.viewKey, liveNodes) : view(runtime.viewKey);
+  const renderedNodes = liveNodes ? view(runtime.viewKey, liveNodes) : view(runtime.viewKey);
+  const ownedNodes = runtime.domBoundary && view.template ? view.template.getInstance(runtime.viewKey).getRenderedNodes(true) : renderedNodes;
+  const nodes = runtime.domBoundary ? [...ownedNodes, runtime.domBoundary] : ownedNodes;
   runtime.currentNodes = nodes;
   return nodes;
+}
+function commitRuntimeNodes(runtime, previousNodes, nextNodes) {
+  const boundary = runtime.domBoundary;
+  if (!boundary?.parentNode || previousNodes.at(-1) !== boundary || nextNodes.at(-1) !== boundary) return;
+  reconcileDom2(
+    /** @type {Element | DocumentFragment | Document} */
+    boundary.parentNode,
+    previousNodes.slice(0, -1),
+    nextNodes.slice(0, -1),
+    boundary
+  );
+  let ownerRuntime = runtime;
+  let previousOwnedNodes = previousNodes;
+  let nextOwnedNodes = nextNodes;
+  while (ownerRuntime.parentRuntime) {
+    if (replaceNodeOwnership2(
+      /** @type {Text} */
+      ownerRuntime.domBoundary,
+      previousOwnedNodes,
+      nextOwnedNodes
+    )) break;
+    const ownerNodes = ownerRuntime.parentRuntime.currentNodes;
+    const boundaryIndex = ownerNodes?.indexOf(
+      /** @type {Text} */
+      ownerRuntime.domBoundary
+    ) ?? -1;
+    const startIndex = boundaryIndex - previousOwnedNodes.length + 1;
+    if (!ownerNodes || startIndex < 0) break;
+    const updatedOwnerNodes = [...ownerNodes];
+    updatedOwnerNodes.splice(startIndex, previousOwnedNodes.length, ...nextOwnedNodes);
+    const parentRuntime = ownerRuntime.parentRuntime;
+    previousOwnedNodes = /** @type {Node[]} */
+    parentRuntime.currentNodes;
+    parentRuntime.currentNodes = updatedOwnerNodes;
+    nextOwnedNodes = updatedOwnerNodes;
+    ownerRuntime = parentRuntime;
+  }
 }
 function createDomTags() {
   return {
@@ -1130,6 +1216,10 @@ function createDomComponentValue(ownerRuntime, descriptor, values, descriptorInd
       if (childValues) runtime.childrenValues = childValues;
       if (childrenChanged && !runtime.pendingChangedProps.includes("children")) runtime.pendingChangedProps.push("children");
     }
+    if (!runtime.domBoundary) {
+      runtime.domBoundary = new Text();
+      componentBoundaries2.add(runtime.domBoundary);
+    }
     runtime.lastSeen = ownerRuntime.renderPassId;
     const nodes = ENABLE_COMPONENT_NODE_CACHE && runtime.currentNodes && !runtime.dirty && !runtime.hasDirtyDescendant && !runtime.pendingChangedProps.length ? runtime.currentNodes : realizeDomRenderable(
       renderComponentRuntime(
@@ -1140,7 +1230,7 @@ function createDomComponentValue(ownerRuntime, descriptor, values, descriptorInd
       runtime,
       runtime.options.errorBoundary ? (
         /** @type {ChildNode[] | null} */
-        runtime.currentNodes
+        runtime.currentNodes?.filter((node) => node !== runtime.domBoundary) || null
       ) : null
     );
     const debugKeyValue = ownerRuntime.rootRecord.options?.debugKeys === true && key != null ? String(key) : "";
@@ -1202,15 +1292,17 @@ function flushDirtyRuntimes(rootRecord) {
   rootRecord.dirtyRuntimes.clear();
   for (const runtime of dirtyRuntimes) {
     try {
+      const previousNodes = runtime.currentNodes || [];
       const renderable = renderComponentRuntime(runtime, rootRecord.domTags);
       const nodes = realizeDomRenderable(
         renderable,
         runtime,
         runtime !== rootRecord.topRuntime && runtime.options.errorBoundary ? (
           /** @type {ChildNode[] | null} */
-          runtime.currentNodes
+          previousNodes.filter((node) => node !== runtime.domBoundary)
         ) : null
       );
+      commitRuntimeNodes(runtime, previousNodes, nodes);
       if (runtime === rootRecord.topRuntime && nodes.some((node) => node.parentNode !== rootRecord.container)) {
         rootRecord.container.replaceChildren(...nodes);
       }
@@ -1224,13 +1316,15 @@ function flushDirtyRuntimes(rootRecord) {
         retryRuntime = runtime;
         break;
       }
+      const previousNodes = retryRuntime.currentNodes || [];
       const renderable = renderComponentRuntime(retryRuntime, rootRecord.domTags);
       const nodes = retryRuntime === rootRecord.topRuntime ? realizeDomRenderable(renderable, retryRuntime) : realizeDomRenderable(
         renderable,
         retryRuntime,
-        /** @type {ChildNode[] | null} */
-        retryRuntime.currentNodes
+        /** @type {ChildNode[]} */
+        previousNodes.filter((node) => node !== retryRuntime.domBoundary)
       );
+      commitRuntimeNodes(retryRuntime, previousNodes, nodes);
       if (retryRuntime === rootRecord.topRuntime) rootRecord.container.replaceChildren(...nodes);
       finalizeComponentRuntime(retryRuntime);
     }

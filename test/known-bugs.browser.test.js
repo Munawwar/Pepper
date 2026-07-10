@@ -48,7 +48,7 @@ describe('Known Pepper browser regressions', () => {
 		}
 	})
 
-	it.skip('[A03] commits a child-local root template change', async () => {
+	it('[A03] commits a child-local root template change', async () => {
 		let showOn
 
 		function Child() {
@@ -69,7 +69,7 @@ describe('Known Pepper browser regressions', () => {
 		assertEquals(container.innerHTML, '<section><strong>on</strong></section>', 'The new child root should replace the old root')
 	})
 
-	it.skip('[A03] removes every node owned after an empty-to-complex transition', async () => {
+	it('[A03] removes every node owned after an empty-to-complex transition', async () => {
 		let showChildContent
 		let hideChild
 
@@ -93,6 +93,105 @@ describe('Known Pepper browser regressions', () => {
 		await flushRender()
 
 		assertEquals(container.innerHTML, '<section></section>', 'Removing the child should clear nodes created by its local update')
+	})
+
+	it('[A03] reconciles nested empty and multi-root transitions without remounting', async () => {
+		let setMode
+		let childSetups = 0
+		let middleSetups = 0
+
+		function Child() {
+			childSetups++
+			const [getMode, updateMode] = state(0)
+			setMode = updateMode
+			return html => {
+				if (getMode() === 0) return html``
+				if (getMode() === 1) return html`<b>one</b><i>two</i>`
+				return html`<u>three</u>`
+			}
+		}
+
+		function Middle() {
+			middleSetups++
+			return html => html`<article><${Child} /></article>`
+		}
+
+		function App() {
+			return html => html`<section><${Middle} /><span>stable</span></section>`
+		}
+
+		const container = createContainer()
+		render(App, container)
+		const stableNode = container.querySelector('span')
+
+		setMode(1)
+		await flushRender()
+		assertEquals(container.innerHTML, '<section><article><b>one</b><i>two</i></article><span>stable</span></section>', 'Empty output should grow to multiple roots')
+		setMode(2)
+		await flushRender()
+		assertEquals(container.innerHTML, '<section><article><u>three</u></article><span>stable</span></section>', 'Multiple roots should switch template shape')
+		setMode(0)
+		await flushRender()
+
+		assertEquals(container.innerHTML, '<section><article></article><span>stable</span></section>', 'The child should reconcile back to empty output')
+		assertEquals(childSetups, 1, 'The child should retain its runtime')
+		assertEquals(middleSetups, 1, 'Ancestor components should not remount')
+		assertEquals(container.querySelector('span'), stableNode, 'Unchanged sibling DOM should retain identity')
+	})
+
+	it('[A03] preserves local state through a component-only root transition', async () => {
+		let showContent
+		let setups = 0
+
+		function Child() {
+			setups++
+			const [getVisible, setVisible] = state(false)
+			showContent = () => setVisible(true)
+			return html => getVisible() ? html`<b>visible</b><i>roots</i>` : html``
+		}
+
+		function App() {
+			return html => html`<${Child} />`
+		}
+
+		const container = createContainer()
+		render(App, container)
+		showContent()
+		await flushRender()
+
+		assertEquals(container.innerHTML, '<b>visible</b><i>roots</i>', 'A component-only root should reconcile local state')
+		assertEquals(setups, 1, 'The child runtime should survive its root transition')
+	})
+
+	it('[A03] reconciles batched sibling transitions within one interpolation', async () => {
+		const expand = new Map()
+		let hideItems
+
+		function Item({getProps}) {
+			const [getExpanded, setExpanded] = state(false)
+			const id = getProps().id
+			expand.set(id, () => setExpanded(true))
+			return html => getExpanded() ? html`<b>${id}</b><i>expanded</i>` : html`<span>${id}</span>`
+		}
+
+		function App() {
+			const [getVisible, setVisible] = state(true)
+			hideItems = () => setVisible(false)
+			return html => html`
+				<section>${getVisible() ? ['a', 'b'].map(id => html`<${Item} key=${id} id=${id} />`) : ''}</section>
+			`
+		}
+
+		const container = createContainer()
+		render(App, container)
+		expand.get('a')()
+		expand.get('b')()
+		await flushRender()
+
+		assertEquals(container.innerHTML, '<section><b>a</b><i>expanded</i><b>b</b><i>expanded</i></section>', 'Each sibling should replace only its own segment')
+		hideItems()
+		await flushRender()
+		assertEquals(container.innerHTML, '<section></section>', 'Removing the list should clear every locally replaced segment')
 	})
 
 	it.skip('[A04] preserves an unkeyed component-only child across parent renders', () => {

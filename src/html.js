@@ -740,6 +740,8 @@ function arrayEquals(a, b) {
  */
 const siteIndexKeys = new WeakMap()
 const nodeTemplateInstances = new WeakMap()
+const nodeHostSites = new WeakMap()
+const componentBoundaries = new WeakSet()
 
 /**
  * Get a stable unique key for a template function at a specific site and index
@@ -762,6 +764,26 @@ function getStableNestedKey(site, index) {
  */
 function trackTemplateInstanceNodes(templateInstance, nodes) {
 	for (const node of nodes) nodeTemplateInstances.set(node, templateInstance)
+}
+
+/**
+ * @param {Node} boundary
+ * @param {Node[]} previousNodes
+ * @param {Node[]} nextNodes
+ * @returns {boolean}
+ */
+function replaceNodeOwnership(boundary, previousNodes, nextNodes) {
+	const site = nodeHostSites.get(boundary)
+	const siteNodes = site?.insertedNodes
+	if (!siteNodes) return false
+	const boundaryIndex = siteNodes.indexOf(boundary)
+	const startIndex = boundaryIndex - previousNodes.length + 1
+	if (startIndex < 0) return false
+	const updatedSiteNodes = [...siteNodes]
+	updatedSiteNodes.splice(startIndex, previousNodes.length, ...nextNodes)
+	site.insertedNodes = updatedSiteNodes
+	for (const node of nextNodes) if (componentBoundaries.has(node)) nodeHostSites.set(node, site)
+	return true
 }
 
 /**
@@ -846,11 +868,13 @@ function reconcileDom(parentNode, oldNodes, newNodes, endBoundaryNode = null) {
 	while (oldStart < oldEnd || newStart < newEnd) {
 		// fast path to append head or tail
 		if (oldEnd === oldStart) {
+			const retainedNode = newNodes[newEnd]
+			const insertBefore = retainedNode?.parentNode === parentNode ? retainedNode : endBoundaryNode
 			while (newStart < newEnd) {
 				const node = newNodes[newStart++]
 				if ('moveBefore' in parentNode && node.parentNode === parentNode)
-					/** @type {(node: Node, child: Node | null) => Node} */ (parentNode.moveBefore)(node, endBoundaryNode)
-				else parentNode.insertBefore(node, endBoundaryNode)
+					/** @type {(node: Node, child: Node | null) => Node} */ (parentNode.moveBefore)(node, insertBefore)
+				else parentNode.insertBefore(node, insertBefore)
 			}
 			// fast path to remove head or tail
 		} else if (newEnd === newStart) {
@@ -905,7 +929,8 @@ function reconcileDom(parentNode, oldNodes, newNodes, endBoundaryNode = null) {
 		} else {
 			// To keep it simple, just (re-)insert the unmatched middle before endBoundary.
 			const lastSettledNode = newNodes[newStart - 1] || null
-			const endBoundary = newNodes[newEnd] || endBoundaryNode
+			const retainedNode = newNodes[newEnd]
+			const endBoundary = retainedNode?.parentNode === parentNode ? retainedNode : endBoundaryNode
 			const firstPendingNode = newNodes[newStart] || endBoundary
 			while (newStart < newEnd) {
 				const node = newNodes[newStart++]
@@ -1000,6 +1025,7 @@ function interpolateTextSite(/** @type {InterpolationSite} */ site, /** @type {I
 		)
 		site.node.textContent = ''
 		site.insertedNodes = reconciledNodes.length ? reconciledNodes : undefined
+		for (const node of reconciledNodes) if (componentBoundaries.has(node)) nodeHostSites.set(node, site)
 	}
 }
 
@@ -1213,6 +1239,9 @@ class TemplateInstance {
 			nestedAdoptionMap.set(templateNode, liveNode)
 		}
 		for (const [templateInstance, nestedAdoptionMap] of nestedAdoptionMaps) templateInstance.absorb(nestedAdoptionMap)
+		for (const site of this.sites)
+			for (const node of site.insertedNodes || [])
+				if (componentBoundaries.has(node)) nodeHostSites.set(node, site)
 		trackTemplateInstanceNodes(this, this.getRenderedNodes())
 		return this
 	}
@@ -1463,13 +1492,14 @@ class TemplateInstance {
 		flushElementBindings()
 	}
 
-	getRenderedNodes() {
+	/** @param {boolean} [includeInterpolationAnchors=false] */
+	getRenderedNodes(includeInterpolationAnchors = false) {
 		return /** @type {TemplateNodes} */ (
 			Object.freeze(
 				this.nodes.flatMap(node => {
 					for (const site of this.sites) {
 						if (site.type !== 'text' || site.node !== node || !site.insertedNodes?.length) continue
-						return site.insertedNodes
+						return includeInterpolationAnchors ? [...site.insertedNodes, node] : site.insertedNodes
 					}
 					return [node]
 				}),
@@ -1509,3 +1539,5 @@ class TemplateInstance {
  */
 
 /** @typedef { 'html' | 'svg' | 'mathml'} TemplateMode */
+
+export {componentBoundaries, reconcileDom, replaceNodeOwnership}
