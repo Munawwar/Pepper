@@ -1,0 +1,5 @@
+export const FORCE_SYMBOL = Symbol('force')
+export const UNSAFE_HTML_SYMBOL = Symbol('unsafe-html')
+export const UNSAFE_SVG_SYMBOL = Symbol('unsafe-svg')
+export const UNSAFE_MATHML_SYMBOL = Symbol('unsafe-mathml')
+export const RAW_TEXT_SYMBOL = Symbol('raw-text')

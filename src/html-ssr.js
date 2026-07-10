@@ -2,12 +2,15 @@
  * A DOM-free SSR entrypoint for pepper templates.
  */
 
-const FORCE_SYMBOL = Symbol('force')
+import {
+	FORCE_SYMBOL,
+	RAW_TEXT_SYMBOL,
+	UNSAFE_HTML_SYMBOL,
+	UNSAFE_MATHML_SYMBOL,
+	UNSAFE_SVG_SYMBOL,
+} from './html-brands.js'
+
 const TEMPLATE_RESULT_SYMBOL = Symbol('template-result')
-const UNSAFE_HTML_SYMBOL = Symbol('unsafe-html')
-const UNSAFE_SVG_SYMBOL = Symbol('unsafe-svg')
-const UNSAFE_MATHML_SYMBOL = Symbol('unsafe-mathml')
-const RAW_TEXT_SYMBOL = Symbol('raw-text')
 const INTERPOLATION_MARKER = '⧙⧘'
 const INTERPOLATION_PARTS_REGEXP = new RegExp(`${INTERPOLATION_MARKER}(\\d+)${INTERPOLATION_MARKER}`)
 const SPREAD_SITE_REGEXP = new RegExp(`^\\.\\.\\.${INTERPOLATION_MARKER}(\\d+)${INTERPOLATION_MARKER}$`)

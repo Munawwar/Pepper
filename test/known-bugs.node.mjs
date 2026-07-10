@@ -19,7 +19,7 @@ async function readJson(relativePath) {
 	return JSON.parse(await readFile(new URL(relativePath, import.meta.url), 'utf8'))
 }
 
-test.skip('[A01] browser state helper participates in a built SSR render', async () => {
+test('[A01] browser state helper participates in a built SSR render', async () => {
 	const {browser, ssr} = await loadBuiltRenderers()
 
 	function App() {
@@ -30,7 +30,7 @@ test.skip('[A01] browser state helper participates in a built SSR render', async
 	assert.equal(ssr.renderComponentToString(App), '<span>2</span>')
 })
 
-test.skip('[A01] browser ref helper participates in a built SSR render', async () => {
+test('[A01] browser ref helper participates in a built SSR render', async () => {
 	const {browser, ssr} = await loadBuiltRenderers()
 
 	function App() {
@@ -42,7 +42,7 @@ test.skip('[A01] browser ref helper participates in a built SSR render', async (
 	assert.equal(ssr.renderComponentToString(App), '<span>ref</span>')
 })
 
-test.skip('[A01] browser stableId helper participates in a built SSR render', async () => {
+test('[A01] browser stableId helper participates in a built SSR render', async () => {
 	const {browser, ssr} = await loadBuiltRenderers()
 
 	function App() {
@@ -56,7 +56,7 @@ test.skip('[A01] browser stableId helper participates in a built SSR render', as
 	assert.match(output, new RegExp(`for="${id}"`))
 })
 
-test.skip('[A01] built SSR recognizes browser trusted HTML values', async () => {
+test('[A01] built SSR recognizes browser trusted HTML values', async () => {
 	const {browser, ssr} = await loadBuiltRenderers()
 
 	function App() {
@@ -66,7 +66,25 @@ test.skip('[A01] built SSR recognizes browser trusted HTML values', async () => 
 	assert.equal(ssr.renderComponentToString(App), '<div><b>trusted</b></div>')
 })
 
-test.skip('[A01] built SSR omits a portal imported from the browser entry', async () => {
+test('[A01] built SSR recognizes every browser value brand', async () => {
+	const {browser, ssr} = await loadBuiltRenderers()
+
+	function App() {
+		return html => html`
+			<div>${browser.force('forced')}</div>
+			<svg>${browser.unsafeSVG('<circle></circle>')}</svg>
+			<math>${browser.unsafeMathML('<mi>x</mi>')}</math>
+			<script>${browser.rawText('const end = "</script>";')}</script>
+		`
+	}
+
+	assert.equal(
+		ssr.renderComponentToString(App),
+		'<div>forced</div><svg><circle></circle></svg><math><mi>x</mi></math><script>const end = "\\x3C/script>";</script>',
+	)
+})
+
+test('[A01] built SSR omits a portal imported from the browser entry', async () => {
 	const {browser, ssr} = await loadBuiltRenderers()
 
 	function App() {
@@ -76,7 +94,7 @@ test.skip('[A01] built SSR omits a portal imported from the browser entry', asyn
 	assert.equal(ssr.renderComponentToString(App), '<main></main>')
 })
 
-test.skip('[A01] built SSR recognizes browser component boundary metadata', async () => {
+test('[A01] built SSR recognizes browser component boundary metadata', async () => {
 	const {browser, ssr} = await loadBuiltRenderers()
 	const Boundary = browser.component(function Boundary({getError, getProps}) {
 		return html => getError() ? html`<p>fallback</p>` : getProps().children?.()

@@ -1,3 +1,11 @@
+import {
+	FORCE_SYMBOL,
+	RAW_TEXT_SYMBOL,
+	UNSAFE_HTML_SYMBOL,
+	UNSAFE_MATHML_SYMBOL,
+	UNSAFE_SVG_SYMBOL,
+} from './html-brands.js'
+
 /**
  * A Pepper `html` template tag function for declarative DOM creation and updates.
  *
@@ -40,12 +48,6 @@ export function mathml(strings, ...values) {
 	return handleTemplateTag('mathml', strings, ...values)
 }
 
-/** Unique symbol to mark force wrapped values */
-const FORCE_SYMBOL = Symbol('force')
-const UNSAFE_HTML_SYMBOL = Symbol('unsafe-html')
-const UNSAFE_SVG_SYMBOL = Symbol('unsafe-svg')
-const UNSAFE_MATHML_SYMBOL = Symbol('unsafe-mathml')
-const RAW_TEXT_SYMBOL = Symbol('raw-text')
 const TRUSTED_TEXT_INPUT_ERROR = 'unsafeHTML(), unsafeSVG(), unsafeMathML(), and rawText() expect a string.'
 const TRUSTED_TEXT_CONTEXT_ERROR =
 	'unsafeHTML(), unsafeSVG(), unsafeMathML(), and rawText() are only allowed in text content interpolation.'
