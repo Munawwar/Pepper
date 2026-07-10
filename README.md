@@ -432,7 +432,7 @@ VS Code extension:
 
 Pepper targets modern browsers:
 
-- Safari 15.6+
+- Safari 16.4+
 - latest Chrome
 - latest Edge
 - latest Firefox
