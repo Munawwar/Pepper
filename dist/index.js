@@ -27,7 +27,7 @@ import {
   state,
   syncComponentProps,
   throwBoundaryError
-} from "./chunks/chunk-UQE23IFU.js";
+} from "./chunks/chunk-JLDTAIGX.js";
 
 // src/html.js
 var html_exports = {};
@@ -456,6 +456,7 @@ var siteIndexKeys = /* @__PURE__ */ new WeakMap();
 var nodeTemplateInstances = /* @__PURE__ */ new WeakMap();
 var nodeHostSites = /* @__PURE__ */ new WeakMap();
 var componentBoundaries = /* @__PURE__ */ new WeakSet();
+var siteTemplateInstances = /* @__PURE__ */ new WeakMap();
 function getStableNestedKey(site, index) {
   let indexKeys = siteIndexKeys.get(site);
   if (!indexKeys) siteIndexKeys.set(site, indexKeys = []);
@@ -595,14 +596,23 @@ function interpolateTextSite(site, value) {
     if (site.insertedNodes) for (const node of site.insertedNodes) node.remove();
     site.node.textContent = String(unwrappedValue ?? "");
     site.insertedNodes = void 0;
+    for (const templateInstance of site.nestedTemplateInstances || []) templateInstance.deactivate();
+    site.nestedTemplateInstances = void 0;
   } else {
     const itemsToProcess = Array.isArray(unwrappedValue) ? unwrappedValue : [unwrappedValue];
+    const nestedTemplateInstances = [];
     const nodes = (
       /** @type {(Element | Text)[]} */
       itemsToProcess.flatMap((item, index) => {
         if (typeof item === "function") {
+          const view = (
+            /** @type {typeof item & {template?: Template}} */
+            item
+          );
           const stableKey = getStableNestedKey(site, index);
           item = item(stableKey);
+          const templateInstance = view.template?.getInstance(stableKey);
+          if (templateInstance) nestedTemplateInstances.push(templateInstance);
         }
         if (isTrustedTextValue(item)) item = resolveTrustedTextValue(item);
         if (Array.isArray(item)) return item.flat(1);
@@ -638,6 +648,14 @@ function interpolateTextSite(site, value) {
     site.node.textContent = "";
     site.insertedNodes = reconciledNodes.length ? reconciledNodes : void 0;
     for (const node of reconciledNodes) if (componentBoundaries.has(node)) nodeHostSites.set(node, site);
+    const previousTemplateInstances = site.nestedTemplateInstances || [];
+    for (const templateInstance of previousTemplateInstances)
+      if (!nestedTemplateInstances.includes(templateInstance)) templateInstance.deactivate();
+    if (siteTemplateInstances.get(site)?.active) {
+      for (const templateInstance of nestedTemplateInstances)
+        if (!previousTemplateInstances.includes(templateInstance)) templateInstance.activate();
+    }
+    site.nestedTemplateInstances = nestedTemplateInstances.length ? nestedTemplateInstances : void 0;
   }
 }
 function adoptSubtree(adoptionMap, root) {
@@ -747,6 +765,7 @@ function reconcileHydrationNodes(parentNode, liveNodes, targetNodes, adoptionMap
   }
 }
 var TemplateInstance = class {
+  active = false;
   nodes;
   sites;
   /**
@@ -756,6 +775,40 @@ var TemplateInstance = class {
   constructor(nodes, sites) {
     this.nodes = nodes;
     this.sites = sites;
+    for (const site of sites) siteTemplateInstances.set(site, this);
+  }
+  /** @param {boolean} active */
+  updateRefs(active) {
+    const handledElements = /* @__PURE__ */ new WeakSet();
+    for (const site of this.sites) {
+      const elementState = site.elementState;
+      const element = (
+        /** @type {Element} */
+        site.node
+      );
+      if (!elementState || handledElements.has(element)) continue;
+      handledElements.add(element);
+      for (const binding of elementState.lastBindings?.values() || []) {
+        const ref2 = binding.type === "property" && binding.attributeName === "__pepperRef" ? binding.value : null;
+        if (!ref2 || typeof ref2 !== "object" || !("current" in ref2)) continue;
+        if (active) ref2.current = element;
+        else if (ref2.current === element) ref2.current = null;
+      }
+    }
+  }
+  activate() {
+    if (this.active) return;
+    this.active = true;
+    this.updateRefs(true);
+    for (const site of this.sites)
+      for (const templateInstance of site.nestedTemplateInstances || []) templateInstance.activate();
+  }
+  deactivate() {
+    if (!this.active) return;
+    this.active = false;
+    for (const site of this.sites)
+      for (const templateInstance of site.nestedTemplateInstances || []) templateInstance.deactivate();
+    this.updateRefs(false);
   }
   /**
    * Absorb live nodes mapped for adoption into this template instance.
@@ -806,8 +859,10 @@ var TemplateInstance = class {
           if (binding.type === "property") node[binding.attributeName] = binding.value;
       }
       for (const binding of elementState.lastBindings?.values() || []) {
-        if (binding.type === "property" && binding.attributeName === "__pepperRef" && binding.value && typeof binding.value === "object" && "current" in binding.value) binding.value.current = /** @type {Element} */
-        node;
+        if (binding.type === "property" && binding.attributeName === "__pepperRef" && binding.value && typeof binding.value === "object" && "current" in binding.value) {
+          if (this.active) binding.value.current = /** @type {Element} */
+          node;
+        }
       }
       reboundElementStates.add(elementState);
     }
@@ -857,7 +912,7 @@ var TemplateInstance = class {
           }
         } else if (binding.type === "property") {
           if (binding.attributeName === "__pepperRef") {
-            if (binding.value && typeof binding.value === "object" && "current" in binding.value)
+            if (this.active && binding.value && typeof binding.value === "object" && "current" in binding.value && binding.value.current === element)
               binding.value.current = null;
           } else {
             anyElement[binding.attributeName] = void 0;
@@ -874,9 +929,9 @@ var TemplateInstance = class {
           updateEventHandler(element, binding.attributeName, eventState, binding.value);
         } else if (binding.type === "property") {
           if (binding.attributeName === "__pepperRef") {
-            if (previous?.value && previous.value !== binding.value && typeof previous.value === "object" && "current" in previous.value)
+            if (this.active && previous?.value && previous.value !== binding.value && typeof previous.value === "object" && "current" in previous.value && previous.value.current === element)
               previous.value.current = null;
-            if (binding.value && typeof binding.value === "object" && "current" in binding.value) binding.value.current = element;
+            if (this.active && binding.value && typeof binding.value === "object" && "current" in binding.value) binding.value.current = element;
           } else {
             anyElement[binding.attributeName] = binding.value;
           }
@@ -1085,15 +1140,21 @@ var singleValueStrings = (
 );
 function realizeDomRenderable(renderable, runtime, liveNodes = null) {
   const view = (
-    /** @type {((key?: symbol, liveNodes?: ChildNode[]) => Node[]) & {template?: {getInstance(key: symbol): {getRenderedNodes(includeInterpolationAnchors?: boolean): Node[]}}}} */
+    /** @type {((key?: symbol, liveNodes?: ChildNode[]) => Node[]) & {template?: {getInstance(key: symbol): {activate(): void, deactivate(): void, getRenderedNodes(includeInterpolationAnchors?: boolean): Node[]}}}} */
     typeof renderable === "function" ? renderable : (
       /** @type {DomTags} */
       runtime.rootRecord.domTags.html(singleValueStrings, renderable)
     )
   );
   const renderedNodes = liveNodes ? view(runtime.viewKey, liveNodes) : view(runtime.viewKey);
-  const ownedNodes = runtime.domBoundary && view.template ? view.template.getInstance(runtime.viewKey).getRenderedNodes(true) : renderedNodes;
+  const templateInstance = view.template?.getInstance(runtime.viewKey) || null;
+  const ownedNodes = runtime.domBoundary && templateInstance ? templateInstance.getRenderedNodes(true) : renderedNodes;
   const nodes = runtime.domBoundary ? [...ownedNodes, runtime.domBoundary] : ownedNodes;
+  if (runtime.currentTemplateInstance !== templateInstance) {
+    runtime.currentTemplateInstance?.deactivate();
+    templateInstance?.activate();
+    runtime.currentTemplateInstance = templateInstance;
+  }
   runtime.currentNodes = nodes;
   return nodes;
 }

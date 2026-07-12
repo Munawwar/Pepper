@@ -194,6 +194,72 @@ describe('Known Pepper browser regressions', () => {
 		assertEquals(container.innerHTML, '<section></section>', 'Removing the list should clear every locally replaced segment')
 	})
 
+	it('[A03] reactivates a shared ref when restoring a cached root template', async () => {
+		let toggle
+		let elementRef
+
+		function App() {
+			elementRef = Pepper.ref()
+			const [getOn, setOn] = state(false)
+			toggle = () => setOn(value => !value)
+			return html => getOn() ? html`<strong ref=${elementRef}>on</strong>` : html`<em ref=${elementRef}>off</em>`
+		}
+
+		const container = createContainer()
+		render(App, container)
+		const cachedElement = container.querySelector('em')
+		toggle()
+		await flushRender()
+		assertEquals(elementRef.current, container.querySelector('strong'), 'The newly active root should claim the ref')
+		toggle()
+		await flushRender()
+
+		assertEquals(container.querySelector('em'), cachedElement, 'The cached root should retain node identity')
+		assertEquals(elementRef.current, cachedElement, 'The restored cached root should reclaim the ref')
+	})
+
+	it('[A03] clears refs omitted by the next root template', async () => {
+		let hide
+		let elementRef
+
+		function App() {
+			elementRef = Pepper.ref()
+			const [getVisible, setVisible] = state(true)
+			hide = () => setVisible(false)
+			return html => getVisible() ? html`<span ref=${elementRef}>on</span>` : html`<b>off</b>`
+		}
+
+		const container = createContainer()
+		render(App, container)
+		hide()
+		await flushRender()
+
+		assertEquals(elementRef.current, null, 'A detached root should release its ref')
+	})
+
+	it('[A03] updates refs across nested cached template transitions', async () => {
+		let toggle
+		let elementRef
+
+		function App() {
+			elementRef = Pepper.ref()
+			const [getOn, setOn] = state(false)
+			toggle = () => setOn(value => !value)
+			return html => html`<section>${getOn() ? html`<strong ref=${elementRef}>on</strong>` : html`<em ref=${elementRef}>off</em>`}</section>`
+		}
+
+		const container = createContainer()
+		render(App, container)
+		const cachedElement = container.querySelector('em')
+		toggle()
+		await flushRender()
+		assertEquals(elementRef.current, container.querySelector('strong'), 'The active nested template should claim the ref')
+		toggle()
+		await flushRender()
+
+		assertEquals(elementRef.current, cachedElement, 'The restored nested template should reclaim the ref')
+	})
+
 	it.skip('[A04] preserves an unkeyed component-only child across parent renders', () => {
 		let setups = 0
 

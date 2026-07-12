@@ -243,6 +243,7 @@ function createComponentRuntime(componentType, props, rootRecord, parentRuntime 
     contextValues: null,
     currentNodes: null,
     currentRenderable: null,
+    currentTemplateInstance: null,
     destroyed: false,
     dirty: true,
     hasDirtyDescendant: false,
@@ -360,6 +361,8 @@ function destroyComponentRuntime(runtime) {
   runtime.childStores.clear();
   for (const portalRuntime of runtime.portals.values()) portalRuntime.destroy();
   runtime.portals.clear();
+  runtime.currentTemplateInstance?.deactivate();
+  runtime.currentTemplateInstance = null;
   runtime.currentNodes = null;
   for (const cleanup of runtime.mountCleanups.splice(0)) cleanup();
   for (const runtimeRef of runtime.refs) runtimeRef.current = null;
@@ -679,4 +682,4 @@ export {
   lowerComponentTemplate,
   resolveComponentProps
 };
-//# sourceMappingURL=chunk-UQE23IFU.js.map
+//# sourceMappingURL=chunk-JLDTAIGX.js.map

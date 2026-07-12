@@ -742,6 +742,7 @@ const siteIndexKeys = new WeakMap()
 const nodeTemplateInstances = new WeakMap()
 const nodeHostSites = new WeakMap()
 const componentBoundaries = new WeakSet()
+const siteTemplateInstances = new WeakMap()
 
 /**
  * Get a stable unique key for a template function at a specific site and index
@@ -974,22 +975,29 @@ function interpolateTextSite(/** @type {InterpolationSite} */ site, /** @type {I
 		if (site.insertedNodes) for (const node of site.insertedNodes) /** @type {ChildNode} */ (node).remove()
 		site.node.textContent = String(unwrappedValue ?? '')
 		site.insertedNodes = undefined
+		for (const templateInstance of site.nestedTemplateInstances || []) templateInstance.deactivate()
+		site.nestedTemplateInstances = undefined
 	} else {
 		// Handle complex cases that produce DOM nodes
 		// Convert single values to arrays for uniform processing
 		const itemsToProcess = Array.isArray(unwrappedValue) ? unwrappedValue : [unwrappedValue]
 
+		/** @type {TemplateInstance[]} */
+		const nestedTemplateInstances = []
 		const nodes = /** @type {(Element | Text)[]} */ (
 			itemsToProcess
 				.flatMap((item, index) => {
 					// Handle template functions - call them to get their nodes
 					if (typeof item === 'function') {
+						const view = /** @type {typeof item & {template?: Template}} */ (item)
 						// Each interpolation site gets its own unique identity for nested template functions.
 						// We generate a stable key combining the site identity with the array index to ensure
 						// template functions at the same site but different positions don't share cache entries,
 						// even when using the same mapper function (e.g., html`<ul>${items.map(itemMapper)}</ul>`).
 						const stableKey = getStableNestedKey(site, index)
 						item = item(stableKey)
+						const templateInstance = view.template?.getInstance(stableKey)
+						if (templateInstance) nestedTemplateInstances.push(templateInstance)
 					}
 					if (isTrustedTextValue(item)) item = resolveTrustedTextValue(item)
 					// Handle arrays (already processed template results)
@@ -1026,6 +1034,13 @@ function interpolateTextSite(/** @type {InterpolationSite} */ site, /** @type {I
 		site.node.textContent = ''
 		site.insertedNodes = reconciledNodes.length ? reconciledNodes : undefined
 		for (const node of reconciledNodes) if (componentBoundaries.has(node)) nodeHostSites.set(node, site)
+		const previousTemplateInstances = site.nestedTemplateInstances || []
+		for (const templateInstance of previousTemplateInstances)
+			if (!nestedTemplateInstances.includes(templateInstance)) templateInstance.deactivate()
+		if (siteTemplateInstances.get(site)?.active)
+			for (const templateInstance of nestedTemplateInstances)
+				if (!previousTemplateInstances.includes(templateInstance)) templateInstance.activate()
+		site.nestedTemplateInstances = nestedTemplateInstances.length ? nestedTemplateInstances : undefined
 	}
 }
 
@@ -1175,6 +1190,7 @@ function reconcileHydrationNodes(parentNode, liveNodes, targetNodes, adoptionMap
  * Holds information about a template instance's nodes and interpolation sites.
  */
 class TemplateInstance {
+	active = false
 	nodes
 	sites
 
@@ -1185,6 +1201,40 @@ class TemplateInstance {
 	constructor(nodes, sites) {
 		this.nodes = nodes
 		this.sites = sites
+		for (const site of sites) siteTemplateInstances.set(site, this)
+	}
+
+	/** @param {boolean} active */
+	updateRefs(active) {
+		const handledElements = new WeakSet()
+		for (const site of this.sites) {
+			const elementState = site.elementState
+			const element = /** @type {Element} */ (site.node)
+			if (!elementState || handledElements.has(element)) continue
+			handledElements.add(element)
+			for (const binding of elementState.lastBindings?.values() || []) {
+				const ref = binding.type === 'property' && binding.attributeName === '__pepperRef' ? binding.value : null
+				if (!ref || typeof ref !== 'object' || !('current' in ref)) continue
+				if (active) ref.current = element
+				else if (ref.current === element) ref.current = null
+			}
+		}
+	}
+
+	activate() {
+		if (this.active) return
+		this.active = true
+		this.updateRefs(true)
+		for (const site of this.sites)
+			for (const templateInstance of site.nestedTemplateInstances || []) templateInstance.activate()
+	}
+
+	deactivate() {
+		if (!this.active) return
+		this.active = false
+		for (const site of this.sites)
+			for (const templateInstance of site.nestedTemplateInstances || []) templateInstance.deactivate()
+		this.updateRefs(false)
 	}
 
 	/**
@@ -1226,7 +1276,9 @@ class TemplateInstance {
 					binding.value &&
 					typeof binding.value === 'object' &&
 					'current' in binding.value
-				) binding.value.current = /** @type {Element} */ (node)
+				) {
+					if (this.active) binding.value.current = /** @type {Element} */ (node)
+				}
 			}
 
 			reboundElementStates.add(elementState)
@@ -1279,10 +1331,10 @@ class TemplateInstance {
 					}
 				} else if (binding.type === 'property') {
 					if (binding.attributeName === '__pepperRef') {
-						if (binding.value && typeof binding.value === 'object' && 'current' in binding.value)
+						if (this.active && binding.value && typeof binding.value === 'object' && 'current' in binding.value && binding.value.current === element)
 							binding.value.current = null
 					} else {
-					anyElement[binding.attributeName] = undefined
+						anyElement[binding.attributeName] = undefined
 					}
 				} else element.removeAttribute(binding.attributeName)
 			}
@@ -1304,18 +1356,18 @@ class TemplateInstance {
 					updateEventHandler(element, binding.attributeName, eventState, binding.value)
 				} else if (binding.type === 'property') {
 					if (binding.attributeName === '__pepperRef') {
-						if (previous?.value && previous.value !== binding.value && typeof previous.value === 'object' && 'current' in previous.value)
+						if (this.active && previous?.value && previous.value !== binding.value && typeof previous.value === 'object' && 'current' in previous.value && previous.value.current === element)
 							previous.value.current = null
-						if (binding.value && typeof binding.value === 'object' && 'current' in binding.value) binding.value.current = element
+						if (this.active && binding.value && typeof binding.value === 'object' && 'current' in binding.value) binding.value.current = element
 					} else {
 						anyElement[binding.attributeName] = binding.value
 					}
 				} else if (binding.type === 'boolean-attribute') {
 					if (binding.value) element.setAttribute(binding.attributeName, '')
 					else element.removeAttribute(binding.attributeName)
-					} else {
-						element.setAttribute(binding.attributeName, /** @type {string} */ (binding.value))
-					}
+				} else {
+					element.setAttribute(binding.attributeName, /** @type {string} */ (binding.value))
+				}
 			}
 
 			currentElementState.lastBindings = currentBindings
@@ -1531,6 +1583,7 @@ class TemplateInstance {
  *   parts?: Array<string | number>,
  *   interpolationIndex?: number,
  *   insertedNodes?: Node[],
+ *   nestedTemplateInstances?: TemplateInstance[],
  *   lastValue?: unknown,
  *   elementState?: { lastBindings?: Map<string, { type: 'attribute'|'boolean-attribute'|'property'|'event', attributeName: string, value: unknown, force?: boolean }>, eventBindings?: Map<string, { currentEventListener?: EventListener, internalHandler?: EventListener }> },
  *   skipEqualityCheck?: boolean,

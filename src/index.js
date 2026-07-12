@@ -95,16 +95,22 @@ const singleValueStrings = /** @type {TemplateStringsArray} */ (
  * @returns {Node[]}
  */
 function realizeDomRenderable(renderable, runtime, liveNodes = null) {
-	const view = /** @type {((key?: symbol, liveNodes?: ChildNode[]) => Node[]) & {template?: {getInstance(key: symbol): {getRenderedNodes(includeInterpolationAnchors?: boolean): Node[]}}}} */ (
+	const view = /** @type {((key?: symbol, liveNodes?: ChildNode[]) => Node[]) & {template?: {getInstance(key: symbol): {activate(): void, deactivate(): void, getRenderedNodes(includeInterpolationAnchors?: boolean): Node[]}}}} */ (
 		typeof renderable === 'function'
 			? renderable
 			: /** @type {DomTags} */ (runtime.rootRecord.domTags).html(singleValueStrings, renderable)
 	)
 	const renderedNodes = liveNodes ? view(runtime.viewKey, liveNodes) : view(runtime.viewKey)
-	const ownedNodes = runtime.domBoundary && view.template
-		? view.template.getInstance(runtime.viewKey).getRenderedNodes(true)
+	const templateInstance = view.template?.getInstance(runtime.viewKey) || null
+	const ownedNodes = runtime.domBoundary && templateInstance
+		? templateInstance.getRenderedNodes(true)
 		: renderedNodes
 	const nodes = runtime.domBoundary ? [...ownedNodes, runtime.domBoundary] : ownedNodes
+	if (runtime.currentTemplateInstance !== templateInstance) {
+		runtime.currentTemplateInstance?.deactivate()
+		templateInstance?.activate()
+		runtime.currentTemplateInstance = templateInstance
+	}
 	runtime.currentNodes = nodes
 	return nodes
 }

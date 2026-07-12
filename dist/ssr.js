@@ -22,7 +22,7 @@ import {
   stableId,
   state,
   throwBoundaryError
-} from "./chunks/chunk-UQE23IFU.js";
+} from "./chunks/chunk-JLDTAIGX.js";
 
 // src/html-ssr.js
 var TEMPLATE_RESULT_SYMBOL = /* @__PURE__ */ Symbol("template-result");
