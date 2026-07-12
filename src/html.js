@@ -561,7 +561,7 @@ class Template {
 		reconcileHydrationNodes(
 			container,
 			liveNodes,
-			/** @type {Node[]} */ ([...templateInstance.nodes]),
+			/** @type {Node[]} */ ([...templateInstance.getRenderedNodes(true)]),
 			adoptionMap,
 			managedCustomElements,
 			liveNodes[liveNodes.length - 1]?.nextSibling || null,
@@ -863,7 +863,7 @@ function reconcileDom(parentNode, oldNodes, newNodes, endBoundaryNode = null) {
 	let oldEnd = oldNodes.length
 	let newStart = 0
 	let newEnd = newNodes.length
-	const startBoundaryNode = oldNodes[0]?.previousSibling || endBoundaryNode?.previousSibling || null
+	const startBoundaryNode = oldNodes.length ? oldNodes[0].previousSibling : endBoundaryNode?.previousSibling || null
 
 	// Thanks to https://github.com/WebReflection/udomdiff for the fast path inspiration.
 	while (oldStart < oldEnd || newStart < newEnd) {
@@ -997,7 +997,10 @@ function interpolateTextSite(/** @type {InterpolationSite} */ site, /** @type {I
 						const stableKey = getStableNestedKey(site, index)
 						item = item(stableKey)
 						const templateInstance = view.template?.getInstance(stableKey)
-						if (templateInstance) nestedTemplateInstances.push(templateInstance)
+						if (templateInstance) {
+							nestedTemplateInstances.push(templateInstance)
+							item = templateInstance.getRenderedNodes(true)
+						}
 					}
 					if (isTrustedTextValue(item)) item = resolveTrustedTextValue(item)
 					// Handle arrays (already processed template results)

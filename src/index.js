@@ -165,21 +165,6 @@ function createDomTags() {
 				createDomComponentValue(ownerRuntime, entry, loweredValues, index)
 			))
 			if (!lowered) return baseHtml(strings, ...values)
-			if (compiled.strings.every(string => string === '')) {
-				const keyedInstanceIds = new Map()
-				return function renderComponentOnlyTemplate(key = Symbol()) {
-					let instanceIds = keyedInstanceIds.get(key)
-					if (!instanceIds) keyedInstanceIds.set(key, (instanceIds = []))
-					return lowered.values.flatMap((value, index) => {
-						if (typeof value === 'function') {
-							let instanceId = instanceIds[index]
-							if (!instanceId) instanceIds[index] = instanceId = Symbol(`pepper-component-hole-${index}`)
-							return value(instanceId)
-						}
-						return Array.isArray(value) ? value.flat(Infinity) : value == null ? [] : [value]
-					})
-				}
-			}
 			return baseHtml(lowered.strings, ...lowered.values)
 		},
 		mathml: baseMathml,

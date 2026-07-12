@@ -327,7 +327,7 @@ var Template = class {
       container,
       liveNodes,
       /** @type {Node[]} */
-      [...templateInstance.nodes],
+      [...templateInstance.getRenderedNodes(true)],
       adoptionMap,
       managedCustomElements,
       liveNodes[liveNodes.length - 1]?.nextSibling || null
@@ -524,7 +524,7 @@ function reconcileDom(parentNode, oldNodes, newNodes, endBoundaryNode = null) {
   let oldEnd = oldNodes.length;
   let newStart = 0;
   let newEnd = newNodes.length;
-  const startBoundaryNode = oldNodes[0]?.previousSibling || endBoundaryNode?.previousSibling || null;
+  const startBoundaryNode = oldNodes.length ? oldNodes[0].previousSibling : endBoundaryNode?.previousSibling || null;
   while (oldStart < oldEnd || newStart < newEnd) {
     if (oldEnd === oldStart) {
       const retainedNode = newNodes[newEnd];
@@ -612,7 +612,10 @@ function interpolateTextSite(site, value) {
           const stableKey = getStableNestedKey(site, index);
           item = item(stableKey);
           const templateInstance = view.template?.getInstance(stableKey);
-          if (templateInstance) nestedTemplateInstances.push(templateInstance);
+          if (templateInstance) {
+            nestedTemplateInstances.push(templateInstance);
+            item = templateInstance.getRenderedNodes(true);
+          }
         }
         if (isTrustedTextValue(item)) item = resolveTrustedTextValue(item);
         if (Array.isArray(item)) return item.flat(1);
@@ -1206,21 +1209,6 @@ function createDomTags() {
       }
       const lowered = lowerComponentTemplate(compiled, values, (entry, loweredValues, index) => createDomComponentValue(ownerRuntime, entry, loweredValues, index));
       if (!lowered) return html(strings, ...values);
-      if (compiled.strings.every((string) => string === "")) {
-        const keyedInstanceIds = /* @__PURE__ */ new Map();
-        return function renderComponentOnlyTemplate(key = /* @__PURE__ */ Symbol()) {
-          let instanceIds = keyedInstanceIds.get(key);
-          if (!instanceIds) keyedInstanceIds.set(key, instanceIds = []);
-          return lowered.values.flatMap((value, index) => {
-            if (typeof value === "function") {
-              let instanceId = instanceIds[index];
-              if (!instanceId) instanceIds[index] = instanceId = /* @__PURE__ */ Symbol(`pepper-component-hole-${index}`);
-              return value(instanceId);
-            }
-            return Array.isArray(value) ? value.flat(Infinity) : value == null ? [] : [value];
-          });
-        };
-      }
       return html(lowered.strings, ...lowered.values);
     },
     mathml,

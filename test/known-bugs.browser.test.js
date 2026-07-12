@@ -260,7 +260,7 @@ describe('Known Pepper browser regressions', () => {
 		assertEquals(elementRef.current, cachedElement, 'The restored nested template should reclaim the ref')
 	})
 
-	it.skip('[A04] preserves an unkeyed component-only child across parent renders', () => {
+	it('[A04] preserves an unkeyed component-only child across parent renders', () => {
 		let setups = 0
 
 		function Child({getProps}) {
@@ -282,7 +282,34 @@ describe('Known Pepper browser regressions', () => {
 		assertEquals(container.textContent, 'second', 'The retained child should receive new props')
 	})
 
-	it.skip('[A04] hydrates a component-only root and binds its live node', async () => {
+	it('[A04] preserves distinct unkeyed children in component-only slots', () => {
+		let setups = 0
+
+		function Child({getProps}) {
+			setups++
+			return html => html`<span>${getProps().value}</span>`
+		}
+
+		function App({getProps}) {
+			return html => {
+				const {first, second} = getProps()
+				return html`<${Child} value=${first} /><${Child} value=${second} />`
+			}
+		}
+
+		const container = createContainer()
+		render(App, container, {first: 'one', second: 'two'})
+		const initialSpans = Array.from(container.querySelectorAll('span'))
+		render(App, container, {first: 'three', second: 'four'})
+		const updatedSpans = Array.from(container.querySelectorAll('span'))
+
+		assertEquals(setups, 2, 'Each positional child should be created once')
+		assertEquals(updatedSpans[0], initialSpans[0], 'The first slot should retain its child')
+		assertEquals(updatedSpans[1], initialSpans[1], 'The second slot should retain its child')
+		assertEquals(container.textContent, 'threefour', 'Both retained children should receive new props')
+	})
+
+	it('[A04] hydrates a component-only root and binds its live node', async () => {
 		function Child() {
 			const [getCount, setCount] = state(0)
 			return html => html`<button @click=${() => setCount(getCount() + 1)}>${getCount()}</button>`
@@ -304,16 +331,20 @@ describe('Known Pepper browser regressions', () => {
 		assertEquals(liveButton.textContent, '1', 'Hydration should attach the child event handler')
 	})
 
-	it.skip('[A05] hydrates a top-level dynamic template range', () => {
+	it('[A05] hydrates a top-level dynamic template range', () => {
 		const container = createContainer()
 		container.innerHTML = '<span>live</span>'
 		const liveSpan = container.firstElementChild
 		const key = {}
+		const view = value => domHtml`${value}`
 
-		const [span] = domHtml`${domHtml`<span>live</span>`}`(key, Array.from(container.childNodes))
+		const [span] = view(domHtml`<span>live</span>`)(key, Array.from(container.childNodes))
 
 		assertEquals(span, liveSpan, 'Hydration should adopt the top-level dynamic node')
 		assertEquals(container.firstElementChild, liveSpan, 'The adopted node should remain in the container')
+
+		view(domHtml`<strong>next</strong>`)(key)
+		assertEquals(container.innerHTML, '<strong>next</strong>', 'The hydrated range should remain live for updates')
 	})
 
 	it.skip('[A06] catches descendant DOM realization errors in an error boundary', () => {
