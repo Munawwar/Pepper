@@ -342,42 +342,38 @@ function flushDirtyRuntimes(rootRecord) {
 		})
 	rootRecord.dirtyRuntimes.clear()
 	for (const runtime of dirtyRuntimes) {
-		try {
-			const previousNodes = runtime.currentNodes || []
-			const renderable = renderComponentRuntime(runtime, rootRecord.domTags)
-			const nodes = realizeDomRenderable(
-				renderable,
-				runtime,
-				runtime !== rootRecord.topRuntime && runtime.options.errorBoundary
-					? /** @type {ChildNode[] | null} */ (previousNodes.filter(node => node !== runtime.domBoundary))
-					: null,
-			)
-			commitRuntimeNodes(runtime, previousNodes, nodes)
-			if (runtime === rootRecord.topRuntime && nodes.some(node => node.parentNode !== rootRecord.container)) {
-				rootRecord.container.replaceChildren(...nodes)
-			}
-			finalizeComponentRuntime(runtime)
-		} catch (error) {
-			if (!isErrorBoundarySignal(error)) throw error
-			captureBoundaryError(error.boundary, error.error)
-			let retryRuntime = error.boundary
-			for (let parent = error.boundary.parentRuntime; parent; parent = parent.parentRuntime) {
-				if (parent !== runtime) continue
-				retryRuntime = runtime
-				break
-			}
-			const previousNodes = retryRuntime.currentNodes || []
-			const renderable = renderComponentRuntime(retryRuntime, rootRecord.domTags)
-			const nodes = retryRuntime === rootRecord.topRuntime
-				? realizeDomRenderable(renderable, retryRuntime)
-				: realizeDomRenderable(
+		let retryRuntime = runtime
+		let retrying = false
+		while (true) {
+			try {
+				const previousNodes = retryRuntime.currentNodes || []
+				const renderable = renderComponentRuntime(retryRuntime, rootRecord.domTags)
+				const nodes = realizeDomRenderable(
 					renderable,
 					retryRuntime,
-					/** @type {ChildNode[]} */ (previousNodes.filter(node => node !== retryRuntime.domBoundary)),
+					retryRuntime !== rootRecord.topRuntime && (retrying || retryRuntime.options.errorBoundary)
+						? /** @type {ChildNode[] | null} */ (previousNodes.filter(node => node !== retryRuntime.domBoundary))
+						: null,
 				)
-			commitRuntimeNodes(retryRuntime, previousNodes, nodes)
-			if (retryRuntime === rootRecord.topRuntime) rootRecord.container.replaceChildren(...nodes)
-			finalizeComponentRuntime(retryRuntime)
+				commitRuntimeNodes(retryRuntime, previousNodes, nodes)
+				if (
+					retryRuntime === rootRecord.topRuntime &&
+					(retrying || nodes.some(node => node.parentNode !== rootRecord.container))
+				) rootRecord.container.replaceChildren(...nodes)
+				finalizeComponentRuntime(retryRuntime)
+				break
+			} catch (error) {
+				if (!isErrorBoundarySignal(error)) throw error
+				captureBoundaryError(error.boundary, error.error)
+				let nextRuntime = error.boundary
+				for (let parent = error.boundary.parentRuntime; parent; parent = parent.parentRuntime) {
+					if (parent !== retryRuntime) continue
+					nextRuntime = retryRuntime
+					break
+				}
+				retryRuntime = nextRuntime
+				retrying = true
+			}
 		}
 	}
 	if (!flushMountsWithBoundaries(rootRecord)) flushDirtyRuntimes(rootRecord)
@@ -403,20 +399,23 @@ function performRootRender(rootRecord, hydrateOnly = false) {
 		return
 	}
 	rootRecord.dirtyRuntimes.clear()
-	const liveNodes = hydrateOnly ? Array.from(rootRecord.container.childNodes) : null
-	let renderable = renderComponentRuntime(rootRecord.topRuntime, rootRecord.domTags)
+	let liveNodes = hydrateOnly ? Array.from(rootRecord.container.childNodes) : null
+	let replaceNodes = !rootRecord.mounted && !hydrateOnly
 	let nodes
-	try {
-		nodes = realizeDomRenderable(renderable, rootRecord.topRuntime, liveNodes && liveNodes.length ? liveNodes : null)
-	} catch (error) {
-		if (!isErrorBoundarySignal(error)) throw error
-		captureBoundaryError(error.boundary, error.error)
-		renderable = renderComponentRuntime(rootRecord.topRuntime, rootRecord.domTags)
-		nodes = realizeDomRenderable(renderable, rootRecord.topRuntime)
-		rootRecord.container.replaceChildren(...nodes)
+	while (true) {
+		try {
+			const renderable = renderComponentRuntime(rootRecord.topRuntime, rootRecord.domTags)
+			nodes = realizeDomRenderable(renderable, rootRecord.topRuntime, liveNodes?.length ? liveNodes : null)
+			finalizeComponentRuntime(rootRecord.topRuntime)
+			break
+		} catch (error) {
+			if (!isErrorBoundarySignal(error)) throw error
+			captureBoundaryError(error.boundary, error.error)
+			liveNodes = null
+			replaceNodes = true
+		}
 	}
-	finalizeComponentRuntime(rootRecord.topRuntime)
-	if (!rootRecord.mounted && !hydrateOnly) rootRecord.container.replaceChildren(...nodes)
+	if (replaceNodes) rootRecord.container.replaceChildren(...nodes)
 	rootRecord.mounted = true
 	if (!flushMountsWithBoundaries(rootRecord)) flushDirtyRuntimes(rootRecord)
 	for (const callback of rootRecord.pendingCallbacks.splice(0)) callback()

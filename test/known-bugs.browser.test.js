@@ -435,18 +435,24 @@ describe('Known Pepper browser regressions', () => {
 		assertEquals(container.textContent, 'outer fallback', 'A boundary should not catch its own mount error')
 	})
 
-	it.skip('[A06] catches descendant onMount cleanup errors in an error boundary', () => {
-		const Boundary = createBoundary()
+	it('[A06] catches descendant onMount cleanup errors in an error boundary', () => {
+		let laterCleanups = 0
 
 		function Broken({onMount}) {
 			onMount(() => () => {
 				throw new Error('cleanup failure')
 			})
+			onMount(() => () => laterCleanups++)
 			return html => html`<span>broken</span>`
 		}
+		const Boundary = component(function Boundary({getError, getProps}) {
+			return html => getError()
+				? html`<p>fallback</p>`
+				: getProps().show ? html`<${Broken} />` : html`<span>removed</span>`
+		}, {errorBoundary: true})
 
 		function App({getProps}) {
-			return html => html`<${Boundary}>${getProps().show ? html`<${Broken} />` : ''}</${Boundary}>`
+			return html => html`<${Boundary} show=${getProps().show} />`
 		}
 
 		const container = createContainer()
@@ -454,6 +460,82 @@ describe('Known Pepper browser regressions', () => {
 		render(App, container, {show: false})
 
 		assertEquals(container.textContent, 'fallback', 'The boundary should catch the mount cleanup failure')
+		assertEquals(laterCleanups, 1, 'A failed cleanup should not prevent later cleanups')
+	})
+
+	it('[A06] lets a root boundary catch an onMount cleanup error', () => {
+		function Broken({onMount}) {
+			onMount(() => () => {
+				throw new Error('root cleanup failure')
+			})
+			return html => html`<span>broken</span>`
+		}
+		const App = component(function App({getError, getProps}) {
+			return html => getError()
+				? html`<p>root fallback</p>`
+				: getProps().show ? html`<${Broken} />` : html`<span>removed</span>`
+		}, {errorBoundary: true})
+
+		const container = createContainer()
+		render(App, container, {show: true})
+		render(App, container, {show: false})
+
+		assertEquals(container.textContent, 'root fallback', 'The root boundary should catch its child cleanup error')
+	})
+
+	it('[A06] skips a destroyed boundary when an onMount cleanup throws', () => {
+		function Broken({onMount}) {
+			onMount(() => () => {
+				throw new Error('nested cleanup failure')
+			})
+			return html => html`<span>broken</span>`
+		}
+		const InnerBoundary = component(function InnerBoundary({getError}) {
+			return html => getError() ? html`<p>inner fallback</p>` : html`<${Broken} />`
+		}, {errorBoundary: true})
+		const OuterBoundary = component(function OuterBoundary({getError, getProps}) {
+			return html => getError()
+				? html`<p>outer fallback</p>`
+				: getProps().show ? html`<${InnerBoundary} />` : html`<span>removed</span>`
+		}, {errorBoundary: true})
+
+		function App({getProps}) {
+			return html => html`<${OuterBoundary} show=${getProps().show} />`
+		}
+
+		const container = createContainer()
+		render(App, container, {show: true})
+		render(App, container, {show: false})
+
+		assertEquals(container.textContent, 'outer fallback', 'The active outer boundary should catch the cleanup error')
+	})
+
+	it('[A06] catches multiple onMount cleanup errors during a scheduled update', async () => {
+		let hideChildren
+		let cleanups = 0
+
+		function Broken({onMount}) {
+			onMount(() => () => {
+				cleanups++
+				throw new Error('scheduled cleanup failure')
+			})
+			return html => html`<span>broken</span>`
+		}
+		const Boundary = component(function Boundary({getError}) {
+			const [getVisible, setVisible] = state(true)
+			hideChildren = () => setVisible(false)
+			return html => getError()
+				? html`<p>fallback</p>`
+				: getVisible() ? html`<${Broken} /><${Broken} />` : html`<span>removed</span>`
+		}, {errorBoundary: true})
+
+		const container = createContainer()
+		render(Boundary, container)
+		hideChildren()
+		await flushRender()
+
+		assertEquals(container.textContent, 'fallback', 'The boundary should remain active through cleanup retries')
+		assertEquals(cleanups, 2, 'Every removed component cleanup should run')
 	})
 
 	it.skip('[A07] preserves property casing after a quoted greater-than character', () => {

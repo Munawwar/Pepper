@@ -145,7 +145,7 @@ function isErrorBoundarySignal(value) {
  */
 function throwBoundaryError(runtime, error, includeSelf = false) {
 	let boundary = includeSelf ? runtime : runtime.parentRuntime
-	while (boundary && !boundary.options.errorBoundary) boundary = boundary.parentRuntime
+	while (boundary && (boundary.destroyed || !boundary.options.errorBoundary)) boundary = boundary.parentRuntime
 	if (!boundary) throw error
 	throw {[ERROR_BOUNDARY_SIGNAL]: true, boundary, error}
 }
@@ -543,8 +543,16 @@ function finalizeComponentRuntime(runtime) {
 function destroyComponentRuntime(runtime) {
 	if (!runtime || runtime.destroyed) return
 	runtime.destroyed = true
+	/** @type {unknown} */
+	let cleanupError = NO_ERROR
 	for (const store of runtime.childStores.values()) {
-		for (const childRuntime of store.values()) destroyComponentRuntime(childRuntime)
+		for (const childRuntime of store.values()) {
+			try {
+				destroyComponentRuntime(childRuntime)
+			} catch (error) {
+				cleanupError = error
+			}
+		}
 		store.clear()
 	}
 	runtime.childStores.clear()
@@ -553,8 +561,18 @@ function destroyComponentRuntime(runtime) {
 	runtime.currentTemplateInstance?.deactivate()
 	runtime.currentTemplateInstance = null
 	runtime.currentNodes = null
-	for (const cleanup of runtime.mountCleanups.splice(0)) cleanup()
+	for (const cleanup of runtime.mountCleanups.splice(0)) {
+		try {
+			cleanup()
+		} catch (error) {
+			cleanupError = error
+		}
+	}
 	for (const runtimeRef of runtime.refs) runtimeRef.current = null
+	if (cleanupError !== NO_ERROR) {
+		if (isErrorBoundarySignal(cleanupError)) throw cleanupError
+		throwBoundaryError(runtime, cleanupError)
+	}
 }
 
 /**
