@@ -219,8 +219,8 @@ const SPREAD_INTERPOLATION_REGEXP = new RegExp(`^\\.\\.\\.${INTERPOLATION_MARKER
 const SPREAD_PLACEHOLDER_ATTR_PREFIX = `x-${INTERPOLATION_MARKER}spread-`
 const SPREAD_PLACEHOLDER_ATTR_REGEXP = new RegExp(`^${SPREAD_PLACEHOLDER_ATTR_PREFIX}(\\d+)${INTERPOLATION_MARKER}$`)
 
-/** Regex for finding HTML opening/self-closing tags */
-const HTML_TAG_REGEXP = /<[^<>]*?\/?>/g
+/** Regex for finding HTML opening/self-closing tags without terminating inside quoted values */
+const START_TAG_REGEXP = /<[a-z][^\s/>]*(?:\s+[^\s/>"'=]+(?:\s*=\s*(?:"[^"]*"|'[^']*'|[^>\s]+))?)*\s*\/?\s*>/gi
 
 const ATTRIBUTE_END_REGEXP = /[\s=/>]/
 
@@ -327,7 +327,7 @@ class Template {
 		//    property names so we can set them correctly on the elements.
 
 		// Scan for HTML tags and process spread/.property attributes within each tag
-		htmlString = htmlString.replace(HTML_TAG_REGEXP, tagMatch => {
+		htmlString = htmlString.replace(START_TAG_REGEXP, tagMatch => {
 			// Parse the tag content more carefully to avoid matching spread/property
 			// syntax inside quoted attribute values.
 			const parts = []

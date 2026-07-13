@@ -1,7 +1,7 @@
 // @ts-nocheck
 
 import * as Pepper from '../src/index.js'
-import {html as domHtml} from '../src/html.js'
+import {html as domHtml, mathml as domMathml, svg as domSvg} from '../src/html.js'
 
 const {component, hydrate, portal, render, state, stableId} = Pepper
 
@@ -681,11 +681,42 @@ describe('Known Pepper browser regressions', () => {
 		)
 	})
 
-	it.skip('[A07] preserves property casing after a quoted greater-than character', () => {
-		const [element] = domHtml`<div title="a > b" .someProp=${42}></div>`({})
+	it('[A07] preserves property casing around quoted greater-than characters', () => {
+		const [element] = domHtml`
+			<div .beforeProp=${1} title="a > b > c" .afterProp=${2} !.forcedProp=${3}></div>
+		`({})
 
-		assertEquals(element.someProp, 42, 'The case-sensitive property should be assigned')
-		assertEquals(element.someprop, undefined, 'A lower-cased shadow property should not be created')
+		assertEquals(element.beforeProp, 1, 'A property before the quoted delimiter should be assigned')
+		assertEquals(element.afterProp, 2, 'A property after the quoted delimiter should preserve casing')
+		assertEquals(element.forcedProp, 3, 'A forced property after the quoted delimiter should preserve casing')
+		assertEquals(element.afterprop, undefined, 'A lower-cased shadow property should not be created')
+	})
+
+	it('[A07] preprocesses custom events and spreads after a single-quoted greater-than character', () => {
+		let events = 0
+		const [element] = domHtml`
+			<div title='literal > .notAProperty' @someEvent=${() => events++} ...${{'.spreadProp': 4}}></div>
+		`({})
+
+		element.dispatchEvent(new Event('someEvent'))
+		assertEquals(events, 1, 'The custom event name should preserve casing')
+		assertEquals(element.spreadProp, 4, 'The spread after the quoted delimiter should be applied')
+		assertEquals(element.title, 'literal > .notAProperty', 'Binding syntax inside quotes should remain literal')
+	})
+
+	it('[A07] accepts quoted less-than and repeated greater-than characters', () => {
+		const [element] = domHtml`<div title="a < b > c > d" .someProp=${42}></div>`({})
+
+		assertEquals(element.title, 'a < b > c > d', 'Quoted delimiters should remain in the attribute value')
+		assertEquals(element.someProp, 42, 'The following property should preserve casing')
+	})
+
+	it('[A07] preserves SVG and MathML property casing after quoted delimiters', () => {
+		const [circle] = domSvg`<circle title="a > b" .customProp=${'svg'} />`({})
+		const [mi] = domMathml`<mi title='a > b' .customProp=${'mathml'}></mi>`({})
+
+		assertEquals(circle.customProp, 'svg', 'The SVG property should preserve casing')
+		assertEquals(mi.customProp, 'mathml', 'The MathML property should preserve casing')
 	})
 
 	it.skip('[A08] rejects a mismatched dynamic component closing tag', () => {
