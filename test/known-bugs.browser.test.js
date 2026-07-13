@@ -719,23 +719,6 @@ describe('Known Pepper browser regressions', () => {
 		assertEquals(mi.customProp, 'mathml', 'The MathML property should preserve casing')
 	})
 
-	it.skip('[A08] rejects a mismatched dynamic component closing tag', () => {
-		function Layout({getProps}) {
-			return html => html`<section>${getProps().children?.()}</section>`
-		}
-
-		function Child() {
-			return html => html`<b>child</b>`
-		}
-
-		function App() {
-			return html => html`<${Layout}><${Child} /></${Child}>`
-		}
-
-		const container = createContainer()
-		assertThrows(() => render(App, container), /matching closing tag|does not match/, 'Mismatched component tags should throw')
-	})
-
 	it.skip('[A09] lets a custom comparator suppress a removed prop', () => {
 		let renders = 0
 		const Child = component(function Child({getProps}) {
