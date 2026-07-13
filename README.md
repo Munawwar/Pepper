@@ -307,7 +307,7 @@ Supported options:
 
 - `memo` defaults to `true`; props are deep-compared and equal props skip parent-driven rerenders. Set `false` to compare by reference with `Object.is`
 - `autoEffectEvent` defaults to `true`; `onX` function props are treated like effect events: their latest value is stored, but changing only them does not rerender the child¹. Set `false` to include them in memo checks
-- `propsComparator` defaults to `null`; when provided, return `true` to skip rerender
+- `propsComparator` defaults to `null`; when provided, return `true` or `[]` to skip rerender, otherwise return the added, changed, or removed prop names to rerender and pass the deduplicated list to `onProps`. This replaces the `memo` and `autoEffectEvent` comparisons for ordinary props, and the latest props are stored even when rendering is skipped. Pepper still adds `children` when captured lazy-child values change
 - `errorBoundary` defaults to `false`; set `true` to catch descendant setup/render errors
 
 ¹ By the way, template event bindings already keeps one DOM listener and update its current callback when the template rerenders, so handler changes do not need remove/add listener churn. However autoEffectEvent is added optimization at the component boundary level.

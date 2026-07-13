@@ -719,14 +719,19 @@ describe('Known Pepper browser regressions', () => {
 		assertEquals(mi.customProp, 'mathml', 'The MathML property should preserve casing')
 	})
 
-	it.skip('[A09] lets a custom comparator suppress a removed prop', () => {
+	it('[A09] lets a custom comparator suppress a removed prop', () => {
 		let renders = 0
-		const Child = component(function Child({getProps}) {
+		let propCalls = 0
+		let comparison = true
+		let getLatestProps
+		const Child = component(function Child({getProps, onProps}) {
+			getLatestProps = getProps
+			onProps(() => propCalls++)
 			return html => {
 				renders++
 				return html`<span>${String(getProps().ignored ?? '')}</span>`
 			}
-		}, {propsComparator: () => true})
+		}, {propsComparator: () => comparison})
 
 		function App({getProps}) {
 			return html => html`<div><${Child} ...${getProps()} /></div>`
@@ -735,18 +740,23 @@ describe('Known Pepper browser regressions', () => {
 		const container = createContainer()
 		render(App, container, {ignored: 1})
 		render(App, container, {})
+		comparison = []
+		render(App, container, {latest: 2})
 
-		assertEquals(renders, 1, 'The comparator should suppress the child render')
+		assertEquals(renders, 1, 'Both true and an empty list should suppress the child render')
+		assertEquals(propCalls, 0, 'Suppressed props should not call onProps')
+		assert(!('ignored' in getLatestProps()), 'Stored props should still remove the suppressed prop')
+		assertEquals(getLatestProps().latest, 2, 'Stored props should include silently added props')
 	})
 
-	it.skip('[A09] reports each changed prop once with a custom comparator', () => {
+	it('[A09] uses the custom comparator list for onProps', () => {
 		let changedProps = []
 		const Child = component(function Child({onProps}) {
 			onProps(changes => {
 				changedProps = [...changes]
 			})
 			return html => html`<span></span>`
-		}, {propsComparator: () => false})
+		}, {propsComparator: () => ['added', 'added']})
 
 		function App({getProps}) {
 			return html => html`<div><${Child} ...${getProps()} /></div>`
@@ -757,6 +767,52 @@ describe('Known Pepper browser regressions', () => {
 		render(App, container, {added: 1})
 
 		assertEquals(changedProps.join(','), 'added', 'Changed prop names should be unique')
+	})
+
+	it('[A09] lets a custom comparator report removed props', () => {
+		let changedProps = []
+		const Child = component(function Child({onProps}) {
+			onProps(changes => {
+				changedProps = [...changes]
+			})
+			return html => html`<span></span>`
+		}, {propsComparator: (previousProps, nextProps) => 'removed' in previousProps && !('removed' in nextProps) ? ['removed'] : true})
+
+		function App({getProps}) {
+			return html => html`<div><${Child} ...${getProps()} /></div>`
+		}
+
+		const container = createContainer()
+		render(App, container, {removed: 1})
+		render(App, container)
+
+		assertEquals(changedProps.join(','), 'removed', 'Removed props should be reported by name')
+	})
+
+	it('[A09] lets a custom comparator opt event props into rerenders', () => {
+		let renders = 0
+		const Child = component(() => html => {
+			renders++
+			return html`<span></span>`
+		}, {propsComparator: () => ['onSave']})
+		const container = createContainer()
+
+		render(Child, container, {onSave: () => 1})
+		render(Child, container, {onSave: () => 2})
+
+		assertEquals(renders, 2, 'The custom changed-prop list should override autoEffectEvent filtering')
+	})
+
+	it('[A09] rejects the old boolean custom comparator result', () => {
+		const Child = component(() => html => html`<span></span>`, {propsComparator: () => false})
+		const container = createContainer()
+		render(Child, container, {value: 1})
+
+		assertThrows(
+			() => render(Child, container, {value: 2}),
+			/propsComparator must return true or an array/,
+			'Legacy false results should fail with the new contract',
+		)
 	})
 
 	it.skip('[A10] compares cyclic props without overflowing', () => {

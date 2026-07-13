@@ -42,7 +42,9 @@ export type ComponentOptions<Props = Record<string, unknown>> = {
 	autoEffectEvent?: boolean
 	errorBoundary?: boolean
 	memo?: boolean
-	propsComparator?: ((previousProps: Props, nextProps: Props) => boolean) | null
+	propsComparator?: (
+		(previousProps: Props, nextProps: Props) => true | readonly Extract<keyof Props, string>[]
+	) | null
 }
 export type RootContainer = string | Element
 export type PortalTarget = RootContainer

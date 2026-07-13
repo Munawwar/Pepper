@@ -7,7 +7,7 @@ import type {
 	TemplateView,
 } from '../src/html.js'
 import {force, html} from '../src/html.js'
-import type {ComponentSetupApi, PepperContext, PortalTarget, RootContainer, RootOptions} from '../index.js'
+import type {ComponentOptions, ComponentSetupApi, PepperContext, PortalTarget, RootContainer, RootOptions} from '../index.js'
 import {component, hydrate, portal, ref, render, state, stableId} from '../index.js'
 import {Store} from '../pepper-store'
 
@@ -112,6 +112,20 @@ const ErrorBoundary = component(function ErrorBoundary({getError, getProps, rese
 	return tag => error ? tag`<button @click=${resetError}>retry</button>` : children?.()
 }, {errorBoundary: true})
 
+type VersionedProps = {label: string; version: number}
+const VersionedComponent = component(function VersionedComponent({getProps}: ComponentSetupApi<VersionedProps>) {
+	return tag => tag`<span>${getProps().label}</span>`
+}, {
+	propsComparator: (previousProps, nextProps) => previousProps.version === nextProps.version
+		? true
+		: ['label', 'version'],
+})
+
+const invalidVersionedOptions: ComponentOptions<VersionedProps> = {
+	// @ts-expect-error comparator results must name declared props
+	propsComparator: () => ['missing'],
+}
+
 const typedRootOptions: RootOptions<AppContext> = {
 	context: {cart: {items: ['a']}, featureName: 'cart'},
 	debugKeys: true,
@@ -137,6 +151,8 @@ render(ContextComponent, renderContainer, {}, typedRootOptions)
 render(ContextComponent, renderContainer, {}, typedContextMap)
 render(ErrorBoundary, renderContainer, {children: () => html`<span>ok</span>`})
 typedContextValue
+VersionedComponent
+invalidVersionedOptions
 buttonRef.current
 generatedId
 store.data

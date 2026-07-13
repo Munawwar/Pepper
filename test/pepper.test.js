@@ -332,7 +332,7 @@ describe('Pepper component runtime', () => {
 			propsComparator: (previousProps, nextProps) => (
 				/** @type {{ version?: number }} */ (previousProps).version ===
 				/** @type {{ version?: number }} */ (nextProps).version
-			),
+			) || ['version', 'label'],
 		})
 
 		const NoAutoEffectEvent = component(/** @param {{ getProps(): Record<string, unknown> }} param0 */ ({getProps}) => {

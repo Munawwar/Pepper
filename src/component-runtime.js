@@ -37,7 +37,7 @@ let currentOwnerRuntime = null
  *   autoEffectEvent: boolean,
  *   errorBoundary: boolean,
  *   memo: boolean,
- *   propsComparator: ((previousProps: Record<string, unknown>, nextProps: Record<string, unknown>) => boolean) | null,
+ *   propsComparator: ((previousProps: Record<string, unknown>, nextProps: Record<string, unknown>) => true | readonly string[]) | null,
  * }} ComponentOptions
  * @typedef {PepperComponent & { [COMPONENT_SYMBOL]?: ComponentDefinition }} ConfigurableComponent
  * @typedef {{ factory: PepperComponent, options: ComponentOptions }} ComponentDefinition
@@ -110,7 +110,7 @@ let currentOwnerRuntime = null
  *   autoEffectEvent?: boolean,
  *   errorBoundary?: boolean,
  *   memo?: boolean,
- *   propsComparator?: ((previousProps: Props, nextProps: Props) => boolean) | null,
+ *   propsComparator?: ((previousProps: Props, nextProps: Props) => true | readonly string[]) | null,
  * }} [options]
  * @returns {PepperComponent}
  */
@@ -342,39 +342,28 @@ function shouldIgnorePropForMemo(runtime, key, value) {
  */
 function syncComponentProps(runtime, nextProps = {}, forceAll = false) {
 	const oldProps = runtime.props
-	/** @type {Record<string, unknown>} */
-	const normalizedProps = {}
-	const keys = new Set([...Object.keys(oldProps), ...Object.keys(nextProps)])
-	const changedProps = []
+	const normalizedProps = {...nextProps}
+	const keys = new Set([...Object.keys(oldProps), ...Object.keys(normalizedProps)])
 
-	for (const key of keys) {
-		if (!(key in nextProps)) {
-			if (forceAll || key in oldProps) changedProps.push(key)
-			continue
-		}
-		normalizedProps[key] = nextProps[key]
-	}
-
-	if (!forceAll) {
-		if (typeof runtime.options.propsComparator === 'function') {
-			if (!runtime.options.propsComparator(oldProps, normalizedProps)) {
-				changedProps.push(...Object.keys(normalizedProps).filter(key => !(key in oldProps)))
-				for (const key of keys) {
-					if (!(key in nextProps) || shouldIgnorePropForMemo(runtime, key, nextProps[key])) continue
-					if (!(key in oldProps) || !Object.is(oldProps[key], nextProps[key])) changedProps.push(key)
-				}
+	/** @type {string[]} */
+	let changedProps = forceAll ? [...keys] : []
+	if (!forceAll && typeof runtime.options.propsComparator === 'function') {
+		const result = runtime.options.propsComparator(oldProps, normalizedProps)
+		if (result !== true && (!Array.isArray(result) || result.some(key => typeof key !== 'string')))
+			throw new TypeError('Pepper propsComparator must return true or an array of changed prop names.')
+		if (result !== true) changedProps = [...new Set(result)]
+	} else if (!forceAll) {
+		for (const key of keys) {
+			if (!Object.hasOwn(normalizedProps, key)) {
+				changedProps.push(key)
+				continue
 			}
-		} else {
-			for (const key of keys) {
-				if (!(key in nextProps) || shouldIgnorePropForMemo(runtime, key, nextProps[key])) continue
-				const previousValue = oldProps[key]
-				const nextValue = nextProps[key]
-				const isSame = runtime.options.memo === false ? Object.is(previousValue, nextValue) : isEqual(previousValue, nextValue)
-				if (!(key in oldProps) || !isSame) changedProps.push(key)
-			}
+			if (shouldIgnorePropForMemo(runtime, key, normalizedProps[key])) continue
+			const previousValue = oldProps[key]
+			const nextValue = normalizedProps[key]
+			const isSame = runtime.options.memo === false ? Object.is(previousValue, nextValue) : isEqual(previousValue, nextValue)
+			if (!Object.hasOwn(oldProps, key) || !isSame) changedProps.push(key)
 		}
-	} else {
-		changedProps.push(...keys)
 	}
 
 	runtime.props = normalizedProps
