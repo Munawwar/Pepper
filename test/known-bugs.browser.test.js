@@ -26,9 +26,19 @@ function assertThrows(callback, pattern, message) {
 
 const flushRender = () => Promise.resolve()
 const createContainer = () => document.body.appendChild(document.createElement('div'))
+const throwOnRealize = message => () => { throw new Error(message) }
 const createBoundary = () => component(function Boundary({getError, getProps}) {
 	return html => getError() ? html`<p>fallback</p>` : getProps().children?.()
 }, {errorBoundary: true})
+const renderWithBoundary = Child => {
+	const Boundary = createBoundary()
+	function App() {
+		return html => html`<${Boundary}><${Child} /></${Boundary}>`
+	}
+	const container = createContainer()
+	render(App, container)
+	return container
+}
 
 describe('Known Pepper browser regressions', () => {
 	afterEach(() => document.body.replaceChildren())
@@ -536,6 +546,139 @@ describe('Known Pepper browser regressions', () => {
 
 		assertEquals(container.textContent, 'fallback', 'The boundary should remain active through cleanup retries')
 		assertEquals(cleanups, 2, 'Every removed component cleanup should run')
+	})
+
+	it('[A06] catches a nested renderable error during DOM realization', () => {
+		function Broken() {
+			return html => html`<div>${throwOnRealize('nested renderable failure')}</div>`
+		}
+
+		const container = renderWithBoundary(Broken)
+
+		assertEquals(container.textContent, 'fallback', 'The boundary should catch the nested renderable failure')
+	})
+
+	it('[A06] catches a custom-element property setter error during DOM realization', () => {
+		const elementName = 'pepper-a06-throwing-property'
+		if (!customElements.get(elementName)) customElements.define(elementName, class extends HTMLElement {
+			set explode(_value) {
+				throw new Error('property setter failure')
+			}
+		})
+		function Broken() {
+			return html => html`<pepper-a06-throwing-property .explode=${true}></pepper-a06-throwing-property>`
+		}
+
+		const container = renderWithBoundary(Broken)
+
+		assertEquals(container.textContent, 'fallback', 'The boundary should catch the property setter failure')
+	})
+
+	it('[A06] sends a boundary DOM-realization error to its ancestor', () => {
+		const OuterBoundary = component(function OuterBoundary({getError, getProps}) {
+			return html => getError() ? html`<p>outer fallback</p>` : getProps().children?.()
+		}, {errorBoundary: true})
+		const InnerBoundary = component(function InnerBoundary({getError}) {
+			return html => getError()
+				? html`<p>inner fallback</p>`
+				: html`<div>${throwOnRealize('inner realization failure')}</div>`
+		}, {errorBoundary: true})
+
+		function App() {
+			return html => html`<${OuterBoundary}><${InnerBoundary} /></${OuterBoundary}>`
+		}
+
+		const container = createContainer()
+		render(App, container)
+
+		assertEquals(container.textContent, 'outer fallback', 'A boundary should not catch its own realization error')
+	})
+
+	it('[A06] catches portal target errors during DOM realization', () => {
+		function Broken() {
+			return html => html`<div>${portal('#pepper-a06-missing-portal', 'portal')}</div>`
+		}
+
+		const container = renderWithBoundary(Broken)
+
+		assertEquals(container.textContent, 'fallback', 'The boundary should catch portal target resolution failures')
+	})
+
+	it('[A06] removes portal output after a later DOM-realization error', () => {
+		const portalTarget = createContainer()
+
+		function Broken() {
+			return html => html`${portal(portalTarget, 'portal')}${throwOnRealize('failure after portal')}`
+		}
+
+		const container = renderWithBoundary(Broken)
+
+		assertEquals(container.textContent, 'fallback', 'The boundary should catch the later realization failure')
+		assertEquals(portalTarget.textContent, '', 'The failed component should remove its portal output')
+	})
+
+	it('[A06] catches DOM-realization errors during a scheduled child update', async () => {
+		const Boundary = createBoundary()
+		let breakChild
+
+		function Broken() {
+			const [getBroken, setBroken] = state(false)
+			breakChild = () => setBroken(true)
+			return html => getBroken()
+				? html`${throwOnRealize('scheduled realization failure')}`
+				: html`<span>ready</span>`
+		}
+
+		function App() {
+			return html => html`<${Boundary}><${Broken} /></${Boundary}>`
+		}
+
+		const container = createContainer()
+		render(App, container)
+		breakChild()
+		await flushRender()
+
+		assertEquals(container.textContent, 'fallback', 'The boundary should catch a scheduled realization failure')
+	})
+
+	it('[A06] sends a scheduled boundary realization error to its ancestor', async () => {
+		let breakBoundary
+		const OuterBoundary = component(function OuterBoundary({getError, getProps}) {
+			return html => getError() ? html`<p>outer fallback</p>` : getProps().children?.()
+		}, {errorBoundary: true})
+		const InnerBoundary = component(function InnerBoundary({getError}) {
+			const [getBroken, setBroken] = state(false)
+			breakBoundary = () => setBroken(true)
+			return html => getError()
+				? html`<p>inner fallback</p>`
+				: getBroken()
+					? html`${throwOnRealize('scheduled inner realization failure')}`
+					: html`<span>ready</span>`
+		}, {errorBoundary: true})
+
+		function App() {
+			return html => html`<${OuterBoundary}><${InnerBoundary} /></${OuterBoundary}>`
+		}
+
+		const container = createContainer()
+		render(App, container)
+		breakBoundary()
+		await flushRender()
+
+		assertEquals(container.textContent, 'outer fallback', 'The inner boundary should not catch its scheduled failure')
+	})
+
+	it('[A06] rethrows a DOM-realization error without an ancestor boundary', () => {
+		function Broken() {
+			return html => html`${throwOnRealize('uncaught realization failure')}`
+		}
+
+		const container = createContainer()
+		assertThrows(
+			() => render(Broken, container),
+			/uncaught realization failure/,
+			'A root realization error should remain uncaught',
+		)
 	})
 
 	it.skip('[A07] preserves property casing after a quoted greater-than character', () => {

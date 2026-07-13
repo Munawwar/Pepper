@@ -116,6 +116,21 @@ function realizeDomRenderable(renderable, runtime, liveNodes = null) {
 }
 
 /**
+ * @param {unknown} renderable
+ * @param {ComponentRuntime} runtime
+ * @param {ChildNode[] | null} [liveNodes=null]
+ * @returns {Node[]}
+ */
+function realizeComponentRuntime(renderable, runtime, liveNodes = null) {
+	try {
+		return realizeDomRenderable(renderable, runtime, liveNodes)
+	} catch (error) {
+		if (isErrorBoundarySignal(error)) throw error
+		throwBoundaryError(runtime, error)
+	}
+}
+
+/**
  * @param {ComponentRuntime} runtime
  * @param {Node[]} previousNodes
  * @param {Node[]} nextNodes
@@ -235,7 +250,7 @@ function createDomComponentValue(ownerRuntime, descriptor, values, descriptorInd
 			!runtime.pendingChangedProps.length
 			)
 				? runtime.currentNodes
-				: realizeDomRenderable(
+				: realizeComponentRuntime(
 					renderComponentRuntime(runtime, /** @type {RuntimeTags} */ (ownerRuntime.rootRecord.domTags)),
 					runtime,
 					runtime.options.errorBoundary
@@ -348,7 +363,7 @@ function flushDirtyRuntimes(rootRecord) {
 			try {
 				const previousNodes = retryRuntime.currentNodes || []
 				const renderable = renderComponentRuntime(retryRuntime, rootRecord.domTags)
-				const nodes = realizeDomRenderable(
+				const nodes = realizeComponentRuntime(
 					renderable,
 					retryRuntime,
 					retryRuntime !== rootRecord.topRuntime && (retrying || retryRuntime.options.errorBoundary)
@@ -405,7 +420,7 @@ function performRootRender(rootRecord, hydrateOnly = false) {
 	while (true) {
 		try {
 			const renderable = renderComponentRuntime(rootRecord.topRuntime, rootRecord.domTags)
-			nodes = realizeDomRenderable(renderable, rootRecord.topRuntime, liveNodes?.length ? liveNodes : null)
+			nodes = realizeComponentRuntime(renderable, rootRecord.topRuntime, liveNodes?.length ? liveNodes : null)
 			finalizeComponentRuntime(rootRecord.topRuntime)
 			break
 		} catch (error) {
