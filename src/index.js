@@ -313,6 +313,22 @@ function resolveElementTarget(container, errorPrefix) {
 
 /**
  * @param {RootRecord} rootRecord
+ * @returns {boolean}
+ */
+function flushMountsWithBoundaries(rootRecord) {
+	try {
+		flushMounts(rootRecord)
+		return true
+	} catch (error) {
+		if (!isErrorBoundarySignal(error)) throw error
+		captureBoundaryError(error.boundary, error.error)
+		rootRecord.dirtyRuntimes.add(error.boundary)
+		return false
+	}
+}
+
+/**
+ * @param {RootRecord} rootRecord
  * @returns {void}
  */
 function flushDirtyRuntimes(rootRecord) {
@@ -364,7 +380,7 @@ function flushDirtyRuntimes(rootRecord) {
 			finalizeComponentRuntime(retryRuntime)
 		}
 	}
-	flushMounts(rootRecord)
+	if (!flushMountsWithBoundaries(rootRecord)) flushDirtyRuntimes(rootRecord)
 	for (const callback of rootRecord.pendingCallbacks.splice(0)) callback()
 }
 
@@ -402,7 +418,7 @@ function performRootRender(rootRecord, hydrateOnly = false) {
 	finalizeComponentRuntime(rootRecord.topRuntime)
 	if (!rootRecord.mounted && !hydrateOnly) rootRecord.container.replaceChildren(...nodes)
 	rootRecord.mounted = true
-	flushMounts(rootRecord)
+	if (!flushMountsWithBoundaries(rootRecord)) flushDirtyRuntimes(rootRecord)
 	for (const callback of rootRecord.pendingCallbacks.splice(0)) callback()
 }
 

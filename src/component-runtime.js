@@ -488,11 +488,14 @@ function renderComponentRuntime(runtime, tags) {
 		!runtime.pendingChangedProps.length
 	) return runtime.currentRenderable
 
-	if (runtime.pendingChangedProps.length) {
-		for (const handler of runtime.propHandlers) handler(runtime.pendingChangedProps, runtime.pendingOldProps)
-	}
 	if (!runtime.model) throw new Error('Pepper component runtime is missing its model.')
 	const model = runtime.model
+	try {
+		if (runtime.pendingChangedProps.length)
+			for (const handler of runtime.propHandlers) handler(runtime.pendingChangedProps, runtime.pendingOldProps)
+	} catch (error) {
+		throwBoundaryError(runtime, error)
+	}
 
 	while (true) {
 		runtime.renderPassId++
@@ -560,12 +563,18 @@ function destroyComponentRuntime(runtime) {
  */
 function flushMounts(rootRecord) {
 	const pendingMounts = rootRecord.pendingMounts.splice(0)
-	for (const runtime of pendingMounts) {
+	for (let index = 0; index < pendingMounts.length; index++) {
+		const runtime = pendingMounts[index]
 		if (runtime.destroyed || !runtime.needsMount) continue
 		runtime.needsMount = false
-		for (const handler of runtime.mountHandlers) {
-			const cleanup = handler()
-			if (typeof cleanup === 'function') runtime.mountCleanups.push(cleanup)
+		try {
+			for (const handler of runtime.mountHandlers) {
+				const cleanup = handler()
+				if (typeof cleanup === 'function') runtime.mountCleanups.push(cleanup)
+			}
+		} catch (error) {
+			rootRecord.pendingMounts.unshift(...pendingMounts.slice(index + 1))
+			throwBoundaryError(runtime, error)
 		}
 	}
 }

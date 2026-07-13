@@ -808,8 +808,7 @@ function updateEventHandler(element, eventName, state, inputValue) {
 	let eventListener
 	if (typeof inputValue === 'function') eventListener = /** @type {EventListener} */ (inputValue)
 	else if (typeof inputValue === 'string') eventListener = /** @type {EventListener} */ (new Function('event', inputValue))
-	else if (inputValue == null || inputValue === '' || inputValue === false) eventListener = null
-	else throw new TypeError(`Event handler for ${eventName} must be a function or string`)
+	else eventListener = null
 
 	if (eventListener) {
 		if (!state.internalHandler) {

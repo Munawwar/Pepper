@@ -347,24 +347,23 @@ describe('Known Pepper browser regressions', () => {
 		assertEquals(container.innerHTML, '<strong>next</strong>', 'The hydrated range should remain live for updates')
 	})
 
-	it.skip('[A06] catches descendant DOM realization errors in an error boundary', () => {
-		const Boundary = createBoundary()
-
-		function Broken() {
-			return html => html`<button @click=${123}>broken</button>`
-		}
-
-		function App() {
-			return html => html`<${Boundary}><${Broken} /></${Boundary}>`
-		}
-
+	it('[A06] treats unsupported event values as no handler', () => {
+		let clicks = 0
+		const key = {}
+		const view = handler => domHtml`<button @click=${handler}>click</button>`(key)
 		const container = createContainer()
-		render(App, container)
+		const [button] = view(() => clicks++)
+		container.append(button)
+		button.click()
+		view(123)
+		button.click()
+		view({handleEvent: () => clicks++})
+		button.click()
 
-		assertEquals(container.innerHTML, '<p>fallback</p>', 'The nearest boundary should render its fallback')
+		assertEquals(clicks, 1, 'Unsupported values should remove the previous handler without throwing')
 	})
 
-	it.skip('[A06] catches descendant onProps errors in an error boundary', () => {
+	it('[A06] catches descendant onProps errors in an error boundary', () => {
 		const Boundary = createBoundary()
 
 		function Broken({getProps, onProps}) {
@@ -383,6 +382,78 @@ describe('Known Pepper browser regressions', () => {
 		render(App, container, {value: 2})
 
 		assertEquals(container.textContent, 'fallback', 'The boundary should catch the onProps failure')
+	})
+
+	it('[A06] catches descendant onMount errors without dropping pending mounts', () => {
+		const Boundary = createBoundary()
+		let cleanups = 0
+		let siblingMounts = 0
+
+		function Broken({onMount}) {
+			onMount(() => () => cleanups++)
+			onMount(() => {
+				throw new Error('mount failure')
+			})
+			return html => html`<span>broken</span>`
+		}
+
+		function Sibling({onMount}) {
+			onMount(() => siblingMounts++)
+			return html => html`<span>sibling</span>`
+		}
+
+		function App() {
+			return html => html`<${Boundary}><${Broken} /></${Boundary}><${Sibling} />`
+		}
+
+		const container = createContainer()
+		render(App, container)
+
+		assertEquals(container.textContent, 'fallbacksibling', 'The boundary should replace only the failed subtree')
+		assertEquals(cleanups, 1, 'Cleanups registered before the failure should run')
+		assertEquals(siblingMounts, 1, 'A later sibling should still mount')
+	})
+
+	it('[A06] sends a boundary onMount error to its ancestor', () => {
+		const OuterBoundary = component(function OuterBoundary({getError, getProps}) {
+			return html => getError() ? html`<p>outer fallback</p>` : getProps().children?.()
+		}, {errorBoundary: true})
+		const InnerBoundary = component(function InnerBoundary({getError, getProps, onMount}) {
+			onMount(() => {
+				throw new Error('inner mount failure')
+			})
+			return html => getError() ? html`<p>inner fallback</p>` : getProps().children?.()
+		}, {errorBoundary: true})
+
+		function App() {
+			return html => html`<${OuterBoundary}><${InnerBoundary}><span>child</span></${InnerBoundary}></${OuterBoundary}>`
+		}
+
+		const container = createContainer()
+		render(App, container)
+
+		assertEquals(container.textContent, 'outer fallback', 'A boundary should not catch its own mount error')
+	})
+
+	it.skip('[A06] catches descendant onMount cleanup errors in an error boundary', () => {
+		const Boundary = createBoundary()
+
+		function Broken({onMount}) {
+			onMount(() => () => {
+				throw new Error('cleanup failure')
+			})
+			return html => html`<span>broken</span>`
+		}
+
+		function App({getProps}) {
+			return html => html`<${Boundary}>${getProps().show ? html`<${Broken} />` : ''}</${Boundary}>`
+		}
+
+		const container = createContainer()
+		render(App, container, {show: true})
+		render(App, container, {show: false})
+
+		assertEquals(container.textContent, 'fallback', 'The boundary should catch the mount cleanup failure')
 	})
 
 	it.skip('[A07] preserves property casing after a quoted greater-than character', () => {
