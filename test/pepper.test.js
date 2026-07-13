@@ -692,10 +692,11 @@ describe('Pepper component runtime', () => {
 	})
 
 	it('keeps keyed inserted children from duplicating generated ids', async () => {
-		function Row() {
+		/** @param {{ getProps(): Record<string, unknown> }} param0 */
+		function Row({getProps}) {
 			const id = stableId()
 			/** @param {HtmlTag} html */
-			return html => html`<li id=${id}>row</li>`
+			return html => html`<li id=${id}>${String(getProps().item)}</li>`
 		}
 
 		const App = component(function App() {
@@ -706,7 +707,7 @@ describe('Pepper component runtime', () => {
 				},
 				/** @param {HtmlTag} html */
 				render(html) {
-					return html`<ul>${getItems().map(item => html`<${Row} key=${item} />`)}</ul>`
+					return html`<ul>${getItems().map(item => html`<${Row} key=${item} item=${item} />`)}</ul>`
 				},
 			}
 		})
@@ -714,12 +715,17 @@ describe('Pepper component runtime', () => {
 		const container = document.createElement('div')
 		document.body.append(container)
 		const model = /** @type {{ addFront(): void }} */ (/** @type {unknown} */ (render(App, container)))
+		const initialIds = new Map(Array.from(container.querySelectorAll('li'), item => [item.textContent, item.id]))
 
 		model.addFront()
 		await flushRender()
 
 		const ids = Array.from(container.querySelectorAll('li'), item => item.id)
 		assertEquals(new Set(ids).size, ids.length, 'Keyed insertions should not create duplicate stableId() values')
+		for (const item of container.querySelectorAll('li')) {
+			if (item.textContent === '0') continue
+			assertEquals(item.id, initialIds.get(item.textContent), 'Existing keyed children should retain their generated IDs')
+		}
 	})
 
 	it('hydrates server-rendered generated ids without changing them', () => {

@@ -338,7 +338,7 @@ function Screen() {
 
 Rules:
 
-- `key=${...}` is reserved for component identity in child-component lists
+- `key=${...}` is reserved for component identity in child-component lists and must be a string or number; duplicate keys at one component site throw
 - `...${spreadProps}` works on child component tags
 - paired tags pass lazy `children()` to the child component
 - named slots are not supported yet

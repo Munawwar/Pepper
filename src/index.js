@@ -176,8 +176,8 @@ function createDomTags() {
 			if (!ownerRuntime) {
 				throw new Error('Pepper component tags can only be used while rendering a Pepper component.')
 			}
-			const lowered = lowerComponentTemplate(compiled, values, (entry, loweredValues, index) => (
-				createDomComponentValue(ownerRuntime, entry, loweredValues, index)
+			const lowered = lowerComponentTemplate(compiled, values, (entry, loweredValues) => (
+				createDomComponentValue(ownerRuntime, entry, loweredValues)
 			))
 			if (!lowered) return baseHtml(strings, ...values)
 			return baseHtml(lowered.strings, ...lowered.values)
@@ -192,19 +192,19 @@ const domTags = createDomTags()
  * @param {ComponentRuntime} ownerRuntime
  * @param {ComponentDescriptor} descriptor
  * @param {unknown[]} values
- * @param {number} descriptorIndex
  * @returns {(instanceKey?: symbol) => Node[]}
  */
-function createDomComponentValue(ownerRuntime, descriptor, values, descriptorIndex) {
+function createDomComponentValue(ownerRuntime, descriptor, values) {
 	return function renderComponentValue(instanceKey = Symbol()) {
 		const store = getOrCreateChildStore(ownerRuntime, descriptor)
 		const componentType = /** @type {PepperComponent} */ (values[descriptor.componentIndex])
 		const { key, props } = resolveComponentProps(descriptor.bindings, values)
 		const childrenSource = descriptor.childrenSource
 		const childKey = key ?? instanceKey
-		const idPath = createChildIdPath(ownerRuntime, descriptorIndex, key)
 		/** @type {ComponentRuntime | undefined} */
 		let runtime = store.get(childKey)
+		if (key != null && runtime?.lastSeen === ownerRuntime.renderPassId)
+			throw new Error(`Duplicate key at component site: ${String(key)}`)
 		const childTemplate = childrenSource == null ? null : getSourceTemplate(childrenSource)
 		const childValues = childTemplate ? childTemplate.indices.map(index => values[index]) : null
 		const reusableRuntime = runtime?.componentType === componentType ? runtime : null
@@ -225,7 +225,7 @@ function createDomComponentValue(ownerRuntime, descriptor, values, descriptorInd
 		if (!runtime || runtime.componentType !== componentType) {
 			if (runtime) destroyComponentRuntime(runtime)
 			try {
-				runtime = createComponentRuntime(componentType, props, ownerRuntime.rootRecord, ownerRuntime, idPath)
+				runtime = createComponentRuntime(componentType, props, ownerRuntime.rootRecord, ownerRuntime, createChildIdPath(ownerRuntime))
 			} catch (error) {
 				throwBoundaryError(ownerRuntime, error, true)
 			}

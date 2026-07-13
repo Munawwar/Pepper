@@ -323,7 +323,7 @@ function lowerComponentTemplate(compiled, values, createComponentValue) {
 /**
  * @param {ComponentBinding[]} bindings
  * @param {unknown[]} values
- * @returns {{ props: Record<string, unknown>, key: unknown }}
+ * @returns {{ props: Record<string, unknown>, key: string | number | undefined }}
  */
 function resolveComponentProps(bindings, values) {
 	/** @type {Record<string, unknown>} */
@@ -348,7 +348,9 @@ function resolveComponentProps(bindings, values) {
 		if (binding.name === 'key') key = value
 		else props[binding.name] = value
 	}
-	return {props, key}
+	if (key != null && typeof key !== 'string' && typeof key !== 'number')
+		throw new TypeError('Pepper component keys must be strings or numbers.')
+	return {props, key: /** @type {string | number | undefined} */ (key)}
 }
 
 export {

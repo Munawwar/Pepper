@@ -2,6 +2,7 @@
 
 import * as Pepper from '../src/index.js'
 import {html as domHtml, mathml as domMathml, svg as domSvg} from '../src/html.js'
+import {renderComponentToString} from '../src/pepper-ssr.js'
 
 const {component, hydrate, portal, render, state, stableId} = Pepper
 
@@ -887,7 +888,7 @@ describe('Known Pepper browser regressions', () => {
 		assertEquals(container.textContent, 'negative', 'Object.is semantics should distinguish signed zero')
 	})
 
-	it.skip('[A11] creates distinct stable IDs for numeric and string keys', () => {
+	it('[A11] creates distinct stable IDs for numeric and string keys', () => {
 		function Row() {
 			const id = stableId()
 			return html => html`<li id=${id}></li>`
@@ -903,6 +904,62 @@ describe('Known Pepper browser regressions', () => {
 
 		assertEquals(ids.length, 2, 'Both keyed children should render')
 		assertEquals(new Set(ids).size, 2, 'Distinct key types should produce distinct IDs')
+	})
+
+	it('[A11] creates distinct IDs for separate component sites with the same key', () => {
+		function Row() {
+			const id = stableId()
+			return html => html`<span id=${id}></span>`
+		}
+
+		function App() {
+			return html => html`<div>${html`<${Row} key=${'same'} />`}${html`<${Row} key=${'same'} />`}</div>`
+		}
+
+		const container = createContainer()
+		render(App, container)
+		const ids = [...container.querySelectorAll('span')].map(element => element.id)
+
+		assertEquals(ids.length, 2, 'Both component sites should render')
+		assertEquals(new Set(ids).size, 2, 'Owner-local child ordinals should distinguish component sites')
+	})
+
+	it('[A11] rejects non-string and non-number component keys', () => {
+		function Row() {
+			return html => html`<span></span>`
+		}
+
+		function App() {
+			return html => html`<${Row} key=${{id: 1}} />`
+		}
+
+		assertThrows(
+			() => render(App, createContainer()),
+			/component keys must be strings or numbers/,
+			'Object keys should fail with the documented key contract',
+		)
+	})
+
+	it('[A11] hydrates the same hierarchical component IDs produced by SSR', () => {
+		function Row({getProps}) {
+			const id = stableId()
+			return html => html`<li id=${id}>${String(getProps().item)}</li>`
+		}
+
+		function App() {
+			return html => html`<ul>${[1, 2].map(item => html`<${Row} key=${item} item=${item} />`)}</ul>`
+		}
+
+		const container = createContainer()
+		container.innerHTML = renderComponentToString(App)
+		const serverItems = [...container.querySelectorAll('li')]
+		const serverIds = serverItems.map(item => item.id)
+
+		hydrate(App, container)
+
+		const clientItems = [...container.querySelectorAll('li')]
+		assertEquals(clientItems.map(item => item.id).join(','), serverIds.join(','), 'Hydration should reproduce SSR IDs')
+		assert(clientItems.every((item, index) => item === serverItems[index]), 'Hydration should adopt the SSR component nodes')
 	})
 
 	it.skip('[A12] refreshes root context on repeated render', () => {
@@ -977,7 +1034,7 @@ describe('Known Pepper browser regressions', () => {
 		assertEquals(element.innerHTML, 'replacement', 'Replacing a fragment should remove its inserted children')
 	})
 
-	it.skip('[KEYS] rejects duplicate component keys at one render site', () => {
+	it('[KEYS] rejects duplicate component keys at one render site', () => {
 		function Row() {
 			return html => html`<li>row</li>`
 		}

@@ -278,6 +278,40 @@ test('renders deterministic component-scoped ids during SSR', () => {
 	assert.equal(renderComponentToString(App, {}, {identifierPrefix: 'checkout-'}), output)
 })
 
+test('distinguishes separate SSR component sites that use the same key', () => {
+	function Field() {
+		const id = stableId()
+		return h => h`<input id=${id}>`
+	}
+
+	function App() {
+		return h => h`<main>${h`<${Field} key=${'same'} />`}${h`<${Field} key=${'same'} />`}</main>`
+	}
+
+	const output = renderComponentToString(App)
+	const ids = [...output.matchAll(/id="([^"]+)"/g)].map(match => match[1])
+
+	assert.equal(ids.length, 2)
+	assert.equal(new Set(ids).size, 2)
+})
+
+test('rejects invalid and duplicate SSR component keys', () => {
+	function Field() {
+		return h => h`<input>`
+	}
+
+	function InvalidKey() {
+		return h => h`<${Field} key=${{id: 1}} />`
+	}
+
+	function DuplicateKey() {
+		return h => h`<main>${[1, 1].map(key => h`<${Field} key=${key} />`)}</main>`
+	}
+
+	assert.throws(() => renderComponentToString(InvalidKey), /component keys must be strings or numbers/)
+	assert.throws(() => renderComponentToString(DuplicateKey), /Duplicate key at component site/)
+})
+
 test('renders generated ids for top-level SSR component tags', () => {
 	function Field() {
 		const id = stableId()

@@ -67,7 +67,7 @@ let currentOwnerRuntime = null
  *   dirty: boolean,
  *   hasDirtyDescendant: boolean,
  *   idBase: string | null,
- *   idChildCounters: Map<string, number>,
+ *   nextChildId: number,
  *   idLocalCounter: number,
  *   idPath: string[],
  *   lastSeen: number,
@@ -299,17 +299,11 @@ function hashIdPath(parts) {
 }
 
 /**
- * @param {{ idPath: string[], idChildCounters: Map<string, number> }} ownerRuntime
- * @param {number} descriptorIndex
- * @param {unknown} key
+ * @param {{ idPath: string[], nextChildId: number }} ownerRuntime
  * @returns {string[]}
  */
-function createChildIdPath(ownerRuntime, descriptorIndex, key) {
-	const site = `c${descriptorIndex}`
-	if (key != null) return [...ownerRuntime.idPath, `${site}:key:${String(key)}`]
-	const count = ownerRuntime.idChildCounters.get(site) || 0
-	ownerRuntime.idChildCounters.set(site, count + 1)
-	return [...ownerRuntime.idPath, `${site}:index:${count}`]
+function createChildIdPath(ownerRuntime) {
+	return [...ownerRuntime.idPath, `c${ownerRuntime.nextChildId++}`]
 }
 
 /**
@@ -396,7 +390,7 @@ function createComponentRuntime(componentType, props, rootRecord, parentRuntime 
 		dirty: true,
 		hasDirtyDescendant: false,
 		idBase: null,
-		idChildCounters: new Map(),
+		nextChildId: 0,
 		idLocalCounter: 0,
 		idPath,
 		lastSeen: 0,
@@ -475,7 +469,10 @@ function renderComponentRuntime(runtime, tags) {
 		!runtime.dirty &&
 		!runtime.hasDirtyDescendant &&
 		!runtime.pendingChangedProps.length
-	) return runtime.currentRenderable
+	) {
+		runtime.renderPassId++
+		return runtime.currentRenderable
+	}
 
 	if (!runtime.model) throw new Error('Pepper component runtime is missing its model.')
 	const model = runtime.model
@@ -488,7 +485,6 @@ function renderComponentRuntime(runtime, tags) {
 
 	while (true) {
 		runtime.renderPassId++
-		runtime.idChildCounters.clear()
 		try {
 			runtime.currentRenderable = runWithOwnerRuntime(runtime, () => model.render.call(model, tags.html))
 			return runtime.currentRenderable
