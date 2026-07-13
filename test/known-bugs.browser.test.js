@@ -815,9 +815,13 @@ describe('Known Pepper browser regressions', () => {
 		)
 	})
 
-	it.skip('[A10] compares cyclic props without overflowing', () => {
+	it('[A10] conservatively rerenders separately allocated cyclic props', () => {
+		let renders = 0
 		function App({getProps}) {
-			return html => html`<span>${getProps().value.label}</span>`
+			return html => {
+				renders++
+				return html`<span>${getProps().value.label}</span>`
+			}
 		}
 
 		const first = {label: 'same'}
@@ -827,22 +831,60 @@ describe('Known Pepper browser regressions', () => {
 		const container = createContainer()
 
 		render(App, container, {value: first})
+		render(App, container, {value: first})
 		render(App, container, {value: second})
 
 		assertEquals(container.textContent, 'same', 'Cyclic props should not crash comparison')
+		assertEquals(renders, 2, 'Identical references should skip while unproven cyclic equality should rerender')
 	})
 
-	it.skip('[A10] distinguishes sparse arrays from populated arrays', () => {
+	it('[A10] distinguishes sparse arrays from explicit undefined elements', () => {
 		function App({getProps}) {
-			return html => html`<span>${String(getProps().value[0])}</span>`
+			return html => html`<span>${0 in getProps().value ? 'present' : 'hole'}</span>`
 		}
 
 		const sparse = Array(1)
 		const container = createContainer()
 		render(App, container, {value: sparse})
-		render(App, container, {value: [1]})
+		render(App, container, {value: [undefined]})
 
-		assertEquals(container.textContent, '1', 'A populated array should not compare equal to a sparse array')
+		assertEquals(container.textContent, 'present', 'An explicit element should not compare equal to an array hole')
+	})
+
+	it('[A10] distinguishes arrays from objects with Array.prototype', () => {
+		function App({getProps}) {
+			return html => html`<span>${Array.isArray(getProps().value) ? 'array' : 'object'}</span>`
+		}
+
+		const container = createContainer()
+		render(App, container, {value: []})
+		render(App, container, {value: Object.create(Array.prototype)})
+
+		assertEquals(container.textContent, 'object', 'Matching prototypes should not hide different array brands')
+	})
+
+	it('[A10] compares constructor as an ordinary object prop', () => {
+		function App({getProps}) {
+			return html => html`<span>${getProps().value.constructor}</span>`
+		}
+
+		const container = createContainer()
+		render(App, container, {value: {constructor: 'first'}})
+		render(App, container, {value: {constructor: 'second'}})
+
+		assertEquals(container.textContent, 'second', 'A changed constructor prop should rerender')
+	})
+
+	it('[A10] distinguishes positive and negative zero', () => {
+		function App({getProps}) {
+			return html => html`<span>${Object.is(getProps().value, -0) ? 'negative' : 'positive'}</span>`
+		}
+
+		const container = createContainer()
+		render(App, container, {value: 0})
+		render(App, container, {value: -0})
+
+		assertEquals(container.textContent, 'negative', 'Object.is semantics should distinguish signed zero')
 	})
 
 	it.skip('[A11] creates distinct stable IDs for numeric and string keys', () => {

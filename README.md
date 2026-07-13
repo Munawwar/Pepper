@@ -298,7 +298,7 @@ Notes:
 
 Plain function components use Pepper’s default runtime behavior:
 
-- props are deep-compared before parent-driven rerenders
+- supported prop values are structurally compared before parent-driven rerenders
 - function props named `onX` (`onSave`, `onChange`) are ignored in that comparison
 
 Wrap a component with `component(factory, options)` to change this.
@@ -309,6 +309,8 @@ Supported options:
 - `autoEffectEvent` defaults to `true`; `onX` function props are treated like effect events: their latest value is stored, but changing only them does not rerender the child¹. Set `false` to include them in memo checks
 - `propsComparator` defaults to `null`; when provided, return `true` or `[]` to skip rerender, otherwise return the added, changed, or removed prop names to rerender and pass the deduplicated list to `onProps`. This replaces the `memo` and `autoEffectEvent` comparisons for ordinary props, and the latest props are stored even when rendering is skipped. Pepper still adds `children` when captured lazy-child values change
 - `errorBoundary` defaults to `false`; set `true` to catch descendant setup/render errors
+
+Default structural comparison covers arrays, plain and null-prototype objects, dates, and regular expressions. Other object types are equal only by reference. Separately allocated cyclic values are treated as changed and rerender conservatively.
 
 ¹ By the way, template event bindings already keeps one DOM listener and update its current callback when the template rerenders, so handler changes do not need remove/add listener churn. However autoEffectEvent is added optimization at the component boundary level.
 ## Layout components / children()
