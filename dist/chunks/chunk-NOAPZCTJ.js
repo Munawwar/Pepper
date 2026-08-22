@@ -575,7 +575,7 @@ function parseComponentBindings(attributesSource) {
 }
 function compileComponentTemplate(strings) {
   let compiled = componentTemplateCache.get(strings);
-  if (compiled) return compiled;
+  if (compiled !== void 0) return compiled;
   const source = strings.reduce(
     (htmlString, string, index) => htmlString + string + (index < strings.length - 1 ? `${INTERPOLATION_MARKER}${index}${INTERPOLATION_MARKER}` : ""),
     ""
@@ -706,4 +706,4 @@ export {
   lowerComponentValues,
   resolveComponentProps
 };
-//# sourceMappingURL=chunk-DR2BIXQ3.js.map
+//# sourceMappingURL=chunk-NOAPZCTJ.js.map

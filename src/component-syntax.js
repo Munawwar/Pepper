@@ -205,7 +205,7 @@ function parseComponentBindings(attributesSource) {
  */
 function compileComponentTemplate(strings) {
 	let compiled = componentTemplateCache.get(strings)
-	if (compiled) return compiled
+	if (compiled !== undefined) return compiled
 
 	const source = strings.reduce(
 		(htmlString, string, index) =>

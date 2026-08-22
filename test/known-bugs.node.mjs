@@ -2,6 +2,7 @@
 
 import assert from 'node:assert/strict'
 import test from 'node:test'
+import {compileComponentTemplate} from '../src/component-syntax.js'
 import {Store} from '../src/store.js'
 
 const importModule = specifier => import(specifier)
@@ -18,6 +19,22 @@ async function readJson(relativePath) {
 	const {readFile} = await importModule('node:fs/promises')
 	return JSON.parse(await readFile(new URL(relativePath, import.meta.url), 'utf8'))
 }
+
+test('[CACHE] component-free template analysis is cached', () => {
+	let reads = 0
+	const strings = Object.assign([], {raw: ['<div></div>']})
+	Object.defineProperty(strings, 0, {
+		get() {
+			reads++
+			return '<div></div>'
+		},
+	})
+
+	assert.equal(compileComponentTemplate(strings), null)
+	const firstReads = reads
+	assert.equal(compileComponentTemplate(strings), null)
+	assert.equal(reads, firstReads)
+})
 
 test('[A01] browser state helper participates in a built SSR render', async () => {
 	const {browser, ssr} = await loadBuiltRenderers()

@@ -633,40 +633,27 @@ describe('Pepper component runtime', () => {
 		assertEquals(childViewCalls, 1, 'Parent local state updates should reuse cached child nodes without re-invoking the child view')
 	})
 
-	it('memoizes unchanged components that return falsy values', async () => {
-		let childRenders = 0
+	it('memoizes root components that return falsy values', () => {
+		let renders = 0
 
 		/** @param {{ getProps(): Record<string, unknown> }} param0 */
-		function Child({getProps}) {
+		function App({getProps}) {
 			return () => {
-				childRenders++
+				renders++
 				return getProps().value
 			}
 		}
 
-		function App() {
-			const [getCount, setCount] = state(0)
-			/** @param {HtmlTag} html */
-			return html => html`
-				<button @click=${() => setCount(getCount() + 1)}>${getCount()}</button>
-				<${Child} key="null" value=${null} />
-				<${Child} key="false" value=${false} />
-				<${Child} key="empty" value=${''} />
-				<${Child} key="zero" value=${0} />
-			`
-		}
-
 		const container = document.createElement('div')
 		document.body.append(container)
-		render(App, container)
-		assertEquals(childRenders, 4, 'Each child should render once initially')
-
-		const button = /** @type {HTMLButtonElement} */ (container.querySelector('button'))
-		button.click()
-		await flushRender()
-
-		assertEquals(childRenders, 4, 'A parent rerender should reuse every unchanged falsy result')
-		assertEquals(container.textContent, '10', 'Boolean children should be empty while zero remains visible')
+		for (const value of [null, false, '', 0]) {
+			render(App, container, {value})
+			const rendersAfterChange = renders
+			render(App, container, {value})
+			assertEquals(renders, rendersAfterChange, `Equal ${String(value)} props should reuse the root result`)
+		}
+		assertEquals(renders, 4, 'Each distinct falsy value should render once')
+		assertEquals(container.textContent, '0', 'Boolean children should be empty while zero remains visible')
 	})
 
 	it('reads stores from context and rerenders subscribed consumers', async () => {

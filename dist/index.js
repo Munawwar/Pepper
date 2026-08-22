@@ -26,7 +26,7 @@ import {
   state,
   syncComponentProps,
   throwBoundaryError
-} from "./chunks/chunk-DR2BIXQ3.js";
+} from "./chunks/chunk-NOAPZCTJ.js";
 
 // src/html.js
 var html_exports = {};
