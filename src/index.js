@@ -81,9 +81,6 @@ const {componentBoundaries, reconcileDom, replaceNodeOwnership} = /** @type {{
 /** @type {WeakMap<Element, RootRecord>} */
 const rootMap = new WeakMap()
 
-// Feature flags
-const ENABLE_COMPONENT_NODE_CACHE = true
-
 /** @type {TemplateStringsArray} */
 const singleValueStrings = /** @type {TemplateStringsArray} */ (
 	Object.assign(/** @type {MutableTemplateStringsArray} */ (['', '']), {raw: ['', '']})
@@ -244,7 +241,6 @@ function createDomComponentValue(ownerRuntime, descriptor, values) {
 		}
 		runtime.lastSeen = ownerRuntime.renderPassId
 		const nodes = (
-			ENABLE_COMPONENT_NODE_CACHE &&
 			runtime.currentNodes &&
 			!runtime.dirty
 			)
@@ -257,16 +253,19 @@ function createDomComponentValue(ownerRuntime, descriptor, values) {
 						: null,
 				)
 		const debugKeyValue = ownerRuntime.rootRecord.options?.debugKeys === true && key != null ? String(key) : ''
-		if (runtime.debugKeyNodes)
+		if (runtime.debugKeyNodes) {
 			for (const node of runtime.debugKeyNodes)
 				if (node instanceof Element && (!debugKeyValue || !nodes.includes(node))) node.removeAttribute('x-key')
-		runtime.debugKeyNodes = []
-		if (debugKeyValue)
+			runtime.debugKeyNodes = undefined
+		}
+		if (debugKeyValue) {
+			runtime.debugKeyNodes = []
 			for (const node of nodes)
 				if (node instanceof Element) {
 					node.setAttribute('x-key', debugKeyValue)
 					runtime.debugKeyNodes.push(node)
 				}
+		}
 		finalizeComponentRuntime(runtime)
 		return nodes
 	}

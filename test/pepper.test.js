@@ -633,6 +633,42 @@ describe('Pepper component runtime', () => {
 		assertEquals(childViewCalls, 1, 'Parent local state updates should reuse cached child nodes without re-invoking the child view')
 	})
 
+	it('memoizes unchanged components that return falsy values', async () => {
+		let childRenders = 0
+
+		/** @param {{ getProps(): Record<string, unknown> }} param0 */
+		function Child({getProps}) {
+			return () => {
+				childRenders++
+				return getProps().value
+			}
+		}
+
+		function App() {
+			const [getCount, setCount] = state(0)
+			/** @param {HtmlTag} html */
+			return html => html`
+				<button @click=${() => setCount(getCount() + 1)}>${getCount()}</button>
+				<${Child} key="null" value=${null} />
+				<${Child} key="false" value=${false} />
+				<${Child} key="empty" value=${''} />
+				<${Child} key="zero" value=${0} />
+			`
+		}
+
+		const container = document.createElement('div')
+		document.body.append(container)
+		render(App, container)
+		assertEquals(childRenders, 4, 'Each child should render once initially')
+
+		const button = /** @type {HTMLButtonElement} */ (container.querySelector('button'))
+		button.click()
+		await flushRender()
+
+		assertEquals(childRenders, 4, 'A parent rerender should reuse every unchanged falsy result')
+		assertEquals(container.textContent, '1false0', 'Falsy renderables should preserve their normal DOM output')
+	})
+
 	it('reads stores from context and rerenders subscribed consumers', async () => {
 		/**
 		 * @param {{

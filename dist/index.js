@@ -27,7 +27,7 @@ import {
   state,
   syncComponentProps,
   throwBoundaryError
-} from "./chunks/chunk-CD2IPWBU.js";
+} from "./chunks/chunk-DDQYLZZ4.js";
 
 // src/html.js
 var html_exports = {};
@@ -124,13 +124,13 @@ function handleForceValue(site, value) {
 function handleTemplateTag(mode, strings, ...values) {
   const template = parseTemplate(strings, mode);
   const renderFn = function(key = /* @__PURE__ */ Symbol(), liveNodes) {
-    template.values = values;
     return liveNodes ? template.hydrateInstance(
       key,
       /** @type {Element | ShadowRoot | DocumentFragment} */
       liveNodes[0]?.parentNode,
-      liveNodes
-    ) : template.updateInstance(key);
+      liveNodes,
+      values
+    ) : template.updateInstance(key, values);
   };
   renderFn.template = template;
   return renderFn;
@@ -285,21 +285,20 @@ var Template = class {
     }
     return templateInstance;
   }
-  /** @type {InterpolationValue[]} */
-  values = [];
   /**
    * Update instance with new values. This gets returned by the `html`
    * function for users to call with their keys.
    *
    * @param {TemplateKey} key
+   * @param {InterpolationValue[]} values
    */
-  updateInstance = (key = /* @__PURE__ */ Symbol()) => {
+  updateInstance(key = /* @__PURE__ */ Symbol(), values) {
     const templateInstance = this.getInstance(key);
-    templateInstance.applyValues(this.values);
+    templateInstance.applyValues(values);
     const renderedNodes = templateInstance.getRenderedNodes();
     trackTemplateInstanceNodes(templateInstance, renderedNodes);
     return renderedNodes;
-  };
+  }
   /**
    * Hydrate an existing DOM subtree into a template instance, reusing matching
    * nodes and replacing mismatches with the template-owned nodes.
@@ -307,10 +306,11 @@ var Template = class {
    * @param {TemplateKey} key
    * @param {Element | ShadowRoot | DocumentFragment} container
    * @param {Node[]} liveNodes
+   * @param {InterpolationValue[]} values
    */
-  hydrateInstance = (key, container, liveNodes) => {
+  hydrateInstance(key, container, liveNodes, values) {
     const templateInstance = this.getInstance(key);
-    templateInstance.applyValues(this.values);
+    templateInstance.applyValues(values);
     const adoptionMap = /* @__PURE__ */ new Map();
     const managedCustomElements = /* @__PURE__ */ new WeakSet();
     for (const site of templateInstance.sites) {
@@ -336,7 +336,7 @@ var Template = class {
     const renderedNodes = templateInstance.getRenderedNodes();
     trackTemplateInstanceNodes(templateInstance, renderedNodes);
     return renderedNodes;
-  };
+  }
 };
 function parseTemplate(strings, mode) {
   let template = templateCache.get(strings);
@@ -767,14 +767,12 @@ function reconcileHydrationNodes(parentNode, liveNodes, targetNodes, adoptionMap
   }
 }
 var TemplateInstance = class {
-  active = false;
-  nodes;
-  sites;
   /**
    * @param {TemplateNodes} nodes The cloned nodes for this template instance
    * @param {InterpolationSite[]} sites The interpolation sites in the template
    */
   constructor(nodes, sites) {
+    this.active = false;
     this.nodes = nodes;
     this.sites = sites;
     for (const site of sites) siteTemplateInstances.set(site, this);
@@ -880,7 +878,6 @@ var TemplateInstance = class {
       for (const node of site.insertedNodes || [])
         if (componentBoundaries.has(node)) nodeHostSites.set(node, site);
     trackTemplateInstanceNodes(this, this.getRenderedNodes());
-    return this;
   }
   /**
    * Apply values to interpolation sites
@@ -1131,7 +1128,6 @@ var { componentBoundaries: componentBoundaries2, reconcileDom: reconcileDom2, re
   html_exports
 );
 var rootMap = /* @__PURE__ */ new WeakMap();
-var ENABLE_COMPONENT_NODE_CACHE = true;
 var singleValueStrings = (
   /** @type {TemplateStringsArray} */
   Object.assign(
@@ -1278,7 +1274,7 @@ function createDomComponentValue(ownerRuntime, descriptor, values) {
       componentBoundaries2.add(runtime.domBoundary);
     }
     runtime.lastSeen = ownerRuntime.renderPassId;
-    const nodes = ENABLE_COMPONENT_NODE_CACHE && runtime.currentNodes && !runtime.dirty ? runtime.currentNodes : realizeComponentRuntime(
+    const nodes = runtime.currentNodes && !runtime.dirty ? runtime.currentNodes : realizeComponentRuntime(
       renderComponentRuntime(
         runtime,
         /** @type {RuntimeTags} */
@@ -1294,9 +1290,10 @@ function createDomComponentValue(ownerRuntime, descriptor, values) {
     if (runtime.debugKeyNodes) {
       for (const node of runtime.debugKeyNodes)
         if (node instanceof Element && (!debugKeyValue || !nodes.includes(node))) node.removeAttribute("x-key");
+      runtime.debugKeyNodes = void 0;
     }
-    runtime.debugKeyNodes = [];
     if (debugKeyValue) {
+      runtime.debugKeyNodes = [];
       for (const node of nodes)
         if (node instanceof Element) {
           node.setAttribute("x-key", debugKeyValue);

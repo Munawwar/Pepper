@@ -515,6 +515,29 @@ describe('html template function', () => {
 		assertEquals(div2.textContent, 'same text', 'Second instance content')
 	})
 
+	it('keeps invocation values isolated during reentrant custom element upgrades', () => {
+		let constructingOuter = false
+		/** @type {HTMLElement | undefined} */
+		let innerElement
+		/** @param {string} value */
+		const template = value => html`<reentrant-template-el>${value}</reentrant-template-el>`
+
+		customElements.define('reentrant-template-el', class extends HTMLElement {
+			constructor() {
+				super()
+				if (constructingOuter) return
+				constructingOuter = true
+				const [renderedInner] = /** @type {[HTMLElement]} */ (template('inner')(Symbol()))
+				innerElement = renderedInner
+				constructingOuter = false
+			}
+		})
+
+		const [outerElement] = /** @type {[HTMLElement]} */ (template('outer')(Symbol()))
+		assertEquals(outerElement.textContent, 'outer', 'Reentrant rendering should not replace the outer values')
+		assertEquals(innerElement?.textContent, 'inner', 'The nested invocation should keep its own values')
+	})
+
 	it('handles basic attribute interpolation without quotes', () => {
 		let value = 'my-class'
 		const key = Symbol()

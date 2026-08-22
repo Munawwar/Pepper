@@ -191,14 +191,14 @@ function handleTemplateTag(mode, strings, ...values) {
 	const template = parseTemplate(strings, mode)
 	/** @type {((key?: any, liveNodes?: Node[]) => TemplateNodes) & {template: Template}} */
 	const renderFn = function (key = Symbol(), liveNodes) {
-		template.values = values
 		return liveNodes
 			? template.hydrateInstance(
 					key,
 					/** @type {Element | ShadowRoot | DocumentFragment} */ (liveNodes[0]?.parentNode),
 					liveNodes,
+					values,
 				)
-			: template.updateInstance(key)
+			: template.updateInstance(key, values)
 	}
 	renderFn.template = template
 	return renderFn
@@ -516,18 +516,16 @@ class Template {
 		return templateInstance
 	}
 
-	/** @type {InterpolationValue[]} */
-	values = []
-
 	/**
 	 * Update instance with new values. This gets returned by the `html`
 	 * function for users to call with their keys.
 	 *
 	 * @param {TemplateKey} key
+	 * @param {InterpolationValue[]} values
 	 */
-	updateInstance = (key = Symbol()) => {
+	updateInstance(key = Symbol(), values) {
 		const templateInstance = this.getInstance(key)
-		templateInstance.applyValues(this.values)
+		templateInstance.applyValues(values)
 		const renderedNodes = templateInstance.getRenderedNodes()
 		trackTemplateInstanceNodes(templateInstance, renderedNodes)
 		return renderedNodes
@@ -540,10 +538,11 @@ class Template {
 	 * @param {TemplateKey} key
 	 * @param {Element | ShadowRoot | DocumentFragment} container
 	 * @param {Node[]} liveNodes
+	 * @param {InterpolationValue[]} values
 	 */
-	hydrateInstance = (key, container, liveNodes) => {
+	hydrateInstance(key, container, liveNodes, values) {
 		const templateInstance = this.getInstance(key)
-		templateInstance.applyValues(this.values)
+		templateInstance.applyValues(values)
 
 		/** @type {Map<Node, Node>} */
 		const adoptionMap = new Map()
@@ -1192,15 +1191,12 @@ function reconcileHydrationNodes(parentNode, liveNodes, targetNodes, adoptionMap
  * Holds information about a template instance's nodes and interpolation sites.
  */
 class TemplateInstance {
-	active = false
-	nodes
-	sites
-
 	/**
 	 * @param {TemplateNodes} nodes The cloned nodes for this template instance
 	 * @param {InterpolationSite[]} sites The interpolation sites in the template
 	 */
 	constructor(nodes, sites) {
+		this.active = false
 		this.nodes = nodes
 		this.sites = sites
 		for (const site of sites) siteTemplateInstances.set(site, this)
@@ -1297,7 +1293,6 @@ class TemplateInstance {
 			for (const node of site.insertedNodes || [])
 				if (componentBoundaries.has(node)) nodeHostSites.set(node, site)
 		trackTemplateInstanceNodes(this, this.getRenderedNodes())
-		return this
 	}
 
 	/**

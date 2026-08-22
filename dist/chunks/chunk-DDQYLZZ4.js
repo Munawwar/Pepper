@@ -201,26 +201,22 @@ function markRuntimeDirty(runtime, callback) {
   runtime.rootRecord.dirtyRuntimes?.add(runtime);
   runtime.rootRecord.scheduleRender();
 }
-function shouldIgnorePropForMemo(runtime, key, value) {
-  return runtime.options.autoEffectEvent !== false && typeof value === "function" && /^on[A-Z]/.test(key);
-}
-function syncComponentProps(runtime, nextProps = {}, forceAll = false) {
+function syncComponentProps(runtime, nextProps = {}) {
   const oldProps = runtime.props;
   const normalizedProps = { ...nextProps };
-  const keys = /* @__PURE__ */ new Set([...Object.keys(oldProps), ...Object.keys(normalizedProps)]);
-  let changed = forceAll;
-  if (!forceAll && typeof runtime.options.propsComparator === "function") {
+  let changed = false;
+  if (typeof runtime.options.propsComparator === "function") {
     const result = runtime.options.propsComparator(oldProps, normalizedProps);
     if (result !== true && (!Array.isArray(result) || result.some((key) => typeof key !== "string")))
       throw new TypeError("Pepper propsComparator must return true or an array of changed prop names.");
     changed = result !== true && result.length > 0;
-  } else if (!forceAll) {
-    for (const key of keys) {
+  } else {
+    for (const key of /* @__PURE__ */ new Set([...Object.keys(oldProps), ...Object.keys(normalizedProps)])) {
       if (!Object.hasOwn(normalizedProps, key)) {
         changed = true;
         continue;
       }
-      if (shouldIgnorePropForMemo(runtime, key, normalizedProps[key])) continue;
+      if (runtime.options.autoEffectEvent !== false && typeof normalizedProps[key] === "function" && /^on[A-Z]/.test(key)) continue;
       const previousValue = oldProps[key];
       const nextValue = normalizedProps[key];
       const isSame = runtime.options.memo === false ? Object.is(previousValue, nextValue) : isEqual(previousValue, nextValue);
@@ -229,7 +225,6 @@ function syncComponentProps(runtime, nextProps = {}, forceAll = false) {
   }
   runtime.props = normalizedProps;
   if (changed) runtime.dirty = true;
-  return changed;
 }
 function createComponentRuntime(componentType, props, rootRecord, parentRuntime = null, idPath = parentRuntime?.idPath || []) {
   const definition = getComponentDefinition(componentType);
@@ -255,13 +250,12 @@ function createComponentRuntime(componentType, props, rootRecord, parentRuntime 
     parentRuntime,
     nextContextDependencies: null,
     portals: /* @__PURE__ */ new Map(),
-    props: {},
+    props: { ...props },
     refs: [],
     renderPassId: 0,
     rootRecord,
     viewKey: /* @__PURE__ */ Symbol("pepper-view")
   };
-  syncComponentProps(runtime, props, true);
   const setupApi = {
     effect: (handler, getDependencies) => {
       if (currentSetupRuntime !== runtime) throw new Error("Pepper effect() can only be registered while creating a component.");
@@ -305,7 +299,7 @@ function createComponentRuntime(componentType, props, rootRecord, parentRuntime 
   return runtime;
 }
 function renderComponentRuntime(runtime, tags) {
-  if (runtime.currentRenderable && !runtime.dirty) {
+  if (runtime.renderPassId > 0 && !runtime.dirty) {
     runtime.renderPassId++;
     return runtime.currentRenderable;
   }
@@ -729,4 +723,4 @@ export {
   lowerComponentTemplate,
   resolveComponentProps
 };
-//# sourceMappingURL=chunk-CD2IPWBU.js.map
+//# sourceMappingURL=chunk-DDQYLZZ4.js.map

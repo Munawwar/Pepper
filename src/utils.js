@@ -1,25 +1,3 @@
-const from = Array.from;
-
-/**
- * @template T, U
- * @param {ArrayLike<T>} arrayLike
- * @param {(value: T, index: number) => U} fn
- * @returns {void}
- */
-function each(arrayLike, fn) {
-	return Array.prototype.forEach.call(arrayLike, fn);
-}
-
-/**
- * @param {Element} element
- * @returns {boolean}
- */
-function isCustomElement(element) {
-	if (element.tagName.indexOf('-') > 0) return true;
-	const attr = element.getAttribute('is');
-	return !!(attr && attr.indexOf('-') > 0);
-}
-
 /**
  * @param {object | null | undefined} obj
  * @returns {string[]}
@@ -28,22 +6,6 @@ function keys(obj) {
   if (!obj) return [];
 	return Object.keys(obj).filter(key => key !== 'constructor');
 }
-// Safer Object.assign
-/**
- * @template T
- * @param {T} target
- * @param {...Array<Record<string, unknown> | null | undefined>} args
- * @returns {T & Record<string, unknown>}
- */
-function objectAssign(target, ...args) {
-	args.forEach((obj) => {
-		keys(obj).forEach((key) => {
-			/** @type {Record<string, unknown>} */ (target)[key] = /** @type {Record<string, unknown>} */ (/** @type {unknown} */ (obj))[key];
-		});
-	});
-	return /** @type {T & Record<string, unknown>} */ (target);
-}
-
 /**
  * @param {unknown} value1
  * @param {unknown} value2
@@ -90,10 +52,6 @@ function isEqual(value1, value2, ancestors) {
 }
 
 export {
-  each,
-  isCustomElement,
-  from,
   keys,
-  objectAssign,
   isEqual,
 };
