@@ -257,6 +257,17 @@ test('renders component roots to strings through Pepper SSR runtime', () => {
 	assert.equal(renderComponentToString(Counter, {count: 3}), '<button>3</button>')
 })
 
+test('does not execute component effects during SSR', () => {
+	let effects = 0
+	function App({effect}) {
+		effect(() => effects++, () => [])
+		return html => html`<span>server</span>`
+	}
+
+	assert.equal(renderComponentToString(App), '<span>server</span>')
+	assert.equal(effects, 0)
+})
+
 test('renders deterministic component-scoped ids during SSR', () => {
 	function Field() {
 		const id = stableId()

@@ -7,14 +7,19 @@ export type ContextInput<Context extends PepperContext = PepperContext> =
 	| Context
 	| ReadonlyMap<Extract<keyof Context, string>, Context[Extract<keyof Context, string>]>
 export type HtmlTag = typeof import('./src/html-ssr.js').html
+export type EffectCleanup = () => void
+export type EffectHandler<Dependencies extends readonly unknown[] = readonly unknown[]> = (
+	dependencies: Dependencies,
+	previousDependencies: Dependencies | undefined,
+) => void | EffectCleanup
 export type ComponentSetupApi<Props = Record<string, unknown>, Context extends PepperContext = PepperContext> = {
+	effect(handler: EffectHandler<readonly []>): void
+	effect<Dependencies extends readonly unknown[]>(handler: EffectHandler<Dependencies>, getDependencies: () => Dependencies): void
 	getProps(): Props
 	getContext<Key extends Extract<keyof Context, string>>(key: Key): Context[Key]
 	getContext(key: string): unknown
 	getError(): unknown | null
 	hasContext(key: string): boolean
-	onMount(handler: () => void | (() => void)): void
-	onProps(handler: (changedProps: string[], oldProps: Props) => void): void
 	resetError(): void
 	setContext<Key extends Extract<keyof Context, string>>(key: Key, value: Context[Key]): Context[Key]
 	setContext<Key extends string, Value>(key: Exclude<Key, Extract<keyof Context, string>>, value: Value): Value

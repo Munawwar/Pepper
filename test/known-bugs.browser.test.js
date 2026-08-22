@@ -374,13 +374,13 @@ describe('Known Pepper browser regressions', () => {
 		assertEquals(clicks, 1, 'Unsupported values should remove the previous handler without throwing')
 	})
 
-	it('[A06] catches descendant onProps errors in an error boundary', () => {
+	it('[A06] catches descendant effect errors in an error boundary', () => {
 		const Boundary = createBoundary()
 
-		function Broken({getProps, onProps}) {
-			onProps(() => {
-				throw new Error('prop failure')
-			})
+		function Broken({effect, getProps}) {
+			effect((dependencies, previousDependencies) => {
+				if (previousDependencies) throw new Error('prop failure')
+			}, () => [getProps().value])
 			return html => html`<span>${getProps().value}</span>`
 		}
 
@@ -392,24 +392,24 @@ describe('Known Pepper browser regressions', () => {
 		render(App, container, {value: 1})
 		render(App, container, {value: 2})
 
-		assertEquals(container.textContent, 'fallback', 'The boundary should catch the onProps failure')
+		assertEquals(container.textContent, 'fallback', 'The boundary should catch the effect failure')
 	})
 
-	it('[A06] catches descendant onMount errors without dropping pending mounts', () => {
+	it('[A06] catches descendant effect errors without dropping pending effects', () => {
 		const Boundary = createBoundary()
 		let cleanups = 0
 		let siblingMounts = 0
 
-		function Broken({onMount}) {
-			onMount(() => () => cleanups++)
-			onMount(() => {
+		function Broken({effect}) {
+			effect(() => () => cleanups++, () => [])
+			effect(() => {
 				throw new Error('mount failure')
-			})
+			}, () => [])
 			return html => html`<span>broken</span>`
 		}
 
-		function Sibling({onMount}) {
-			onMount(() => siblingMounts++)
+		function Sibling({effect}) {
+			effect(() => siblingMounts++, () => [])
 			return html => html`<span>sibling</span>`
 		}
 
@@ -425,14 +425,14 @@ describe('Known Pepper browser regressions', () => {
 		assertEquals(siblingMounts, 1, 'A later sibling should still mount')
 	})
 
-	it('[A06] sends a boundary onMount error to its ancestor', () => {
+	it('[A06] sends a boundary effect error to its ancestor', () => {
 		const OuterBoundary = component(function OuterBoundary({getError, getProps}) {
 			return html => getError() ? html`<p>outer fallback</p>` : getProps().children?.()
 		}, {errorBoundary: true})
-		const InnerBoundary = component(function InnerBoundary({getError, getProps, onMount}) {
-			onMount(() => {
+		const InnerBoundary = component(function InnerBoundary({effect, getError, getProps}) {
+			effect(() => {
 				throw new Error('inner mount failure')
-			})
+			}, () => [])
 			return html => getError() ? html`<p>inner fallback</p>` : getProps().children?.()
 		}, {errorBoundary: true})
 
@@ -446,14 +446,14 @@ describe('Known Pepper browser regressions', () => {
 		assertEquals(container.textContent, 'outer fallback', 'A boundary should not catch its own mount error')
 	})
 
-	it('[A06] catches descendant onMount cleanup errors in an error boundary', () => {
+	it('[A06] catches descendant effect cleanup errors in an error boundary', () => {
 		let laterCleanups = 0
 
-		function Broken({onMount}) {
-			onMount(() => () => {
+		function Broken({effect}) {
+			effect(() => () => {
 				throw new Error('cleanup failure')
-			})
-			onMount(() => () => laterCleanups++)
+			}, () => [])
+			effect(() => () => laterCleanups++, () => [])
 			return html => html`<span>broken</span>`
 		}
 		const Boundary = component(function Boundary({getError, getProps}) {
@@ -474,11 +474,11 @@ describe('Known Pepper browser regressions', () => {
 		assertEquals(laterCleanups, 1, 'A failed cleanup should not prevent later cleanups')
 	})
 
-	it('[A06] lets a root boundary catch an onMount cleanup error', () => {
-		function Broken({onMount}) {
-			onMount(() => () => {
+	it('[A06] lets a root boundary catch an effect cleanup error', () => {
+		function Broken({effect}) {
+			effect(() => () => {
 				throw new Error('root cleanup failure')
-			})
+			}, () => [])
 			return html => html`<span>broken</span>`
 		}
 		const App = component(function App({getError, getProps}) {
@@ -494,11 +494,11 @@ describe('Known Pepper browser regressions', () => {
 		assertEquals(container.textContent, 'root fallback', 'The root boundary should catch its child cleanup error')
 	})
 
-	it('[A06] skips a destroyed boundary when an onMount cleanup throws', () => {
-		function Broken({onMount}) {
-			onMount(() => () => {
+	it('[A06] skips a destroyed boundary when an effect cleanup throws', () => {
+		function Broken({effect}) {
+			effect(() => () => {
 				throw new Error('nested cleanup failure')
-			})
+			}, () => [])
 			return html => html`<span>broken</span>`
 		}
 		const InnerBoundary = component(function InnerBoundary({getError}) {
@@ -521,15 +521,15 @@ describe('Known Pepper browser regressions', () => {
 		assertEquals(container.textContent, 'outer fallback', 'The active outer boundary should catch the cleanup error')
 	})
 
-	it('[A06] catches multiple onMount cleanup errors during a scheduled update', async () => {
+	it('[A06] catches multiple effect cleanup errors during a scheduled update', async () => {
 		let hideChildren
 		let cleanups = 0
 
-		function Broken({onMount}) {
-			onMount(() => () => {
+		function Broken({effect}) {
+			effect(() => () => {
 				cleanups++
 				throw new Error('scheduled cleanup failure')
-			})
+			}, () => [])
 			return html => html`<span>broken</span>`
 		}
 		const Boundary = component(function Boundary({getError}) {
@@ -547,6 +547,29 @@ describe('Known Pepper browser regressions', () => {
 
 		assertEquals(container.textContent, 'fallback', 'The boundary should remain active through cleanup retries')
 		assertEquals(cleanups, 2, 'Every removed component cleanup should run')
+	})
+
+	it('[A06] runs every changed effect cleanup before reporting an error', () => {
+		let cleanups = 0
+		function Broken({effect, getProps}) {
+			effect(() => () => {
+				cleanups++
+				throw new Error('dependency cleanup failure')
+			}, () => [getProps().value])
+			effect(() => () => cleanups++, () => [getProps().value])
+			return html => html`<span>${getProps().value}</span>`
+		}
+		const Boundary = createBoundary()
+		function App({getProps}) {
+			return html => html`<${Boundary}><${Broken} value=${getProps().value} /></${Boundary}>`
+		}
+
+		const container = createContainer()
+		render(App, container, {value: 1})
+		render(App, container, {value: 2})
+
+		assertEquals(container.textContent, 'fallback', 'The boundary should catch the dependency cleanup error')
+		assertEquals(cleanups, 2, 'One failed cleanup should not prevent the other changed cleanup')
 	})
 
 	it('[A06] catches a nested renderable error during DOM realization', () => {
@@ -722,12 +745,10 @@ describe('Known Pepper browser regressions', () => {
 
 	it('[A09] lets a custom comparator suppress a removed prop', () => {
 		let renders = 0
-		let propCalls = 0
 		let comparison = true
 		let getLatestProps
-		const Child = component(function Child({getProps, onProps}) {
+		const Child = component(function Child({getProps}) {
 			getLatestProps = getProps
-			onProps(() => propCalls++)
 			return html => {
 				renders++
 				return html`<span>${String(getProps().ignored ?? '')}</span>`
@@ -745,18 +766,17 @@ describe('Known Pepper browser regressions', () => {
 		render(App, container, {latest: 2})
 
 		assertEquals(renders, 1, 'Both true and an empty list should suppress the child render')
-		assertEquals(propCalls, 0, 'Suppressed props should not call onProps')
 		assert(!('ignored' in getLatestProps()), 'Stored props should still remove the suppressed prop')
 		assertEquals(getLatestProps().latest, 2, 'Stored props should include silently added props')
 	})
 
-	it('[A09] uses the custom comparator list for onProps', () => {
-		let changedProps = []
-		const Child = component(function Child({onProps}) {
-			onProps(changes => {
-				changedProps = [...changes]
-			})
-			return html => html`<span></span>`
+	it('[A09] rerenders for a non-empty custom comparator list', () => {
+		let renders = 0
+		const Child = component(function Child() {
+			return html => {
+				renders++
+				return html`<span></span>`
+			}
 		}, {propsComparator: () => ['added', 'added']})
 
 		function App({getProps}) {
@@ -767,16 +787,16 @@ describe('Known Pepper browser regressions', () => {
 		render(App, container)
 		render(App, container, {added: 1})
 
-		assertEquals(changedProps.join(','), 'added', 'Changed prop names should be unique')
+		assertEquals(renders, 2, 'Any non-empty changed-prop list should rerender')
 	})
 
 	it('[A09] lets a custom comparator report removed props', () => {
-		let changedProps = []
-		const Child = component(function Child({onProps}) {
-			onProps(changes => {
-				changedProps = [...changes]
-			})
-			return html => html`<span></span>`
+		let renders = 0
+		const Child = component(function Child({getProps}) {
+			return html => {
+				renders++
+				return html`<span>${String(getProps().removed ?? '')}</span>`
+			}
 		}, {propsComparator: (previousProps, nextProps) => 'removed' in previousProps && !('removed' in nextProps) ? ['removed'] : true})
 
 		function App({getProps}) {
@@ -787,7 +807,8 @@ describe('Known Pepper browser regressions', () => {
 		render(App, container, {removed: 1})
 		render(App, container)
 
-		assertEquals(changedProps.join(','), 'removed', 'Removed props should be reported by name')
+		assertEquals(renders, 2, 'A removed prop reported by the comparator should rerender')
+		assertEquals(container.textContent, '', 'The rerender should observe the removed prop')
 	})
 
 	it('[A09] lets a custom comparator opt event props into rerenders', () => {
@@ -962,16 +983,56 @@ describe('Known Pepper browser regressions', () => {
 		assert(clientItems.every((item, index) => item === serverItems[index]), 'Hydration should adopt the SSR component nodes')
 	})
 
-	it.skip('[A12] refreshes root context on repeated render', () => {
-		function App({getContext, getProps}) {
-			return html => html`<span>${getContext('value')}:${getProps().tick}</span>`
+	it('runs effects after hydration adopts the server DOM', () => {
+		let effectNode
+		function App({effect}) {
+			effect(() => {
+				effectNode = container.firstElementChild
+			}, () => [])
+			return html => html`<span>hydrated</span>`
 		}
 
 		const container = createContainer()
-		render(App, container, {tick: 1}, {context: {value: 'first'}})
-		render(App, container, {tick: 2}, {context: {value: 'second'}})
+		container.innerHTML = renderComponentToString(App)
+		const serverNode = container.firstElementChild
+		hydrate(App, container)
 
-		assertEquals(container.textContent, 'second:2', 'The latest root context should be visible')
+		assertEquals(container.firstElementChild, serverNode, 'Hydration should retain the server node')
+		assertEquals(effectNode, serverNode, 'The effect should observe the adopted node after commit')
+	})
+
+	it('[A12] refreshes only root-context consumers on repeated render', () => {
+		let appRenders = 0
+		let consumerRenders = 0
+		let siblingRenders = 0
+
+		function Consumer({getContext}) {
+			return html => {
+				consumerRenders++
+				return html`<span>${getContext('value')}</span>`
+			}
+		}
+		function Sibling() {
+			return html => {
+				siblingRenders++
+				return html`<i>sibling</i>`
+			}
+		}
+		function App() {
+			return html => {
+				appRenders++
+				return html`<main><${Consumer} /><${Sibling} /></main>`
+			}
+		}
+
+		const container = createContainer()
+		render(App, container, {}, {context: {value: 'first'}})
+		render(App, container, {}, {context: {value: 'second'}})
+
+		assertEquals(container.textContent, 'secondsibling', 'The latest root context should be visible')
+		assertEquals(consumerRenders, 2, 'The context consumer should rerender')
+		assertEquals(appRenders, 1, 'The clean ancestor should remain memoized')
+		assertEquals(siblingRenders, 1, 'The non-consumer sibling should remain memoized')
 	})
 
 	it.skip('[A13] initializes non-form native properties during hydration', () => {
@@ -1005,8 +1066,8 @@ describe('Known Pepper browser regressions', () => {
 	it.skip('[A18] exposes an explicit root unmount operation', () => {
 		let cleanups = 0
 
-		function App({onMount}) {
-			onMount(() => () => cleanups++)
+		function App({effect}) {
+			effect(() => () => cleanups++, () => [])
 			return html => html`<span>mounted</span>`
 		}
 

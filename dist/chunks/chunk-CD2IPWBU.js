@@ -5,26 +5,15 @@ var __export = (target, all) => {
 };
 
 // src/utils.js
-function keys(obj) {
-  if (!obj) return [];
-  return Object.keys(obj).filter((key) => key !== "constructor");
-}
-function isEqual(value1, value2) {
+function isEqual(value1, value2, ancestors) {
   if (Object.is(value1, value2)) return true;
   if (value1 === null || value2 === null || typeof value1 !== "object" || typeof value2 !== "object") {
-    return value1 === value2;
-  }
-  const prototype = Object.getPrototypeOf(value1);
-  if (prototype !== Object.getPrototypeOf(value2)) {
     return false;
   }
-  if (Array.isArray(value1)) {
-    const array2 = (
-      /** @type {unknown[]} */
-      value2
-    );
-    return value1.length === array2.length && value1.every((item, index) => isEqual(item, array2[index]));
-  }
+  const prototype = Object.getPrototypeOf(value1);
+  if (prototype !== Object.getPrototypeOf(value2)) return false;
+  const isArray = Array.isArray(value1);
+  if (isArray !== Array.isArray(value2)) return false;
   if (value1 instanceof Date) {
     return value1.getTime() === /** @type {Date} */
     value2.getTime();
@@ -32,17 +21,23 @@ function isEqual(value1, value2) {
   if (value1 instanceof RegExp) {
     return value1.toString() === value2.toString();
   }
-  if (prototype !== Object.prototype && prototype !== null) {
-    return false;
-  }
-  const objectKeys = keys(value1);
-  return objectKeys.length === keys(value2).length && objectKeys.every((key) => key in /** @type {Record<string, unknown>} */
-  value2 && isEqual(
+  if (isArray) {
+    if (value1.length !== /** @type {unknown[]} */
+    value2.length) return false;
+  } else if (prototype !== Object.prototype && prototype !== null) return false;
+  ancestors ||= /* @__PURE__ */ new WeakSet();
+  if (ancestors.has(value1)) return false;
+  ancestors.add(value1);
+  const objectKeys = Object.keys(value1);
+  const equal = objectKeys.length === Object.keys(value2).length && objectKeys.every((key) => Object.hasOwn(value2, key) && isEqual(
     /** @type {Record<string, unknown>} */
     value1[key],
     /** @type {Record<string, unknown>} */
-    value2[key]
+    value2[key],
+    ancestors
   ));
+  ancestors.delete(value1);
+  return equal;
 }
 
 // src/component-runtime.js
@@ -86,7 +81,7 @@ function isErrorBoundarySignal(value) {
 }
 function throwBoundaryError(runtime, error, includeSelf = false) {
   let boundary = includeSelf ? runtime : runtime.parentRuntime;
-  while (boundary && !boundary.options.errorBoundary) boundary = boundary.parentRuntime;
+  while (boundary && (boundary.destroyed || !boundary.options.errorBoundary)) boundary = boundary.parentRuntime;
   if (!boundary) throw error;
   throw { [ERROR_BOUNDARY_SIGNAL]: true, boundary, error };
 }
@@ -145,6 +140,7 @@ function getContextValue(runtime, key) {
     if (current.contextValues?.has(key)) return current.contextValues.get(key);
     current = current.parentRuntime;
   }
+  runtime.nextContextDependencies?.add(key);
   return runtime.rootRecord.context?.get(key);
 }
 function hasContextValue(runtime, key) {
@@ -153,7 +149,23 @@ function hasContextValue(runtime, key) {
     if (current.contextValues?.has(key)) return true;
     current = current.parentRuntime;
   }
+  runtime.nextContextDependencies?.add(key);
   return runtime.rootRecord.context?.has(key) === true;
+}
+function syncContextDependencies(runtime, nextDependencies) {
+  const consumersByKey = runtime.rootRecord.contextConsumers;
+  for (const key of runtime.contextDependencies) {
+    if (nextDependencies.has(key)) continue;
+    const consumers = consumersByKey?.get(key);
+    consumers?.delete(runtime);
+    if (!consumers?.size) consumersByKey?.delete(key);
+  }
+  for (const key of nextDependencies) {
+    let consumers = consumersByKey?.get(key);
+    if (!consumers) consumersByKey?.set(key, consumers = /* @__PURE__ */ new Set());
+    consumers?.add(runtime);
+  }
+  runtime.contextDependencies = nextDependencies;
 }
 function ref() {
   const runtime = currentSetupRuntime;
@@ -180,12 +192,8 @@ function hashIdPath(parts) {
   }
   return (hash >>> 0).toString(36);
 }
-function createChildIdPath(ownerRuntime, descriptorIndex, key) {
-  const site = `c${descriptorIndex}`;
-  if (key != null) return [...ownerRuntime.idPath, `${site}:key:${String(key)}`];
-  const count = ownerRuntime.idChildCounters.get(site) || 0;
-  ownerRuntime.idChildCounters.set(site, count + 1);
-  return [...ownerRuntime.idPath, `${site}:index:${count}`];
+function createChildIdPath(ownerRuntime) {
+  return [...ownerRuntime.idPath, `c${ownerRuntime.nextChildId++}`];
 }
 function markRuntimeDirty(runtime, callback) {
   if (callback && runtime.rootRecord.pendingCallbacks) runtime.rootRecord.pendingCallbacks.push(callback);
@@ -198,41 +206,30 @@ function shouldIgnorePropForMemo(runtime, key, value) {
 }
 function syncComponentProps(runtime, nextProps = {}, forceAll = false) {
   const oldProps = runtime.props;
-  const normalizedProps = {};
-  const keys2 = /* @__PURE__ */ new Set([...Object.keys(oldProps), ...Object.keys(nextProps)]);
-  const changedProps = [];
-  for (const key of keys2) {
-    if (!(key in nextProps)) {
-      if (forceAll || key in oldProps) changedProps.push(key);
-      continue;
-    }
-    normalizedProps[key] = nextProps[key];
-  }
-  if (!forceAll) {
-    if (typeof runtime.options.propsComparator === "function") {
-      if (!runtime.options.propsComparator(oldProps, normalizedProps)) {
-        changedProps.push(...Object.keys(normalizedProps).filter((key) => !(key in oldProps)));
-        for (const key of keys2) {
-          if (!(key in nextProps) || shouldIgnorePropForMemo(runtime, key, nextProps[key])) continue;
-          if (!(key in oldProps) || !Object.is(oldProps[key], nextProps[key])) changedProps.push(key);
-        }
+  const normalizedProps = { ...nextProps };
+  const keys = /* @__PURE__ */ new Set([...Object.keys(oldProps), ...Object.keys(normalizedProps)]);
+  let changed = forceAll;
+  if (!forceAll && typeof runtime.options.propsComparator === "function") {
+    const result = runtime.options.propsComparator(oldProps, normalizedProps);
+    if (result !== true && (!Array.isArray(result) || result.some((key) => typeof key !== "string")))
+      throw new TypeError("Pepper propsComparator must return true or an array of changed prop names.");
+    changed = result !== true && result.length > 0;
+  } else if (!forceAll) {
+    for (const key of keys) {
+      if (!Object.hasOwn(normalizedProps, key)) {
+        changed = true;
+        continue;
       }
-    } else {
-      for (const key of keys2) {
-        if (!(key in nextProps) || shouldIgnorePropForMemo(runtime, key, nextProps[key])) continue;
-        const previousValue = oldProps[key];
-        const nextValue = nextProps[key];
-        const isSame = runtime.options.memo === false ? Object.is(previousValue, nextValue) : isEqual(previousValue, nextValue);
-        if (!(key in oldProps) || !isSame) changedProps.push(key);
-      }
+      if (shouldIgnorePropForMemo(runtime, key, normalizedProps[key])) continue;
+      const previousValue = oldProps[key];
+      const nextValue = normalizedProps[key];
+      const isSame = runtime.options.memo === false ? Object.is(previousValue, nextValue) : isEqual(previousValue, nextValue);
+      if (!Object.hasOwn(oldProps, key) || !isSame) changed = true;
     }
-  } else {
-    changedProps.push(...keys2);
   }
   runtime.props = normalizedProps;
-  runtime.pendingChangedProps = changedProps;
-  runtime.pendingOldProps = oldProps;
-  return changedProps.length > 0;
+  if (changed) runtime.dirty = true;
+  return changed;
 }
 function createComponentRuntime(componentType, props, rootRecord, parentRuntime = null, idPath = parentRuntime?.idPath || []) {
   const definition = getComponentDefinition(componentType);
@@ -240,28 +237,24 @@ function createComponentRuntime(componentType, props, rootRecord, parentRuntime 
     childStores: /* @__PURE__ */ new Map(),
     capturedError: NO_ERROR,
     componentType,
+    contextDependencies: /* @__PURE__ */ new Set(),
     contextValues: null,
     currentNodes: null,
     currentRenderable: null,
     currentTemplateInstance: null,
     destroyed: false,
     dirty: true,
-    hasDirtyDescendant: false,
     idBase: null,
-    idChildCounters: /* @__PURE__ */ new Map(),
+    nextChildId: 0,
     idLocalCounter: 0,
     idPath,
     lastSeen: 0,
     model: null,
-    mountCleanups: [],
-    mountHandlers: [],
-    needsMount: true,
+    effects: [],
     options: definition.options,
     parentRuntime,
-    pendingChangedProps: [],
-    pendingOldProps: {},
+    nextContextDependencies: null,
     portals: /* @__PURE__ */ new Map(),
-    propHandlers: [],
     props: {},
     refs: [],
     renderPassId: 0,
@@ -269,19 +262,20 @@ function createComponentRuntime(componentType, props, rootRecord, parentRuntime 
     viewKey: /* @__PURE__ */ Symbol("pepper-view")
   };
   syncComponentProps(runtime, props, true);
-  runtime.pendingChangedProps = [];
-  runtime.pendingOldProps = runtime.props;
   const setupApi = {
+    effect: (handler, getDependencies) => {
+      if (currentSetupRuntime !== runtime) throw new Error("Pepper effect() can only be registered while creating a component.");
+      if (typeof handler !== "function" || getDependencies != null && typeof getDependencies !== "function")
+        throw new TypeError("Pepper effect() expects a function and an optional dependency function.");
+      runtime.effects.push({ cleanup: null, dependencies: null, getDependencies: getDependencies || null, handler: (
+        /** @type {any} */
+        handler
+      ) });
+    },
     getProps: () => runtime.props,
     getContext: (key) => getContextValue(runtime, key),
     getError: () => runtime.capturedError === NO_ERROR ? null : runtime.capturedError,
     hasContext: (key) => hasContextValue(runtime, key),
-    onMount: (handler) => {
-      runtime.mountHandlers.push(handler);
-    },
-    onProps: (handler) => {
-      runtime.propHandlers.push(handler);
-    },
     resetError: () => {
       if (runtime.capturedError === NO_ERROR) return;
       runtime.capturedError = NO_ERROR;
@@ -308,21 +302,21 @@ function createComponentRuntime(componentType, props, rootRecord, parentRuntime 
   } finally {
     currentSetupRuntime = previousRuntime;
   }
-  if (rootRecord.pendingMounts) rootRecord.pendingMounts.push(runtime);
   return runtime;
 }
 function renderComponentRuntime(runtime, tags) {
-  if (runtime.currentRenderable && !runtime.dirty && !runtime.hasDirtyDescendant && !runtime.pendingChangedProps.length) return runtime.currentRenderable;
-  if (runtime.pendingChangedProps.length) {
-    for (const handler of runtime.propHandlers) handler(runtime.pendingChangedProps, runtime.pendingOldProps);
+  if (runtime.currentRenderable && !runtime.dirty) {
+    runtime.renderPassId++;
+    return runtime.currentRenderable;
   }
   if (!runtime.model) throw new Error("Pepper component runtime is missing its model.");
   const model = runtime.model;
   while (true) {
     runtime.renderPassId++;
-    runtime.idChildCounters.clear();
+    runtime.nextContextDependencies = runtime.rootRecord.pendingEffects ? /* @__PURE__ */ new Set() : null;
     try {
       runtime.currentRenderable = runWithOwnerRuntime(runtime, () => model.render.call(model, tags.html));
+      runtime.rootRecord.pendingEffects?.add(runtime);
       return runtime.currentRenderable;
     } catch (error) {
       if (isErrorBoundarySignal(error) && error.boundary === runtime && runtime.options.errorBoundary && runtime.capturedError === NO_ERROR) {
@@ -347,15 +341,19 @@ function finalizeComponentRuntime(runtime) {
     runtime.portals.delete(key);
   }
   runtime.dirty = false;
-  runtime.hasDirtyDescendant = false;
-  runtime.pendingChangedProps = [];
-  runtime.pendingOldProps = runtime.props;
 }
 function destroyComponentRuntime(runtime) {
   if (!runtime || runtime.destroyed) return;
   runtime.destroyed = true;
+  let cleanupError = NO_ERROR;
   for (const store of runtime.childStores.values()) {
-    for (const childRuntime of store.values()) destroyComponentRuntime(childRuntime);
+    for (const childRuntime of store.values()) {
+      try {
+        destroyComponentRuntime(childRuntime);
+      } catch (error) {
+        cleanupError = error;
+      }
+    }
     store.clear();
   }
   runtime.childStores.clear();
@@ -364,17 +362,61 @@ function destroyComponentRuntime(runtime) {
   runtime.currentTemplateInstance?.deactivate();
   runtime.currentTemplateInstance = null;
   runtime.currentNodes = null;
-  for (const cleanup of runtime.mountCleanups.splice(0)) cleanup();
+  runtime.rootRecord.pendingEffects?.delete(runtime);
+  syncContextDependencies(runtime, /* @__PURE__ */ new Set());
+  for (const effect of runtime.effects) {
+    const cleanup = effect.cleanup;
+    effect.cleanup = null;
+    if (!cleanup) continue;
+    try {
+      cleanup();
+    } catch (error) {
+      cleanupError = error;
+    }
+  }
   for (const runtimeRef of runtime.refs) runtimeRef.current = null;
+  if (cleanupError !== NO_ERROR) {
+    if (isErrorBoundarySignal(cleanupError)) throw cleanupError;
+    throwBoundaryError(runtime, cleanupError);
+  }
 }
-function flushMounts(rootRecord) {
-  const pendingMounts = rootRecord.pendingMounts.splice(0);
-  for (const runtime of pendingMounts) {
-    if (runtime.destroyed || !runtime.needsMount) continue;
-    runtime.needsMount = false;
-    for (const handler of runtime.mountHandlers) {
-      const cleanup = handler();
-      if (typeof cleanup === "function") runtime.mountCleanups.push(cleanup);
+function flushEffects(rootRecord) {
+  const pendingEffects = [...rootRecord.pendingEffects || []];
+  rootRecord.pendingEffects?.clear();
+  for (let index = 0; index < pendingEffects.length; index++) {
+    const runtime = pendingEffects[index];
+    if (runtime.destroyed) continue;
+    try {
+      const nextContextDependencies = runtime.nextContextDependencies || /* @__PURE__ */ new Set();
+      const changedEffects = [];
+      for (const effect of runtime.effects) {
+        const dependencies = effect.getDependencies ? effect.getDependencies() : [];
+        if (!Array.isArray(dependencies)) throw new TypeError("Pepper effect() dependencies must be an array.");
+        const previousDependencies = effect.dependencies || void 0;
+        if (!effect.getDependencies || !previousDependencies || dependencies.length !== previousDependencies.length || dependencies.some((value, dependencyIndex) => !Object.is(value, previousDependencies[dependencyIndex])))
+          changedEffects.push({ effect, dependencies, previousDependencies });
+      }
+      syncContextDependencies(runtime, nextContextDependencies);
+      runtime.nextContextDependencies = null;
+      let cleanupError = NO_ERROR;
+      for (const { effect, dependencies } of changedEffects) {
+        const cleanup = effect.cleanup;
+        effect.cleanup = null;
+        effect.dependencies = dependencies;
+        try {
+          cleanup?.();
+        } catch (error) {
+          cleanupError = error;
+        }
+      }
+      if (cleanupError !== NO_ERROR) throw cleanupError;
+      for (const { effect, dependencies, previousDependencies } of changedEffects) {
+        const cleanup = effect.handler(dependencies, previousDependencies);
+        if (typeof cleanup === "function") effect.cleanup = cleanup;
+      }
+    } catch (error) {
+      for (const pendingRuntime of pendingEffects.slice(index + 1)) rootRecord.pendingEffects?.add(pendingRuntime);
+      throwBoundaryError(runtime, error);
     }
   }
 }
@@ -641,7 +683,12 @@ function resolveComponentProps(bindings, values) {
     if (binding.name === "key") key = value;
     else props[binding.name] = value;
   }
-  return { props, key };
+  if (key != null && typeof key !== "string" && typeof key !== "number")
+    throw new TypeError("Pepper component keys must be strings or numbers.");
+  return { props, key: (
+    /** @type {string | number | undefined} */
+    key
+  ) };
 }
 
 // src/html-brands.js
@@ -673,7 +720,7 @@ export {
   renderComponentRuntime,
   finalizeComponentRuntime,
   destroyComponentRuntime,
-  flushMounts,
+  flushEffects,
   getCurrentOwnerRuntime,
   getOrCreateChildStore,
   compileComponentTemplate,
@@ -682,4 +729,4 @@ export {
   lowerComponentTemplate,
   resolveComponentProps
 };
-//# sourceMappingURL=chunk-JLDTAIGX.js.map
+//# sourceMappingURL=chunk-CD2IPWBU.js.map

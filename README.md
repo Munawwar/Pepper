@@ -32,7 +32,7 @@ function TodoRow({ getProps }: ComponentSetupApi<TodoRowProps>) {
   return html => html`<li>${getProps().label}</li>`
 }
 
-function TodoApp({ onMount, onProps }: ComponentSetupApi) {
+function TodoApp({ effect }: ComponentSetupApi) {
   const [getItems, setItems] = state<TodoItem[]>([
     { id: 1, label: 'Write docs' },
     { id: 2, label: 'Ship demo' },
@@ -50,15 +50,10 @@ function TodoApp({ onMount, onProps }: ComponentSetupApi) {
     inputRef.current.focus()
   }
 
-  onProps((changedProps, oldProps) => {
-    changedProps
-    oldProps
-  })
-
-  onMount(() => {
+  effect(() => {
     console.log('mounted')
     return () => console.log('unmounted')
-  })
+  }, () => [])
 
   return html => html`
     <input ref=${inputRef} placeholder="New todo" />
@@ -117,10 +112,15 @@ Pepper v0.3 does not publish a global/IIFE build; use a module script or bundle 
 
 Setup API:
 
+- `effect(handler, getDependencies?)` - runs after a successful DOM commit and may return a cleanup
+  - omit `getDependencies` to run after every component commit
+  - return `[]` from `getDependencies` to run only after the initial commit
+  - other dependency arrays are compared item-by-item with `Object.is`
+  - `handler(currentDependencies, previousDependencies)` receives `undefined` for the previous dependencies on its first run
+  - cleanup runs before a changed effect reruns and when the component is removed
+  - effects are registered during SSR but never run there
 - `getProps()`
 - `getError()` - returns the currently captured error for an error-boundary component, otherwise `null`
-- `onProps(handler)` - runs on later prop changes, not on initial mount
-- `onMount(handler)`
 - `resetError()` - clears the captured boundary error and retries rendering
 - `update(callback?)` - callback is called after a re-render
 
@@ -228,16 +228,14 @@ type AppContext = {
   cart: CartStore
 }
 
-function CartCount({ getContext, onMount, update }: import('@pepper-js/pepper').ComponentSetupApi<{}, AppContext>) {
-  const cart = getContext('cart')
-  const onCartChange = () => update()
-
-  onMount(() => {
+function CartCount({ effect, getContext, update }: import('@pepper-js/pepper').ComponentSetupApi<{}, AppContext>) {
+  effect(([cart]) => {
+    const onCartChange = () => update()
     cart.subscribe(['items'], onCartChange)
     return () => cart.unsubscribe(onCartChange)
-  })
+  }, () => [getContext('cart')])
 
-  return html => html`${cart.data.items.length}`
+  return html => html`${getContext('cart').data.items.length}`
 }
 
 function HeaderCart() {
@@ -265,6 +263,8 @@ Context API available inside components:
 - `getContext(key)`
 - `setContext(key, value)`
 - `hasContext(key)`
+
+Browser components subscribe to the root context keys they read while rendering or resolving effect dependencies. Passing changed context values to a later `render()` call rerenders only those consumers; keys are compared by presence and `Object.is`. Read context lazily in render functions and effect dependency functions instead of capturing it once during setup.
 
 ### Store API
 
@@ -307,7 +307,7 @@ Supported options:
 
 - `memo` defaults to `true`; props are deep-compared and equal props skip parent-driven rerenders. Set `false` to compare by reference with `Object.is`
 - `autoEffectEvent` defaults to `true`; `onX` function props are treated like effect events: their latest value is stored, but changing only them does not rerender the child¹. Set `false` to include them in memo checks
-- `propsComparator` defaults to `null`; when provided, return `true` or `[]` to skip rerender, otherwise return the added, changed, or removed prop names to rerender and pass the deduplicated list to `onProps`. This replaces the `memo` and `autoEffectEvent` comparisons for ordinary props, and the latest props are stored even when rendering is skipped. Pepper still adds `children` when captured lazy-child values change
+- `propsComparator` defaults to `null`; when provided, return `true` or `[]` to skip rerender, otherwise return the added, changed, or removed prop names to rerender. This replaces the `memo` and `autoEffectEvent` comparisons for ordinary props, and the latest props are stored even when rendering is skipped. Captured lazy-child value changes still rerender the component
 - `errorBoundary` defaults to `false`; set `true` to catch descendant setup/render errors
 
 Default structural comparison covers arrays, plain and null-prototype objects, dates, and regular expressions. Other object types are equal only by reference. Separately allocated cyclic values are treated as changed and rerender conservatively.

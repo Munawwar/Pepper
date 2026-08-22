@@ -422,29 +422,78 @@ describe('Pepper component runtime', () => {
 		assertEquals(container.textContent, '1', 'Later rerender should pick up the silent state change')
 	})
 
-	it('runs onProps only after mount when props later change', () => {
-		/** @type {Array<{ changedProps: string[], oldProps: Record<string, unknown> }>} */
+	it('runs effects after commit with current and previous dependencies', () => {
+		/** @type {Array<{ current: number, previous: number | undefined, text: string }>} */
 		const calls = []
 
-		/** @param {{ getProps(): Record<string, unknown>, onProps(handler: (changedProps: string[], oldProps: Record<string, unknown>) => void): void }} param0 */
-		function App({getProps, onProps}) {
-			onProps((changedProps, oldProps) => {
-				calls.push({changedProps: [...changedProps], oldProps: {...oldProps}})
-			})
+		/** @param {import('../index.js').ComponentSetupApi<{value: number}>} param0 */
+		function App({effect, getProps}) {
+			effect(([value], previous) => {
+				calls.push({current: value, previous: previous?.[0], text: container.textContent || ''})
+			}, () => [getProps().value])
 			/** @param {HtmlTag} html */
-			return html => html`<span>${String(/** @type {{ value?: number }} */ (getProps()).value ?? '')}</span>`
+			return html => html`<span>${getProps().value}</span>`
 		}
 
 		const container = document.createElement('div')
 		document.body.append(container)
 
 		render(App, container, {value: 1})
-		assertEquals(calls.length, 0, 'Initial mount should not call onProps')
+		assertEquals(calls.length, 1, 'The effect should run after the initial commit')
+		assertEquals(calls[0].previous, undefined, 'The initial effect should have no previous dependencies')
+		assertEquals(calls[0].text, '1', 'The initial effect should observe committed DOM')
 
 		render(App, container, {value: 2})
-		assertEquals(calls.length, 1, 'Later prop changes should call onProps once')
-		assertEquals(calls[0].changedProps.join(','), 'value', 'Changed prop names should be reported')
-		assertEquals(calls[0].oldProps.value, 1, 'oldProps should expose the previous prop values')
+		assertEquals(calls.length, 2, 'A dependency change should rerun the effect')
+		assertEquals(calls[1].current, 2, 'The effect should receive the current dependency')
+		assertEquals(calls[1].previous, 1, 'The effect should receive the previous dependency')
+		assertEquals(calls[1].text, '2', 'A rerun should observe the updated DOM')
+
+		render(App, container, {value: 2})
+		assertEquals(calls.length, 2, 'Equal dependencies should skip the effect')
+	})
+
+	it('runs an effect without dependencies after every component commit', async () => {
+		let runs = 0
+		/** @type {(() => void) | undefined} */
+		let rerender
+		/** @param {import('../index.js').ComponentSetupApi} param0 */
+		function App({effect, update}) {
+			effect(() => { runs++ })
+			rerender = update
+			/** @param {HtmlTag} html */
+			return html => html`<span>stable</span>`
+		}
+
+		const container = document.createElement('div')
+		document.body.append(container)
+		render(App, container)
+		rerender?.()
+		await flushRender()
+
+		assertEquals(runs, 2, 'The effect should run once for each committed render')
+	})
+
+	it('rejects effect registration after component setup', () => {
+		/** @type {(() => void) | undefined} */
+		let registerLateEffect
+		/** @param {import('../index.js').ComponentSetupApi} param0 */
+		function App({effect}) {
+			registerLateEffect = () => effect(() => undefined)
+			/** @param {HtmlTag} html */
+			return html => html`<span>mounted</span>`
+		}
+
+		const container = document.createElement('div')
+		document.body.append(container)
+		render(App, container)
+		let error
+		try {
+			registerLateEffect?.()
+		} catch (caught) {
+			error = caught
+		}
+		assertTrue(/only be registered while creating a component/.test(String(error)), 'Late effect registration should fail clearly')
 	})
 
 	it('does not rerender ancestors when a deep child updates local state', async () => {
@@ -587,21 +636,20 @@ describe('Pepper component runtime', () => {
 	it('reads stores from context and rerenders subscribed consumers', async () => {
 		/**
 		 * @param {{
+			 *   effect(handler: (dependencies: readonly unknown[]) => void | (() => void), getDependencies: () => readonly unknown[]): void,
 			 *   getContext(key: string): unknown,
-			 *   onMount(handler: () => void | (() => void)): void,
 			 *   update(callback?: () => void): void,
 		 * }} param0
 		 */
-		function CartCount({getContext, onMount, update}) {
-			/** @type {Store} */
-			const cart = /** @type {Store} */ (getContext('cart'))
-			const onCartChange = () => update()
-			onMount(() => {
+		function CartCount({effect, getContext, update}) {
+			effect(([value]) => {
+				const cart = /** @type {Store} */ (value)
+				const onCartChange = () => update()
 				cart.subscribe(['items'], onCartChange)
 				return () => cart.unsubscribe(onCartChange)
-			})
+			}, () => [getContext('cart')])
 			/** @param {HtmlTag} html */
-			return html => html`<span>${/** @type {unknown[]} */ (cart.data.items).length}</span>`
+			return html => html`<span>${/** @type {unknown[]} */ (/** @type {Store} */ (getContext('cart')).data.items).length}</span>`
 		}
 
 		/**
@@ -624,15 +672,153 @@ describe('Pepper component runtime', () => {
 		assertEquals(container.textContent, '3', 'Subscribed components should rerender when the context store changes')
 	})
 
+	it('moves effect subscriptions when a context dependency is replaced', async () => {
+		/**
+		 * @typedef {{
+		 *   emit(): void,
+		 *   subscribe(subscriber: () => void): () => boolean,
+		 *   value: string,
+		 * }} Source
+		 */
+		/** @param {string} value @returns {Source} */
+		const createSource = (value) => {
+			/** @type {Set<() => void>} */
+			const subscribers = new Set()
+			return {
+				emit() {
+					for (const subscriber of subscribers) subscriber()
+				},
+				subscribe(subscriber) {
+					subscribers.add(subscriber)
+					return () => subscribers.delete(subscriber)
+				},
+				value,
+			}
+		}
+		const first = createSource('first')
+		const second = createSource('second')
+		let renders = 0
+
+		/** @param {import('../index.js').ComponentSetupApi} param0 */
+		function Consumer({effect, getContext, update}) {
+			effect(([value]) => /** @type {Source} */ (value).subscribe(update), () => [getContext('source')])
+			/** @param {HtmlTag} html */
+			return html => {
+				renders++
+				return html`<span>${/** @type {Source} */ (getContext('source')).value}</span>`
+			}
+		}
+
+		const container = document.createElement('div')
+		document.body.append(container)
+		render(Consumer, container, {}, {context: {source: first}})
+		render(Consumer, container, {}, {context: {source: second}})
+		assertEquals(container.textContent, 'second', 'Replacing context should rerender with the new source')
+
+		first.emit()
+		await flushRender()
+		assertEquals(renders, 2, 'The old source should be unsubscribed')
+
+		second.emit()
+		await flushRender()
+		assertEquals(renders, 3, 'The replacement source should be subscribed')
+	})
+
+	it('rerenders only consumers of a changed root context value', () => {
+		let appRenders = 0
+		let consumerRenders = 0
+		let siblingRenders = 0
+
+		/** @param {{ getContext(key: string): unknown }} param0 */
+		function Consumer({getContext}) {
+			/** @param {HtmlTag} html */
+			return html => {
+				consumerRenders++
+				return html`<span>${String(getContext('theme'))}</span>`
+			}
+		}
+
+		function Sibling() {
+			/** @param {HtmlTag} html */
+			return html => {
+				siblingRenders++
+				return html`<i>stable</i>`
+			}
+		}
+
+		function App() {
+			/** @param {HtmlTag} html */
+			return html => {
+				appRenders++
+				return html`<main><${Consumer} /><${Sibling} /></main>`
+			}
+		}
+
+		const container = document.createElement('div')
+		document.body.append(container)
+		render(App, container, {}, {context: {theme: 'light'}})
+		render(App, container, {}, {context: {theme: 'dark'}})
+
+		assertEquals(container.textContent, 'darkstable', 'The context consumer should see the replacement value')
+		assertEquals(consumerRenders, 2, 'The context consumer should rerender')
+		assertEquals(appRenders, 1, 'A clean ancestor should not rerender')
+		assertEquals(siblingRenders, 1, 'A component that did not read the context should not rerender')
+	})
+
+	it('tracks context presence separately from an undefined value', () => {
+		let renders = 0
+		/** @param {{ hasContext(key: string): boolean }} param0 */
+		function Consumer({hasContext}) {
+			/** @param {HtmlTag} html */
+			return html => {
+				renders++
+				return html`<span>${hasContext('flag') ? 'present' : 'missing'}</span>`
+			}
+		}
+
+		const container = document.createElement('div')
+		document.body.append(container)
+		render(Consumer, container)
+		render(Consumer, container, {}, {context: {flag: undefined}})
+		assertEquals(container.textContent, 'present', 'Adding an undefined context key should invalidate hasContext consumers')
+		render(Consumer, container, {}, {context: {flag: undefined}})
+		assertEquals(renders, 2, 'An unchanged present context key should not rerender')
+		render(Consumer, container)
+		assertEquals(container.textContent, 'missing', 'Removing the context key should invalidate the consumer')
+		assertEquals(renders, 3, 'Only presence changes should trigger the two additional renders')
+	})
+
+	it('unsubscribes from root context keys that a component stops reading', () => {
+		let renders = 0
+		/** @param {{ getContext(key: string): unknown, getProps(): Record<string, unknown> }} param0 */
+		function Consumer({getContext, getProps}) {
+			/** @param {HtmlTag} html */
+			return html => {
+				renders++
+				return html`<span>${String(getContext(/** @type {{contextKey: string}} */ (getProps()).contextKey))}</span>`
+			}
+		}
+
+		const container = document.createElement('div')
+		document.body.append(container)
+		render(Consumer, container, {contextKey: 'first'}, {context: {first: 1, second: 2}})
+		render(Consumer, container, {contextKey: 'second'}, {context: {first: 1, second: 2}})
+		render(Consumer, container, {contextKey: 'second'}, {context: {first: 3, second: 2}})
+		assertEquals(renders, 2, 'Changing a context key that is no longer read should not rerender')
+		render(Consumer, container, {contextKey: 'second'}, {context: {first: 3, second: 4}})
+		assertEquals(renders, 3, 'Changing the currently read context key should rerender')
+		assertEquals(container.textContent, '4', 'The active context dependency should stay current')
+	})
+
 	it('renders portals into external targets and cleans them up when removed', async () => {
 		let portalUnmounts = 0
 		const outlet = document.createElement('div')
 
-		/** @param {{ onMount(handler: () => void | (() => void)): void }} param0 */
-		function PortalChild({onMount}) {
-			onMount(() => () => {
+		/** @param {{ effect(handler: () => void | (() => void), getDependencies: () => readonly unknown[]): void }} param0 */
+		function PortalChild({effect}) {
+			effect(() => () => {
 				portalUnmounts++
-			})
+			}, () => [])
 			/** @param {HtmlTag} html */
 			return html => html`<span>${'inside portal'}</span>`
 		}

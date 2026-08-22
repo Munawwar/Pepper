@@ -17,7 +17,7 @@ import {
 	createComponentRuntime,
 	destroyComponentRuntime,
 	finalizeComponentRuntime,
-	flushMounts,
+	flushEffects,
 	getCurrentOwnerRuntime,
 	getOrCreateChildStore,
 	isErrorBoundarySignal,
@@ -59,6 +59,7 @@ const {componentBoundaries, reconcileDom, replaceNodeOwnership} = /** @type {{
  *   Component: PepperComponent,
  *   container: Element,
  *   context: Map<string, unknown>,
+ *   contextConsumers: Map<string, Set<ComponentRuntime>>,
  *   dirtyRuntimes: Set<ComponentRuntime>,
  *   domTags: DomTags,
  *   flushScheduled: boolean,
@@ -66,7 +67,7 @@ const {componentBoundaries, reconcileDom, replaceNodeOwnership} = /** @type {{
  *   mounted: boolean,
  *   options: RenderOptions,
  *   pendingCallbacks: Array<() => void>,
- *   pendingMounts: ComponentRuntime[],
+ *   pendingEffects: Set<ComponentRuntime>,
  *   scheduleRender(): void,
  *   topRuntime: ComponentRuntime | null,
  * }} RootRecord
@@ -234,7 +235,7 @@ function createDomComponentValue(ownerRuntime, descriptor, values) {
 		} else {
 			syncComponentProps(runtime, props)
 			if (childValues) runtime.childrenValues = childValues
-			if (childrenChanged && !runtime.pendingChangedProps.includes('children')) runtime.pendingChangedProps.push('children')
+			if (childrenChanged) runtime.dirty = true
 		}
 
 		if (!runtime.domBoundary) {
@@ -245,9 +246,7 @@ function createDomComponentValue(ownerRuntime, descriptor, values) {
 		const nodes = (
 			ENABLE_COMPONENT_NODE_CACHE &&
 			runtime.currentNodes &&
-			!runtime.dirty &&
-			!runtime.hasDirtyDescendant &&
-			!runtime.pendingChangedProps.length
+			!runtime.dirty
 			)
 				? runtime.currentNodes
 				: realizeComponentRuntime(
@@ -287,12 +286,13 @@ function createRootRecord(Component, container, props, options) {
 		Component,
 		container,
 		context: createContextValues(options.context),
+		contextConsumers: new Map(),
 		dirtyRuntimes: new Set(),
 		domTags,
 		flushScheduled: false,
 		mounted: false,
 		pendingCallbacks: [],
-		pendingMounts: [],
+		pendingEffects: new Set(),
 		options,
 		identifierPrefix: options.identifierPrefix || '',
 		scheduleRender() {},
@@ -330,9 +330,9 @@ function resolveElementTarget(container, errorPrefix) {
  * @param {RootRecord} rootRecord
  * @returns {boolean}
  */
-function flushMountsWithBoundaries(rootRecord) {
+function flushEffectsWithBoundaries(rootRecord) {
 	try {
-		flushMounts(rootRecord)
+		flushEffects(rootRecord)
 		return true
 	} catch (error) {
 		if (!isErrorBoundarySignal(error)) throw error
@@ -391,7 +391,7 @@ function flushDirtyRuntimes(rootRecord) {
 			}
 		}
 	}
-	if (!flushMountsWithBoundaries(rootRecord)) flushDirtyRuntimes(rootRecord)
+	if (!flushEffectsWithBoundaries(rootRecord)) flushDirtyRuntimes(rootRecord)
 	for (const callback of rootRecord.pendingCallbacks.splice(0)) callback()
 }
 
@@ -406,8 +406,6 @@ function performRootRender(rootRecord, hydrateOnly = false) {
 		!hydrateOnly &&
 		rootRecord.mounted &&
 		!rootRecord.topRuntime.dirty &&
-		!rootRecord.topRuntime.hasDirtyDescendant &&
-		!rootRecord.topRuntime.pendingChangedProps.length &&
 		rootRecord.dirtyRuntimes.size
 	) {
 		flushDirtyRuntimes(rootRecord)
@@ -432,7 +430,7 @@ function performRootRender(rootRecord, hydrateOnly = false) {
 	}
 	if (replaceNodes) rootRecord.container.replaceChildren(...nodes)
 	rootRecord.mounted = true
-	if (!flushMountsWithBoundaries(rootRecord)) flushDirtyRuntimes(rootRecord)
+	if (!flushEffectsWithBoundaries(rootRecord)) flushDirtyRuntimes(rootRecord)
 	for (const callback of rootRecord.pendingCallbacks.splice(0)) callback()
 }
 
@@ -476,6 +474,17 @@ function mountRoot(Component, container, props = {}, options = {}, hydrateOnly =
 
 	rootRecord.options = options
 	rootRecord.identifierPrefix = options.identifierPrefix || ''
+	const previousContext = rootRecord.context
+	const nextContext = createContextValues(options.context)
+	const contextKeys = new Set([...previousContext.keys(), ...nextContext.keys()])
+	rootRecord.context = nextContext
+	for (const key of contextKeys) {
+		if (nextContext.has(key) === previousContext.has(key) && Object.is(nextContext.get(key), previousContext.get(key))) continue
+		for (const runtime of rootRecord.contextConsumers.get(key) || []) {
+			runtime.dirty = true
+			rootRecord.dirtyRuntimes.add(runtime)
+		}
+	}
 	syncComponentProps(/** @type {ComponentRuntime} */ (rootRecord.topRuntime), props)
 	performRootRender(rootRecord, hydrateOnly && !rootRecord.mounted)
 	if (!rootRecord.topRuntime?.model) throw new Error('Pepper root did not produce a component model.')

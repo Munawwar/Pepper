@@ -63,10 +63,21 @@ const FunctionComponent = component(function FunctionComponent() {
 	return tag => tag`<div>ok</div>`
 })
 
+const EffectComponent = component(function EffectComponent({effect, getProps}: ComponentSetupApi<{value: number}>) {
+	effect(([value], previous) => {
+		value.toFixed()
+		previous?.[0].toFixed()
+		return () => undefined
+	}, () => [getProps().value] as const)
+	effect(() => undefined)
+	return tag => tag`<div>${getProps().value}</div>`
+})
+
 const renderContainer = document.createElement('div')
 const modelRoot = render(ModelComponent, renderContainer)
 const hydratedModelRoot = hydrate(ModelComponent, renderContainer)
 const functionRoot = render(FunctionComponent, renderContainer)
+render(EffectComponent, renderContainer, {value: 1})
 const selectorContainer: RootContainer = '#app'
 const portalTarget: PortalTarget = renderContainer
 const rootOptions: RootOptions = {context: {ready: true}, debugKeys: true}

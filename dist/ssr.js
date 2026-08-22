@@ -22,7 +22,7 @@ import {
   stableId,
   state,
   throwBoundaryError
-} from "./chunks/chunk-JLDTAIGX.js";
+} from "./chunks/chunk-CD2IPWBU.js";
 
 // src/html-ssr.js
 var TEMPLATE_RESULT_SYMBOL = /* @__PURE__ */ Symbol("template-result");
@@ -351,12 +351,12 @@ function serializeTrustedTextValue(value) {
 var publicSsrTagsHolder = {
   context: /* @__PURE__ */ new Map(),
   identifierPrefix: "",
-  idChildCounters: /* @__PURE__ */ new Map(),
   idPath: [],
+  nextChildId: 0,
   pendingCallbacks: [],
-  pendingMounts: [],
   scheduleRender() {
   },
+  seenChildKeys: /* @__PURE__ */ new WeakMap(),
   ssrTags: null
 };
 function createSsrTags(rootRecord) {
@@ -365,7 +365,7 @@ function createSsrTags(rootRecord) {
       const compiled = compileComponentTemplate(strings);
       if (!compiled) return html(strings, ...values);
       const ownerRuntime = getCurrentOwnerRuntime();
-      const lowered = lowerComponentTemplate(compiled, values, (entry, loweredValues, index) => createSsrComponentValue(rootRecord, ownerRuntime, entry, loweredValues, index));
+      const lowered = lowerComponentTemplate(compiled, values, (entry, loweredValues) => createSsrComponentValue(rootRecord, ownerRuntime, entry, loweredValues));
       if (!lowered) return html(strings, ...values);
       return html(lowered.strings, ...lowered.values);
     },
@@ -373,15 +373,26 @@ function createSsrTags(rootRecord) {
     svg
   };
 }
-function createSsrComponentValue(rootRecord, ownerRuntime, descriptor, values, descriptorIndex) {
+function createSsrComponentValue(rootRecord, ownerRuntime, descriptor, values) {
   return function renderComponentValue() {
     const componentType = (
       /** @type {PepperComponent} */
       values[descriptor.componentIndex]
     );
     const { key, props } = resolveComponentProps(descriptor.bindings, values);
+    const owner = ownerRuntime || rootRecord;
+    if (key != null) {
+      const pass = ownerRuntime?.renderPassId || 0;
+      let seen = rootRecord.seenChildKeys.get(owner);
+      if (!seen || seen.pass !== pass)
+        rootRecord.seenChildKeys.set(owner, seen = { pass, sites: /* @__PURE__ */ new Map() });
+      let keys = seen.sites.get(descriptor);
+      if (!keys) seen.sites.set(descriptor, keys = /* @__PURE__ */ new Set());
+      if (keys.has(key)) throw new Error(`Duplicate key at component site: ${String(key)}`);
+      keys.add(key);
+    }
     const childrenSource = descriptor.childrenSource;
-    const idPath = createChildIdPath(ownerRuntime || rootRecord, descriptorIndex, key);
+    const idPath = createChildIdPath(owner);
     let runtime;
     if (childrenSource != null) {
       props.children = () => runWithOwnerRuntime(
@@ -433,12 +444,12 @@ function renderComponentToString(Component, props = {}, options = {}) {
   const rootRecord = {
     context: createContextValues(options.context),
     identifierPrefix: options.identifierPrefix || "",
-    idChildCounters: /* @__PURE__ */ new Map(),
     idPath: [],
+    nextChildId: 0,
     pendingCallbacks: [],
-    pendingMounts: [],
     scheduleRender() {
     },
+    seenChildKeys: /* @__PURE__ */ new WeakMap(),
     ssrTags: null
   };
   rootRecord.ssrTags = createSsrTags(rootRecord);
@@ -465,7 +476,8 @@ function renderComponentToString(Component, props = {}, options = {}) {
   return htmlString;
 }
 function renderToString2(value) {
-  publicSsrTagsHolder.idChildCounters.clear();
+  publicSsrTagsHolder.nextChildId = 0;
+  publicSsrTagsHolder.seenChildKeys = /* @__PURE__ */ new WeakMap();
   return renderToString(value);
 }
 function portal() {

@@ -13,7 +13,7 @@ import {
   createContextValues,
   destroyComponentRuntime,
   finalizeComponentRuntime,
-  flushMounts,
+  flushEffects,
   getCurrentOwnerRuntime,
   getOrCreateChildStore,
   getSourceTemplate,
@@ -27,7 +27,7 @@ import {
   state,
   syncComponentProps,
   throwBoundaryError
-} from "./chunks/chunk-JLDTAIGX.js";
+} from "./chunks/chunk-CD2IPWBU.js";
 
 // src/html.js
 var html_exports = {};
@@ -141,7 +141,7 @@ var INTERPOLATION_REGEXP = new RegExp(`${INTERPOLATION_MARKER}(\\d+)${INTERPOLAT
 var SPREAD_INTERPOLATION_REGEXP = new RegExp(`^\\.\\.\\.${INTERPOLATION_MARKER}(\\d+)${INTERPOLATION_MARKER}`);
 var SPREAD_PLACEHOLDER_ATTR_PREFIX = `x-${INTERPOLATION_MARKER}spread-`;
 var SPREAD_PLACEHOLDER_ATTR_REGEXP = new RegExp(`^${SPREAD_PLACEHOLDER_ATTR_PREFIX}(\\d+)${INTERPOLATION_MARKER}$`);
-var HTML_TAG_REGEXP = /<[^<>]*?\/?>/g;
+var START_TAG_REGEXP = /<[a-z][^\s/>]*(?:\s+[^\s/>"'=]+(?:\s*=\s*(?:"[^"]*"|'[^']*'|[^>\s]+))?)*\s*\/?\s*>/gi;
 var ATTRIBUTE_END_REGEXP = /[\s=/>]/;
 function parseInterpolationParts(parts, isTopLevel = false) {
   let mapped = parts.map((part, i) => i % 2 === 1 ? parseInt(part) : part);
@@ -195,7 +195,7 @@ var Template = class {
     else if (mode === "mathml") htmlString = `<math>${htmlString}</math>`;
     const { caseMappings, el } = this;
     let counter = 0;
-    htmlString = htmlString.replace(HTML_TAG_REGEXP, (tagMatch) => {
+    htmlString = htmlString.replace(START_TAG_REGEXP, (tagMatch) => {
       const parts = [];
       let lastIndex = 0;
       let inQuotes = false;
@@ -492,8 +492,7 @@ function updateEventHandler(element, eventName, state2, inputValue) {
   inputValue;
   else if (typeof inputValue === "string") eventListener = /** @type {EventListener} */
   new Function("event", inputValue);
-  else if (inputValue == null || inputValue === "" || inputValue === false) eventListener = null;
-  else throw new TypeError(`Event handler for ${eventName} must be a function or string`);
+  else eventListener = null;
   if (eventListener) {
     if (!state2.internalHandler) {
       state2.internalHandler = /** @type {EventListener} */
@@ -1161,6 +1160,14 @@ function realizeDomRenderable(renderable, runtime, liveNodes = null) {
   runtime.currentNodes = nodes;
   return nodes;
 }
+function realizeComponentRuntime(renderable, runtime, liveNodes = null) {
+  try {
+    return realizeDomRenderable(renderable, runtime, liveNodes);
+  } catch (error) {
+    if (isErrorBoundarySignal(error)) throw error;
+    throwBoundaryError(runtime, error);
+  }
+}
 function commitRuntimeNodes(runtime, previousNodes, nextNodes) {
   const boundary = runtime.domBoundary;
   if (!boundary?.parentNode || previousNodes.at(-1) !== boundary || nextNodes.at(-1) !== boundary) return;
@@ -1207,7 +1214,7 @@ function createDomTags() {
       if (!ownerRuntime) {
         throw new Error("Pepper component tags can only be used while rendering a Pepper component.");
       }
-      const lowered = lowerComponentTemplate(compiled, values, (entry, loweredValues, index) => createDomComponentValue(ownerRuntime, entry, loweredValues, index));
+      const lowered = lowerComponentTemplate(compiled, values, (entry, loweredValues) => createDomComponentValue(ownerRuntime, entry, loweredValues));
       if (!lowered) return html(strings, ...values);
       return html(lowered.strings, ...lowered.values);
     },
@@ -1216,7 +1223,7 @@ function createDomTags() {
   };
 }
 var domTags = createDomTags();
-function createDomComponentValue(ownerRuntime, descriptor, values, descriptorIndex) {
+function createDomComponentValue(ownerRuntime, descriptor, values) {
   return function renderComponentValue(instanceKey = /* @__PURE__ */ Symbol()) {
     const store = getOrCreateChildStore(ownerRuntime, descriptor);
     const componentType = (
@@ -1226,8 +1233,9 @@ function createDomComponentValue(ownerRuntime, descriptor, values, descriptorInd
     const { key, props } = resolveComponentProps(descriptor.bindings, values);
     const childrenSource = descriptor.childrenSource;
     const childKey = key ?? instanceKey;
-    const idPath = createChildIdPath(ownerRuntime, descriptorIndex, key);
     let runtime = store.get(childKey);
+    if (key != null && runtime?.lastSeen === ownerRuntime.renderPassId)
+      throw new Error(`Duplicate key at component site: ${String(key)}`);
     const childTemplate = childrenSource == null ? null : getSourceTemplate(childrenSource);
     const childValues = childTemplate ? childTemplate.indices.map((index) => values[index]) : null;
     const reusableRuntime = runtime?.componentType === componentType ? runtime : null;
@@ -1254,7 +1262,7 @@ function createDomComponentValue(ownerRuntime, descriptor, values, descriptorInd
     if (!runtime || runtime.componentType !== componentType) {
       if (runtime) destroyComponentRuntime(runtime);
       try {
-        runtime = createComponentRuntime(componentType, props, ownerRuntime.rootRecord, ownerRuntime, idPath);
+        runtime = createComponentRuntime(componentType, props, ownerRuntime.rootRecord, ownerRuntime, createChildIdPath(ownerRuntime));
       } catch (error) {
         throwBoundaryError(ownerRuntime, error, true);
       }
@@ -1263,14 +1271,14 @@ function createDomComponentValue(ownerRuntime, descriptor, values, descriptorInd
     } else {
       syncComponentProps(runtime, props);
       if (childValues) runtime.childrenValues = childValues;
-      if (childrenChanged && !runtime.pendingChangedProps.includes("children")) runtime.pendingChangedProps.push("children");
+      if (childrenChanged) runtime.dirty = true;
     }
     if (!runtime.domBoundary) {
       runtime.domBoundary = new Text();
       componentBoundaries2.add(runtime.domBoundary);
     }
     runtime.lastSeen = ownerRuntime.renderPassId;
-    const nodes = ENABLE_COMPONENT_NODE_CACHE && runtime.currentNodes && !runtime.dirty && !runtime.hasDirtyDescendant && !runtime.pendingChangedProps.length ? runtime.currentNodes : realizeDomRenderable(
+    const nodes = ENABLE_COMPONENT_NODE_CACHE && runtime.currentNodes && !runtime.dirty ? runtime.currentNodes : realizeComponentRuntime(
       renderComponentRuntime(
         runtime,
         /** @type {RuntimeTags} */
@@ -1304,12 +1312,13 @@ function createRootRecord(Component, container, props, options) {
     Component,
     container,
     context: createContextValues(options.context),
+    contextConsumers: /* @__PURE__ */ new Map(),
     dirtyRuntimes: /* @__PURE__ */ new Set(),
     domTags,
     flushScheduled: false,
     mounted: false,
     pendingCallbacks: [],
-    pendingMounts: [],
+    pendingEffects: /* @__PURE__ */ new Set(),
     options,
     identifierPrefix: options.identifierPrefix || "",
     scheduleRender() {
@@ -1331,6 +1340,17 @@ function resolveElementTarget(container, errorPrefix) {
   if (!(target instanceof Element)) throw new Error(`${errorPrefix} must be a DOM element or selector.`);
   return target;
 }
+function flushEffectsWithBoundaries(rootRecord) {
+  try {
+    flushEffects(rootRecord);
+    return true;
+  } catch (error) {
+    if (!isErrorBoundarySignal(error)) throw error;
+    captureBoundaryError(error.boundary, error.error);
+    rootRecord.dirtyRuntimes.add(error.boundary);
+    return false;
+  }
+}
 function flushDirtyRuntimes(rootRecord) {
   const dirtyRuntimes = [...rootRecord.dirtyRuntimes].filter((runtime) => runtime.dirty && !runtime.destroyed).filter((runtime) => {
     for (let parent = runtime.parentRuntime; parent; parent = parent.parentRuntime) {
@@ -1340,70 +1360,67 @@ function flushDirtyRuntimes(rootRecord) {
   });
   rootRecord.dirtyRuntimes.clear();
   for (const runtime of dirtyRuntimes) {
-    try {
-      const previousNodes = runtime.currentNodes || [];
-      const renderable = renderComponentRuntime(runtime, rootRecord.domTags);
-      const nodes = realizeDomRenderable(
-        renderable,
-        runtime,
-        runtime !== rootRecord.topRuntime && runtime.options.errorBoundary ? (
-          /** @type {ChildNode[] | null} */
-          previousNodes.filter((node) => node !== runtime.domBoundary)
-        ) : null
-      );
-      commitRuntimeNodes(runtime, previousNodes, nodes);
-      if (runtime === rootRecord.topRuntime && nodes.some((node) => node.parentNode !== rootRecord.container)) {
-        rootRecord.container.replaceChildren(...nodes);
-      }
-      finalizeComponentRuntime(runtime);
-    } catch (error) {
-      if (!isErrorBoundarySignal(error)) throw error;
-      captureBoundaryError(error.boundary, error.error);
-      let retryRuntime = error.boundary;
-      for (let parent = error.boundary.parentRuntime; parent; parent = parent.parentRuntime) {
-        if (parent !== runtime) continue;
-        retryRuntime = runtime;
+    let retryRuntime = runtime;
+    let retrying = false;
+    while (true) {
+      try {
+        const previousNodes = retryRuntime.currentNodes || [];
+        const renderable = renderComponentRuntime(retryRuntime, rootRecord.domTags);
+        const nodes = realizeComponentRuntime(
+          renderable,
+          retryRuntime,
+          retryRuntime !== rootRecord.topRuntime && (retrying || retryRuntime.options.errorBoundary) ? (
+            /** @type {ChildNode[] | null} */
+            previousNodes.filter((node) => node !== retryRuntime.domBoundary)
+          ) : null
+        );
+        commitRuntimeNodes(retryRuntime, previousNodes, nodes);
+        if (retryRuntime === rootRecord.topRuntime && (retrying || nodes.some((node) => node.parentNode !== rootRecord.container))) rootRecord.container.replaceChildren(...nodes);
+        finalizeComponentRuntime(retryRuntime);
         break;
+      } catch (error) {
+        if (!isErrorBoundarySignal(error)) throw error;
+        captureBoundaryError(error.boundary, error.error);
+        let nextRuntime = error.boundary;
+        for (let parent = error.boundary.parentRuntime; parent; parent = parent.parentRuntime) {
+          if (parent !== retryRuntime) continue;
+          nextRuntime = retryRuntime;
+          break;
+        }
+        retryRuntime = nextRuntime;
+        retrying = true;
       }
-      const previousNodes = retryRuntime.currentNodes || [];
-      const renderable = renderComponentRuntime(retryRuntime, rootRecord.domTags);
-      const nodes = retryRuntime === rootRecord.topRuntime ? realizeDomRenderable(renderable, retryRuntime) : realizeDomRenderable(
-        renderable,
-        retryRuntime,
-        /** @type {ChildNode[]} */
-        previousNodes.filter((node) => node !== retryRuntime.domBoundary)
-      );
-      commitRuntimeNodes(retryRuntime, previousNodes, nodes);
-      if (retryRuntime === rootRecord.topRuntime) rootRecord.container.replaceChildren(...nodes);
-      finalizeComponentRuntime(retryRuntime);
     }
   }
-  flushMounts(rootRecord);
+  if (!flushEffectsWithBoundaries(rootRecord)) flushDirtyRuntimes(rootRecord);
   for (const callback of rootRecord.pendingCallbacks.splice(0)) callback();
 }
 function performRootRender(rootRecord, hydrateOnly = false) {
   if (!rootRecord.topRuntime) throw new Error("Pepper root is missing its top runtime.");
-  if (!hydrateOnly && rootRecord.mounted && !rootRecord.topRuntime.dirty && !rootRecord.topRuntime.hasDirtyDescendant && !rootRecord.topRuntime.pendingChangedProps.length && rootRecord.dirtyRuntimes.size) {
+  if (!hydrateOnly && rootRecord.mounted && !rootRecord.topRuntime.dirty && rootRecord.dirtyRuntimes.size) {
     flushDirtyRuntimes(rootRecord);
     return;
   }
   rootRecord.dirtyRuntimes.clear();
-  const liveNodes = hydrateOnly ? Array.from(rootRecord.container.childNodes) : null;
-  let renderable = renderComponentRuntime(rootRecord.topRuntime, rootRecord.domTags);
+  let liveNodes = hydrateOnly ? Array.from(rootRecord.container.childNodes) : null;
+  let replaceNodes = !rootRecord.mounted && !hydrateOnly;
   let nodes;
-  try {
-    nodes = realizeDomRenderable(renderable, rootRecord.topRuntime, liveNodes && liveNodes.length ? liveNodes : null);
-  } catch (error) {
-    if (!isErrorBoundarySignal(error)) throw error;
-    captureBoundaryError(error.boundary, error.error);
-    renderable = renderComponentRuntime(rootRecord.topRuntime, rootRecord.domTags);
-    nodes = realizeDomRenderable(renderable, rootRecord.topRuntime);
-    rootRecord.container.replaceChildren(...nodes);
+  while (true) {
+    try {
+      const renderable = renderComponentRuntime(rootRecord.topRuntime, rootRecord.domTags);
+      nodes = realizeComponentRuntime(renderable, rootRecord.topRuntime, liveNodes?.length ? liveNodes : null);
+      finalizeComponentRuntime(rootRecord.topRuntime);
+      break;
+    } catch (error) {
+      if (!isErrorBoundarySignal(error)) throw error;
+      captureBoundaryError(error.boundary, error.error);
+      liveNodes = null;
+      replaceNodes = true;
+    }
   }
-  finalizeComponentRuntime(rootRecord.topRuntime);
-  if (!rootRecord.mounted && !hydrateOnly) rootRecord.container.replaceChildren(...nodes);
+  if (replaceNodes) rootRecord.container.replaceChildren(...nodes);
   rootRecord.mounted = true;
-  flushMounts(rootRecord);
+  if (!flushEffectsWithBoundaries(rootRecord)) flushDirtyRuntimes(rootRecord);
   for (const callback of rootRecord.pendingCallbacks.splice(0)) callback();
 }
 function scheduleRootRender(rootRecord) {
@@ -1431,6 +1448,17 @@ function mountRoot(Component, container, props = {}, options = {}, hydrateOnly =
   }
   rootRecord.options = options;
   rootRecord.identifierPrefix = options.identifierPrefix || "";
+  const previousContext = rootRecord.context;
+  const nextContext = createContextValues(options.context);
+  const contextKeys = /* @__PURE__ */ new Set([...previousContext.keys(), ...nextContext.keys()]);
+  rootRecord.context = nextContext;
+  for (const key of contextKeys) {
+    if (nextContext.has(key) === previousContext.has(key) && Object.is(nextContext.get(key), previousContext.get(key))) continue;
+    for (const runtime of rootRecord.contextConsumers.get(key) || []) {
+      runtime.dirty = true;
+      rootRecord.dirtyRuntimes.add(runtime);
+    }
+  }
   syncComponentProps(
     /** @type {ComponentRuntime} */
     rootRecord.topRuntime,

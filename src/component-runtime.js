@@ -20,19 +20,19 @@ let currentOwnerRuntime = null
  * @typedef {(strings: TemplateStringsArray, ...values: readonly unknown[]) => unknown} TemplateTag
  * @typedef {{ html: TemplateTag }} RuntimeTags
  * @typedef {Record<string, unknown> | Map<string, unknown>} ContextInput
+ * @typedef {<Dependencies extends readonly unknown[] = readonly []>(handler: (dependencies: Dependencies, previousDependencies: Dependencies | undefined) => void | (() => void), getDependencies?: () => Dependencies) => void} EffectRegistrar
  * @typedef {{
+ *   effect: EffectRegistrar,
  *   getProps(): Record<string, unknown>,
  *   getContext(key: string): unknown,
  *   getError(): unknown | null,
  *   hasContext(key: string): boolean,
- *   onMount(handler: () => void | (() => void)): void,
- *   onProps(handler: (changedProps: string[], oldProps: Record<string, unknown>) => void): void,
  *   resetError(): void,
  *   setContext(key: string, value: unknown): unknown,
  *   update(callback?: RenderCallback): void,
  * }} ComponentSetupApi
  * @typedef {{ render(html: TemplateTag): unknown, [key: string]: unknown }} ComponentModel
- * @typedef {(api: ComponentSetupApi) => ComponentModel | ((html: TemplateTag) => unknown)} PepperComponent
+ * @typedef {(api: any) => ComponentModel | ((html: TemplateTag) => unknown)} PepperComponent
  * @typedef {{
  *   autoEffectEvent: boolean,
  *   errorBoundary: boolean,
@@ -43,9 +43,10 @@ let currentOwnerRuntime = null
  * @typedef {{ factory: PepperComponent, options: ComponentOptions }} ComponentDefinition
  * @typedef {{
  *   context?: Map<string, unknown>,
+ *   contextConsumers?: Map<string, Set<ComponentRuntime>>,
  *   pendingCallbacks: RenderCallback[],
  *   dirtyRuntimes?: Set<ComponentRuntime>,
- *   pendingMounts: ComponentRuntime[],
+ *   pendingEffects?: Set<ComponentRuntime>,
  *   identifierPrefix?: string,
  *   scheduleRender(): void,
  *   domTags?: RuntimeTags,
@@ -57,6 +58,7 @@ let currentOwnerRuntime = null
  *   capturedError: unknown,
  *   componentType: PepperComponent,
  *   contextValues: Map<string, unknown> | null,
+ *   contextDependencies: Set<string>,
  *   currentNodes: Node[] | null,
  *   currentRenderable: unknown,
  *   currentTemplateInstance: { activate(): void, deactivate(): void } | null,
@@ -65,22 +67,22 @@ let currentOwnerRuntime = null
  *   debugKeyNodes?: Element[],
  *   destroyed: boolean,
  *   dirty: boolean,
- *   hasDirtyDescendant: boolean,
  *   idBase: string | null,
  *   nextChildId: number,
  *   idLocalCounter: number,
  *   idPath: string[],
  *   lastSeen: number,
  *   model: ComponentModel | null,
- *   mountCleanups: Array<() => void>,
- *   mountHandlers: Array<() => void | (() => void)>,
- *   needsMount: boolean,
+ *   effects: Array<{
+ *     cleanup: (() => void) | null,
+ *     dependencies: readonly unknown[] | null,
+ *     getDependencies: (() => readonly unknown[]) | null,
+ *     handler: (dependencies: readonly unknown[], previousDependencies: readonly unknown[] | undefined) => void | (() => void),
+ *   }>,
  *   options: ComponentOptions,
  *   parentRuntime: ComponentRuntime | null,
- *   pendingChangedProps: string[],
- *   pendingOldProps: Record<string, unknown>,
+ *   nextContextDependencies: Set<string> | null,
  *   portals: Map<unknown, { currentNodes: ChildNode[], currentTarget: Element | null, destroy(): void, lastSeen: number, viewKey: symbol }>,
- *   propHandlers: Array<(changedProps: string[], oldProps: Record<string, unknown>) => void>,
  *   props: Record<string, unknown>,
  *   refs: RuntimeRef[],
  *   renderPassId: number,
@@ -101,8 +103,7 @@ let currentOwnerRuntime = null
  * @param {(api: {
  *   getProps(): Props,
  *   getError(): unknown | null,
- *   onMount(handler: () => void | (() => void)): void,
- *   onProps(handler: (changedProps: string[], oldProps: Props) => void): void,
+ *   effect(handler: (dependencies: readonly unknown[], previousDependencies: readonly unknown[] | undefined) => void | (() => void), getDependencies?: () => readonly unknown[]): void,
  *   resetError(): void,
  *   update(callback?: (() => void)): void,
  * }) => { render(html: import('./html.js').html): unknown } | ((html: import('./html.js').html) => unknown)} factory
@@ -236,6 +237,7 @@ function getContextValue(runtime, key) {
 		if (current.contextValues?.has(key)) return current.contextValues.get(key)
 		current = current.parentRuntime
 	}
+	runtime.nextContextDependencies?.add(key)
 	return runtime.rootRecord.context?.get(key)
 }
 
@@ -251,7 +253,29 @@ function hasContextValue(runtime, key) {
 		if (current.contextValues?.has(key)) return true
 		current = current.parentRuntime
 	}
+	runtime.nextContextDependencies?.add(key)
 	return runtime.rootRecord.context?.has(key) === true
+}
+
+/**
+ * @param {ComponentRuntime} runtime
+ * @param {Set<string>} nextDependencies
+ * @returns {void}
+ */
+function syncContextDependencies(runtime, nextDependencies) {
+	const consumersByKey = runtime.rootRecord.contextConsumers
+	for (const key of runtime.contextDependencies) {
+		if (nextDependencies.has(key)) continue
+		const consumers = consumersByKey?.get(key)
+		consumers?.delete(runtime)
+		if (!consumers?.size) consumersByKey?.delete(key)
+	}
+	for (const key of nextDependencies) {
+		let consumers = consumersByKey?.get(key)
+		if (!consumers) consumersByKey?.set(key, (consumers = new Set()))
+		consumers?.add(runtime)
+	}
+	runtime.contextDependencies = nextDependencies
 }
 
 /**
@@ -339,31 +363,29 @@ function syncComponentProps(runtime, nextProps = {}, forceAll = false) {
 	const normalizedProps = {...nextProps}
 	const keys = new Set([...Object.keys(oldProps), ...Object.keys(normalizedProps)])
 
-	/** @type {string[]} */
-	let changedProps = forceAll ? [...keys] : []
+	let changed = forceAll
 	if (!forceAll && typeof runtime.options.propsComparator === 'function') {
 		const result = runtime.options.propsComparator(oldProps, normalizedProps)
 		if (result !== true && (!Array.isArray(result) || result.some(key => typeof key !== 'string')))
 			throw new TypeError('Pepper propsComparator must return true or an array of changed prop names.')
-		if (result !== true) changedProps = [...new Set(result)]
+		changed = result !== true && result.length > 0
 	} else if (!forceAll) {
 		for (const key of keys) {
 			if (!Object.hasOwn(normalizedProps, key)) {
-				changedProps.push(key)
+				changed = true
 				continue
 			}
 			if (shouldIgnorePropForMemo(runtime, key, normalizedProps[key])) continue
 			const previousValue = oldProps[key]
 			const nextValue = normalizedProps[key]
 			const isSame = runtime.options.memo === false ? Object.is(previousValue, nextValue) : isEqual(previousValue, nextValue)
-			if (!Object.hasOwn(oldProps, key) || !isSame) changedProps.push(key)
+			if (!Object.hasOwn(oldProps, key) || !isSame) changed = true
 		}
 	}
 
 	runtime.props = normalizedProps
-	runtime.pendingChangedProps = changedProps
-	runtime.pendingOldProps = oldProps
-	return changedProps.length > 0
+	if (changed) runtime.dirty = true
+	return changed
 }
 
 /**
@@ -382,28 +404,24 @@ function createComponentRuntime(componentType, props, rootRecord, parentRuntime 
 		childStores: new Map(),
 		capturedError: NO_ERROR,
 		componentType,
+		contextDependencies: new Set(),
 		contextValues: null,
 		currentNodes: null,
 		currentRenderable: null,
 		currentTemplateInstance: null,
 		destroyed: false,
 		dirty: true,
-		hasDirtyDescendant: false,
 		idBase: null,
 		nextChildId: 0,
 		idLocalCounter: 0,
 		idPath,
 		lastSeen: 0,
 		model: null,
-		mountCleanups: [],
-		mountHandlers: [],
-		needsMount: true,
+		effects: [],
 		options: definition.options,
 		parentRuntime,
-		pendingChangedProps: [],
-		pendingOldProps: {},
+		nextContextDependencies: null,
 		portals: new Map(),
-		propHandlers: [],
 		props: {},
 		refs: [],
 		renderPassId: 0,
@@ -411,21 +429,19 @@ function createComponentRuntime(componentType, props, rootRecord, parentRuntime 
 		viewKey: Symbol('pepper-view'),
 	}
 	syncComponentProps(runtime, props, true)
-	runtime.pendingChangedProps = []
-	runtime.pendingOldProps = runtime.props
 
 	/** @type {ComponentSetupApi} */
 	const setupApi = {
+		effect: (handler, getDependencies) => {
+			if (currentSetupRuntime !== runtime) throw new Error('Pepper effect() can only be registered while creating a component.')
+			if (typeof handler !== 'function' || (getDependencies != null && typeof getDependencies !== 'function'))
+				throw new TypeError('Pepper effect() expects a function and an optional dependency function.')
+			runtime.effects.push({cleanup: null, dependencies: null, getDependencies: getDependencies || null, handler: /** @type {any} */ (handler)})
+		},
 		getProps: () => runtime.props,
 		getContext: key => getContextValue(runtime, key),
 		getError: () => runtime.capturedError === NO_ERROR ? null : runtime.capturedError,
 		hasContext: key => hasContextValue(runtime, key),
-		onMount: handler => {
-			runtime.mountHandlers.push(handler)
-		},
-		onProps: handler => {
-			runtime.propHandlers.push(handler)
-		},
 		resetError: () => {
 			if (runtime.capturedError === NO_ERROR) return
 			runtime.capturedError = NO_ERROR
@@ -454,7 +470,6 @@ function createComponentRuntime(componentType, props, rootRecord, parentRuntime 
 		currentSetupRuntime = previousRuntime
 	}
 
-	if (rootRecord.pendingMounts) rootRecord.pendingMounts.push(runtime)
 	return runtime
 }
 
@@ -466,9 +481,7 @@ function createComponentRuntime(componentType, props, rootRecord, parentRuntime 
 function renderComponentRuntime(runtime, tags) {
 	if (
 		runtime.currentRenderable &&
-		!runtime.dirty &&
-		!runtime.hasDirtyDescendant &&
-		!runtime.pendingChangedProps.length
+		!runtime.dirty
 	) {
 		runtime.renderPassId++
 		return runtime.currentRenderable
@@ -476,17 +489,13 @@ function renderComponentRuntime(runtime, tags) {
 
 	if (!runtime.model) throw new Error('Pepper component runtime is missing its model.')
 	const model = runtime.model
-	try {
-		if (runtime.pendingChangedProps.length)
-			for (const handler of runtime.propHandlers) handler(runtime.pendingChangedProps, runtime.pendingOldProps)
-	} catch (error) {
-		throwBoundaryError(runtime, error)
-	}
 
 	while (true) {
 		runtime.renderPassId++
+		runtime.nextContextDependencies = runtime.rootRecord.pendingEffects ? new Set() : null
 		try {
 			runtime.currentRenderable = runWithOwnerRuntime(runtime, () => model.render.call(model, tags.html))
+			runtime.rootRecord.pendingEffects?.add(runtime)
 			return runtime.currentRenderable
 		} catch (error) {
 			if (isErrorBoundarySignal(error) && error.boundary === runtime && runtime.options.errorBoundary && runtime.capturedError === NO_ERROR) {
@@ -516,9 +525,6 @@ function finalizeComponentRuntime(runtime) {
 		runtime.portals.delete(key)
 	}
 	runtime.dirty = false
-	runtime.hasDirtyDescendant = false
-	runtime.pendingChangedProps = []
-	runtime.pendingOldProps = runtime.props
 }
 
 /**
@@ -546,7 +552,12 @@ function destroyComponentRuntime(runtime) {
 	runtime.currentTemplateInstance?.deactivate()
 	runtime.currentTemplateInstance = null
 	runtime.currentNodes = null
-	for (const cleanup of runtime.mountCleanups.splice(0)) {
+	runtime.rootRecord.pendingEffects?.delete(runtime)
+	syncContextDependencies(runtime, new Set())
+	for (const effect of runtime.effects) {
+		const cleanup = effect.cleanup
+		effect.cleanup = null
+		if (!cleanup) continue
 		try {
 			cleanup()
 		} catch (error) {
@@ -564,19 +575,44 @@ function destroyComponentRuntime(runtime) {
  * @param {RootRecord} rootRecord
  * @returns {void}
  */
-function flushMounts(rootRecord) {
-	const pendingMounts = rootRecord.pendingMounts.splice(0)
-	for (let index = 0; index < pendingMounts.length; index++) {
-		const runtime = pendingMounts[index]
-		if (runtime.destroyed || !runtime.needsMount) continue
-		runtime.needsMount = false
+function flushEffects(rootRecord) {
+	const pendingEffects = [...(rootRecord.pendingEffects || [])]
+	rootRecord.pendingEffects?.clear()
+	for (let index = 0; index < pendingEffects.length; index++) {
+		const runtime = pendingEffects[index]
+		if (runtime.destroyed) continue
 		try {
-			for (const handler of runtime.mountHandlers) {
-				const cleanup = handler()
-				if (typeof cleanup === 'function') runtime.mountCleanups.push(cleanup)
+			const nextContextDependencies = runtime.nextContextDependencies || new Set()
+			/** @type {Array<{ effect: ComponentRuntime['effects'][number], dependencies: readonly unknown[], previousDependencies: readonly unknown[] | undefined }>} */
+			const changedEffects = []
+			for (const effect of runtime.effects) {
+				const dependencies = effect.getDependencies ? effect.getDependencies() : []
+				if (!Array.isArray(dependencies)) throw new TypeError('Pepper effect() dependencies must be an array.')
+				const previousDependencies = effect.dependencies || undefined
+				if (!effect.getDependencies || !previousDependencies || dependencies.length !== previousDependencies.length || dependencies.some((value, dependencyIndex) => !Object.is(value, previousDependencies[dependencyIndex])))
+					changedEffects.push({effect, dependencies, previousDependencies})
+			}
+			syncContextDependencies(runtime, nextContextDependencies)
+			runtime.nextContextDependencies = null
+			/** @type {unknown} */
+			let cleanupError = NO_ERROR
+			for (const {effect, dependencies} of changedEffects) {
+				const cleanup = effect.cleanup
+				effect.cleanup = null
+				effect.dependencies = dependencies
+				try {
+					cleanup?.()
+				} catch (error) {
+					cleanupError = error
+				}
+			}
+			if (cleanupError !== NO_ERROR) throw cleanupError
+			for (const {effect, dependencies, previousDependencies} of changedEffects) {
+				const cleanup = effect.handler(dependencies, previousDependencies)
+				if (typeof cleanup === 'function') effect.cleanup = cleanup
 			}
 		} catch (error) {
-			rootRecord.pendingMounts.unshift(...pendingMounts.slice(index + 1))
+			for (const pendingRuntime of pendingEffects.slice(index + 1)) rootRecord.pendingEffects?.add(pendingRuntime)
 			throwBoundaryError(runtime, error)
 		}
 	}
@@ -606,7 +642,7 @@ export {
 	createComponentRuntime,
 	destroyComponentRuntime,
 	finalizeComponentRuntime,
-	flushMounts,
+	flushEffects,
 	getCurrentOwnerRuntime,
 	getOrCreateChildStore,
 	captureBoundaryError,
