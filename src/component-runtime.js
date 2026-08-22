@@ -44,7 +44,7 @@ let currentOwnerRuntime = null
  * @typedef {{
  *   context?: Map<string, unknown>,
  *   contextConsumers?: Map<string, Set<ComponentRuntime>>,
- *   pendingCallbacks: RenderCallback[],
+ *   pendingCallbacks?: RenderCallback[],
  *   dirtyRuntimes?: Set<ComponentRuntime>,
  *   pendingEffects?: Set<ComponentRuntime>,
  *   identifierPrefix?: string,

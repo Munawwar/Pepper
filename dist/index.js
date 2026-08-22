@@ -16,9 +16,8 @@ import {
   flushEffects,
   getCurrentOwnerRuntime,
   getOrCreateChildStore,
-  getSourceTemplate,
   isErrorBoundarySignal,
-  lowerComponentTemplate,
+  lowerComponentValues,
   ref,
   renderComponentRuntime,
   resolveComponentProps,
@@ -27,7 +26,7 @@ import {
   state,
   syncComponentProps,
   throwBoundaryError
-} from "./chunks/chunk-DDQYLZZ4.js";
+} from "./chunks/chunk-DR2BIXQ3.js";
 
 // src/html.js
 var html_exports = {};
@@ -593,7 +592,7 @@ function interpolateTextSite(site, value) {
   site.lastValue = unwrappedValue;
   if (!(unwrappedValue instanceof Node) && !Array.isArray(unwrappedValue) && typeof unwrappedValue !== "function") {
     if (site.insertedNodes) for (const node of site.insertedNodes) node.remove();
-    site.node.textContent = String(unwrappedValue ?? "");
+    site.node.textContent = typeof unwrappedValue === "boolean" ? "" : String(unwrappedValue ?? "");
     site.insertedNodes = void 0;
     for (const templateInstance of site.nestedTemplateInstances || []) templateInstance.deactivate();
     site.nestedTemplateInstances = void 0;
@@ -626,7 +625,7 @@ function interpolateTextSite(site, value) {
           /** @type {Element | Text} */
           item
         );
-        if (item != null && item !== "") return [new Text(String(item))];
+        if (item != null && item !== "" && typeof item !== "boolean") return [new Text(String(item))];
         return [];
       })
     );
@@ -1210,9 +1209,8 @@ function createDomTags() {
       if (!ownerRuntime) {
         throw new Error("Pepper component tags can only be used while rendering a Pepper component.");
       }
-      const lowered = lowerComponentTemplate(compiled, values, (entry, loweredValues) => createDomComponentValue(ownerRuntime, entry, loweredValues));
-      if (!lowered) return html(strings, ...values);
-      return html(lowered.strings, ...lowered.values);
+      const loweredValues = lowerComponentValues(compiled, values, (entry, sourceValues) => createDomComponentValue(ownerRuntime, entry, sourceValues));
+      return html(compiled.strings, ...loweredValues);
     },
     mathml,
     svg
@@ -1227,12 +1225,11 @@ function createDomComponentValue(ownerRuntime, descriptor, values) {
       values[descriptor.componentIndex]
     );
     const { key, props } = resolveComponentProps(descriptor.bindings, values);
-    const childrenSource = descriptor.childrenSource;
+    const childTemplate = descriptor.childrenTemplate;
     const childKey = key ?? instanceKey;
     let runtime = store.get(childKey);
     if (key != null && runtime?.lastSeen === ownerRuntime.renderPassId)
       throw new Error(`Duplicate key at component site: ${String(key)}`);
-    const childTemplate = childrenSource == null ? null : getSourceTemplate(childrenSource);
     const childValues = childTemplate ? childTemplate.indices.map((index) => values[index]) : null;
     const reusableRuntime = runtime?.componentType === componentType ? runtime : null;
     let childrenChanged = false;

@@ -13,16 +13,15 @@ import {
   finalizeComponentRuntime,
   getCurrentOwnerRuntime,
   isErrorBoundarySignal,
-  lowerComponentTemplate,
+  lowerComponentValues,
   ref,
   renderComponentRuntime,
-  renderSourceTemplate,
   resolveComponentProps,
   runWithOwnerRuntime,
   stableId,
   state,
   throwBoundaryError
-} from "./chunks/chunk-DDQYLZZ4.js";
+} from "./chunks/chunk-DR2BIXQ3.js";
 
 // src/html-ssr.js
 var TEMPLATE_RESULT_SYMBOL = /* @__PURE__ */ Symbol("template-result");
@@ -106,6 +105,7 @@ function handleTemplateTag(mode, strings, ...values) {
 function serializeChildValue(value) {
   value = unwrapForce(value);
   if (value == null || value === "") return "";
+  if (typeof value === "boolean") return "";
   if (Array.isArray(value)) return value.map(serializeChildValue).join("");
   if (typeof value === "function") return serializeChildValue(value());
   if (looksTrustedTextValue(value)) return serializeTrustedTextValue(value);
@@ -353,7 +353,6 @@ var publicSsrTagsHolder = {
   identifierPrefix: "",
   idPath: [],
   nextChildId: 0,
-  pendingCallbacks: [],
   scheduleRender() {
   },
   seenChildKeys: /* @__PURE__ */ new WeakMap(),
@@ -365,9 +364,8 @@ function createSsrTags(rootRecord) {
       const compiled = compileComponentTemplate(strings);
       if (!compiled) return html(strings, ...values);
       const ownerRuntime = getCurrentOwnerRuntime();
-      const lowered = lowerComponentTemplate(compiled, values, (entry, loweredValues) => createSsrComponentValue(rootRecord, ownerRuntime, entry, loweredValues));
-      if (!lowered) return html(strings, ...values);
-      return html(lowered.strings, ...lowered.values);
+      const loweredValues = lowerComponentValues(compiled, values, (entry, sourceValues) => createSsrComponentValue(rootRecord, ownerRuntime, entry, sourceValues));
+      return html(compiled.strings, ...loweredValues);
     },
     mathml,
     svg
@@ -391,18 +389,19 @@ function createSsrComponentValue(rootRecord, ownerRuntime, descriptor, values) {
       if (keys.has(key)) throw new Error(`Duplicate key at component site: ${String(key)}`);
       keys.add(key);
     }
-    const childrenSource = descriptor.childrenSource;
+    const childTemplate = descriptor.childrenTemplate;
     const idPath = createChildIdPath(owner);
     let runtime;
-    if (childrenSource != null) {
+    if (childTemplate) {
       props.children = () => runWithOwnerRuntime(
         /** @type {ComponentRuntime} */
         runtime,
-        () => renderSourceTemplate(
+        () => (
           /** @type {SsrTags} */
-          rootRecord.ssrTags.html,
-          childrenSource,
-          values
+          rootRecord.ssrTags.html(
+            childTemplate.strings,
+            ...childTemplate.indices.map((index) => values[index])
+          )
         )
       );
     }
@@ -412,27 +411,26 @@ function createSsrComponentValue(rootRecord, ownerRuntime, descriptor, values) {
       if (!ownerRuntime) throw error;
       throwBoundaryError(ownerRuntime, error, true);
     }
-    let renderable = renderComponentRuntime(
+    return unsafeHTML(renderRuntimeToString(
       runtime,
       /** @type {SsrTags} */
       rootRecord.ssrTags
-    );
-    let serialized;
-    try {
-      serialized = renderToString(renderable);
-    } catch (error) {
-      if (!isErrorBoundarySignal(error) || error.boundary !== runtime) throw error;
-      captureBoundaryError(runtime, error.error);
-      renderable = renderComponentRuntime(
-        runtime,
-        /** @type {SsrTags} */
-        rootRecord.ssrTags
-      );
-      serialized = renderToString(renderable);
-    }
-    finalizeComponentRuntime(runtime);
-    return unsafeHTML(serialized);
+    ));
   };
+}
+function renderRuntimeToString(runtime, tags) {
+  let renderable = renderComponentRuntime(runtime, tags);
+  let serialized;
+  try {
+    serialized = renderToString(renderable);
+  } catch (error) {
+    if (!isErrorBoundarySignal(error) || error.boundary !== runtime) throw error;
+    captureBoundaryError(runtime, error.error);
+    renderable = renderComponentRuntime(runtime, tags);
+    serialized = renderToString(renderable);
+  }
+  finalizeComponentRuntime(runtime);
+  return serialized;
 }
 function html2(strings, ...values) {
   return (
@@ -446,7 +444,6 @@ function renderComponentToString(Component, props = {}, options = {}) {
     identifierPrefix: options.identifierPrefix || "",
     idPath: [],
     nextChildId: 0,
-    pendingCallbacks: [],
     scheduleRender() {
     },
     seenChildKeys: /* @__PURE__ */ new WeakMap(),
@@ -454,26 +451,11 @@ function renderComponentToString(Component, props = {}, options = {}) {
   };
   rootRecord.ssrTags = createSsrTags(rootRecord);
   const runtime = createComponentRuntime(Component, props, rootRecord, null);
-  let renderable = renderComponentRuntime(
+  return renderRuntimeToString(
     runtime,
     /** @type {SsrTags} */
     rootRecord.ssrTags
   );
-  let htmlString;
-  try {
-    htmlString = renderToString(renderable);
-  } catch (error) {
-    if (!isErrorBoundarySignal(error) || error.boundary !== runtime) throw error;
-    captureBoundaryError(runtime, error.error);
-    renderable = renderComponentRuntime(
-      runtime,
-      /** @type {SsrTags} */
-      rootRecord.ssrTags
-    );
-    htmlString = renderToString(renderable);
-  }
-  finalizeComponentRuntime(runtime);
-  return htmlString;
 }
 function renderToString2(value) {
   publicSsrTagsHolder.nextChildId = 0;

@@ -127,8 +127,8 @@ test('supports CDATA blocks during SSR', () => {
 
 test('serializes primitive text values', () => {
 	assert.equal(renderToString(0), '0')
-	assert.equal(renderToString(false), 'false')
-	assert.equal(renderToString(true), 'true')
+	assert.equal(renderToString(false), '')
+	assert.equal(renderToString(true), '')
 	assert.equal(renderToString(''), '')
 	assert.equal(renderToString(null), '')
 	assert.equal(renderToString(undefined), '')
@@ -172,7 +172,7 @@ test('renders nested svg and mathml arrays inside html', () => {
 test('renders deeply nested arrays with nullish items and templates', () => {
 	const output = renderToString([null, ['a', [false, 0, html`<span>x</span>`]], undefined])
 
-	assert.equal(output, 'afalse0<span>x</span>')
+	assert.equal(output, 'a0<span>x</span>')
 })
 
 test('trims top-level whitespace while preserving inner-element whitespace', () => {

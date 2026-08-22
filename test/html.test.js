@@ -96,6 +96,11 @@ describe('html template function', () => {
 		testContent(p)
 	})
 
+	it('omits boolean child values while rendering zero', () => {
+		const [div] = /** @type {[HTMLDivElement]} */ (html`<div>${true}${false}${0}</div>`(Symbol()))
+		assertEquals(div.textContent, '0', 'Boolean children should be empty while zero remains visible')
+	})
+
 	it('supports unsafeHTML in text interpolation and reconciles inserted nodes', () => {
 		const key = Symbol()
 		let markup = '<span>one</span><!--note--><span>two</span>'

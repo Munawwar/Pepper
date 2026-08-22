@@ -31,8 +31,7 @@ import {
 } from './component-runtime.js'
 import {
 	compileComponentTemplate,
-	getSourceTemplate,
-	lowerComponentTemplate,
+	lowerComponentValues,
 	resolveComponentProps,
 } from './component-syntax.js'
 
@@ -174,11 +173,10 @@ function createDomTags() {
 			if (!ownerRuntime) {
 				throw new Error('Pepper component tags can only be used while rendering a Pepper component.')
 			}
-			const lowered = lowerComponentTemplate(compiled, values, (entry, loweredValues) => (
-				createDomComponentValue(ownerRuntime, entry, loweredValues)
+			const loweredValues = lowerComponentValues(compiled, values, (entry, sourceValues) => (
+				createDomComponentValue(ownerRuntime, entry, sourceValues)
 			))
-			if (!lowered) return baseHtml(strings, ...values)
-			return baseHtml(lowered.strings, ...lowered.values)
+			return baseHtml(compiled.strings, ...loweredValues)
 		},
 		mathml: baseMathml,
 		svg: baseSvg,
@@ -197,13 +195,12 @@ function createDomComponentValue(ownerRuntime, descriptor, values) {
 		const store = getOrCreateChildStore(ownerRuntime, descriptor)
 		const componentType = /** @type {PepperComponent} */ (values[descriptor.componentIndex])
 		const { key, props } = resolveComponentProps(descriptor.bindings, values)
-		const childrenSource = descriptor.childrenSource
+		const childTemplate = descriptor.childrenTemplate
 		const childKey = key ?? instanceKey
 		/** @type {ComponentRuntime | undefined} */
 		let runtime = store.get(childKey)
 		if (key != null && runtime?.lastSeen === ownerRuntime.renderPassId)
 			throw new Error(`Duplicate key at component site: ${String(key)}`)
-		const childTemplate = childrenSource == null ? null : getSourceTemplate(childrenSource)
 		const childValues = childTemplate ? childTemplate.indices.map(index => values[index]) : null
 		const reusableRuntime = runtime?.componentType === componentType ? runtime : null
 		let childrenChanged = false

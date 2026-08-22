@@ -971,7 +971,7 @@ function interpolateTextSite(/** @type {InterpolationSite} */ site, /** @type {I
 	if (!(unwrappedValue instanceof Node) && !Array.isArray(unwrappedValue) && typeof unwrappedValue !== 'function') {
 		// Simple text content, just set textContent
 		if (site.insertedNodes) for (const node of site.insertedNodes) /** @type {ChildNode} */ (node).remove()
-		site.node.textContent = String(unwrappedValue ?? '')
+		site.node.textContent = typeof unwrappedValue === 'boolean' ? '' : String(unwrappedValue ?? '')
 		site.insertedNodes = undefined
 		for (const templateInstance of site.nestedTemplateInstances || []) templateInstance.deactivate()
 		site.nestedTemplateInstances = undefined
@@ -1011,7 +1011,7 @@ function interpolateTextSite(/** @type {InterpolationSite} */ site, /** @type {I
 					if (isTrustedTextValue(item)) item = resolveTrustedTextValue(item)
 					if (Array.isArray(item)) return item.flat(Infinity)
 					if (item instanceof Node) return /** @type {Element | Text} */ (item)
-					if (item != null && item !== '') return [new Text(String(item))]
+					if (item != null && item !== '' && typeof item !== 'boolean') return [new Text(String(item))]
 					return []
 				})
 		)

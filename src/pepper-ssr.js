@@ -28,8 +28,7 @@ import {
 } from './component-runtime.js'
 import {
 	compileComponentTemplate,
-	lowerComponentTemplate,
-	renderSourceTemplate,
+	lowerComponentValues,
 	resolveComponentProps,
 } from './component-syntax.js'
 
@@ -48,7 +47,6 @@ import {
  *   identifierPrefix?: string,
  *   idPath: string[],
  *   nextChildId: number,
- *   pendingCallbacks: Array<() => void>,
  *   scheduleRender(): void,
  *   seenChildKeys: WeakMap<object, { pass: number, sites: Map<unknown, Set<string | number>> }>,
  *   ssrTags: SsrTags | null,
@@ -61,7 +59,6 @@ const publicSsrTagsHolder = {
 	identifierPrefix: '',
 	idPath: [],
 	nextChildId: 0,
-	pendingCallbacks: [],
 	scheduleRender() {},
 	seenChildKeys: new WeakMap(),
 	ssrTags: null,
@@ -77,11 +74,10 @@ function createSsrTags(rootRecord) {
 			const compiled = compileComponentTemplate(strings)
 			if (!compiled) return baseHtml(strings, ...values)
 			const ownerRuntime = getCurrentOwnerRuntime()
-			const lowered = lowerComponentTemplate(compiled, values, (entry, loweredValues) => (
-				createSsrComponentValue(rootRecord, ownerRuntime, entry, loweredValues)
+			const loweredValues = lowerComponentValues(compiled, values, (entry, sourceValues) => (
+				createSsrComponentValue(rootRecord, ownerRuntime, entry, sourceValues)
 			))
-			if (!lowered) return baseHtml(strings, ...values)
-			return baseHtml(lowered.strings, ...lowered.values)
+			return baseHtml(compiled.strings, ...loweredValues)
 		},
 		mathml: baseMathml,
 		svg: baseSvg,
@@ -110,14 +106,17 @@ function createSsrComponentValue(rootRecord, ownerRuntime, descriptor, values) {
 			if (keys.has(key)) throw new Error(`Duplicate key at component site: ${String(key)}`)
 			keys.add(key)
 		}
-		const childrenSource = descriptor.childrenSource
+		const childTemplate = descriptor.childrenTemplate
 		const idPath = createChildIdPath(owner)
 		/** @type {ComponentRuntime | undefined} */
 		let runtime
-		if (childrenSource != null) {
+		if (childTemplate) {
 			props.children = () => runWithOwnerRuntime(
 				/** @type {ComponentRuntime} */ (runtime),
-				() => renderSourceTemplate(/** @type {SsrTags} */ (rootRecord.ssrTags).html, childrenSource, values),
+				() => /** @type {SsrTags} */ (rootRecord.ssrTags).html(
+					childTemplate.strings,
+					...childTemplate.indices.map(index => values[index]),
+				),
 			)
 		}
 		try {
@@ -126,19 +125,28 @@ function createSsrComponentValue(rootRecord, ownerRuntime, descriptor, values) {
 			if (!ownerRuntime) throw error
 			throwBoundaryError(ownerRuntime, error, true)
 		}
-		let renderable = renderComponentRuntime(runtime, /** @type {SsrTags} */ (rootRecord.ssrTags))
-		let serialized
-		try {
-			serialized = baseRenderToString(renderable)
-		} catch (error) {
-			if (!isErrorBoundarySignal(error) || error.boundary !== runtime) throw error
-			captureBoundaryError(runtime, error.error)
-			renderable = renderComponentRuntime(runtime, /** @type {SsrTags} */ (rootRecord.ssrTags))
-			serialized = baseRenderToString(renderable)
-		}
-		finalizeComponentRuntime(runtime)
-		return unsafeHTML(serialized)
+		return unsafeHTML(renderRuntimeToString(runtime, /** @type {SsrTags} */ (rootRecord.ssrTags)))
 	}
+}
+
+/**
+ * @param {ComponentRuntime} runtime
+ * @param {SsrTags} tags
+ * @returns {string}
+ */
+function renderRuntimeToString(runtime, tags) {
+	let renderable = renderComponentRuntime(runtime, tags)
+	let serialized
+	try {
+		serialized = baseRenderToString(renderable)
+	} catch (error) {
+		if (!isErrorBoundarySignal(error) || error.boundary !== runtime) throw error
+		captureBoundaryError(runtime, error.error)
+		renderable = renderComponentRuntime(runtime, tags)
+		serialized = baseRenderToString(renderable)
+	}
+	finalizeComponentRuntime(runtime)
+	return serialized
 }
 
 /**
@@ -167,25 +175,13 @@ function renderComponentToString(Component, props = {}, options = {}) {
 		identifierPrefix: options.identifierPrefix || '',
 		idPath: [],
 		nextChildId: 0,
-		pendingCallbacks: [],
 		scheduleRender() {},
 		seenChildKeys: new WeakMap(),
 		ssrTags: null,
 	}
 	rootRecord.ssrTags = createSsrTags(rootRecord)
 	const runtime = createComponentRuntime(Component, props, rootRecord, null)
-	let renderable = renderComponentRuntime(runtime, /** @type {SsrTags} */ (rootRecord.ssrTags))
-	let htmlString
-	try {
-		htmlString = baseRenderToString(renderable)
-	} catch (error) {
-		if (!isErrorBoundarySignal(error) || error.boundary !== runtime) throw error
-		captureBoundaryError(runtime, error.error)
-		renderable = renderComponentRuntime(runtime, /** @type {SsrTags} */ (rootRecord.ssrTags))
-		htmlString = baseRenderToString(renderable)
-	}
-	finalizeComponentRuntime(runtime)
-	return htmlString
+	return renderRuntimeToString(runtime, /** @type {SsrTags} */ (rootRecord.ssrTags))
 }
 
 /**

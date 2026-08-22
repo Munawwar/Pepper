@@ -1,6 +1,5 @@
 const INTERPOLATION_MARKER = '⧙⧘'
 const componentTemplateCache = new WeakMap()
-const sourceTemplateCache = new Map()
 
 /**
  * @typedef {string[] & { raw: string[] }} MutableTemplateStringsArray
@@ -10,10 +9,9 @@ const sourceTemplateCache = new Map()
  *   type: 'component',
  *   componentIndex: number,
  *   bindings: ComponentBinding[],
- *   childrenSource: string | null,
+ *   childrenTemplate: SourceTemplate | null,
  * }} ComponentDescriptor
  * @typedef {{ strings: TemplateStringsArray, values: ComponentTemplateEntry[] }} CompiledComponentTemplate
- * @typedef {{ strings: TemplateStringsArray, values: unknown[] }} LoweredComponentTemplate
  * @typedef {{ indices: number[], strings: TemplateStringsArray }} SourceTemplate
  */
 
@@ -227,19 +225,35 @@ function compileComponentTemplate(strings) {
 		const open = readDynamicComponentOpen(source, cursor)
 		if (open) {
 			foundComponentSyntax = true
-			let childrenSource = null
+			let childrenTemplate = null
 			let end = open.end
 			if (!open.selfClosing) {
 				const close = findMatchingComponentClose(source, open.end)
 				if (!close) throw new Error('Pepper component tag is missing a matching closing tag.')
-				childrenSource = source.slice(open.end, close.start)
+				const childrenSource = source.slice(open.end, close.start)
+				/** @type {MutableTemplateStringsArray} */
+				const childStrings = Object.assign([''], {raw: ['']})
+				const indices = []
+				let childCursor = 0
+				while (childCursor < childrenSource.length) {
+					const marker = readInterpolationMarker(childrenSource, childCursor)
+					if (marker) {
+						indices.push(marker.index)
+						childStrings.push('')
+						childStrings.raw.push('')
+						childCursor = marker.end
+						continue
+					}
+					childStrings[childStrings.length - 1] += childrenSource[childCursor++]
+				}
+				childrenTemplate = {indices, strings: /** @type {TemplateStringsArray} */ (childStrings)}
 				end = close.end
 			}
 			outputValues.push({
 				type: 'component',
 				componentIndex: open.componentIndex,
 				bindings: parseComponentBindings(open.attributesSource),
-				childrenSource,
+				childrenTemplate,
 			})
 			outputStrings.push('')
 			outputStrings.raw.push('')
@@ -265,59 +279,17 @@ function compileComponentTemplate(strings) {
 }
 
 /**
- * @param {string} source
- * @returns {SourceTemplate}
- */
-function getSourceTemplate(source) {
-	let compiled = sourceTemplateCache.get(source)
-	if (compiled) return compiled
-	/** @type {MutableTemplateStringsArray} */
-	const strings = Object.assign([''], {raw: ['']})
-	const indices = []
-	let cursor = 0
-	while (cursor < source.length) {
-		const marker = readInterpolationMarker(source, cursor)
-		if (marker) {
-			indices.push(marker.index)
-			strings.push('')
-			strings.raw.push('')
-			cursor = marker.end
-			continue
-		}
-		strings[strings.length - 1] += source[cursor++]
-	}
-	compiled = {indices, strings: /** @type {TemplateStringsArray} */ (strings)}
-	sourceTemplateCache.set(source, compiled)
-	return compiled
-}
-
-/**
- * @param {(strings: TemplateStringsArray, ...values: unknown[]) => unknown} tag
- * @param {string} source
+ * @param {CompiledComponentTemplate} compiled
  * @param {unknown[]} values
- * @returns {unknown}
+ * @param {(descriptor: ComponentDescriptor, values: unknown[]) => unknown} createComponentValue
+ * @returns {unknown[]}
  */
-function renderSourceTemplate(tag, source, values) {
-	const compiled = getSourceTemplate(source)
-	return tag(compiled.strings, ...compiled.indices.map(index => values[index]))
-}
-
-/**
- * @param {CompiledComponentTemplate | null} compiled
- * @param {unknown[]} values
- * @param {(descriptor: ComponentDescriptor, values: unknown[], index: number) => unknown} createComponentValue
- * @returns {LoweredComponentTemplate | null}
- */
-function lowerComponentTemplate(compiled, values, createComponentValue) {
-	if (!compiled) return null
-	return {
-		strings: compiled.strings,
-		values: compiled.values.map((entry, index) => (
-			entry.type === 'value'
-				? values[entry.index]
-				: createComponentValue(entry, values, index)
-		)),
-	}
+function lowerComponentValues(compiled, values, createComponentValue) {
+	return compiled.values.map(entry => (
+		entry.type === 'value'
+			? values[entry.index]
+			: createComponentValue(entry, values)
+	))
 }
 
 /**
@@ -355,8 +327,6 @@ function resolveComponentProps(bindings, values) {
 
 export {
 	compileComponentTemplate,
-	getSourceTemplate,
-	lowerComponentTemplate,
-	renderSourceTemplate,
+	lowerComponentValues,
 	resolveComponentProps,
 }

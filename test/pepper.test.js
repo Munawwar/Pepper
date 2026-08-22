@@ -666,7 +666,7 @@ describe('Pepper component runtime', () => {
 		await flushRender()
 
 		assertEquals(childRenders, 4, 'A parent rerender should reuse every unchanged falsy result')
-		assertEquals(container.textContent, '1false0', 'Falsy renderables should preserve their normal DOM output')
+		assertEquals(container.textContent, '10', 'Boolean children should be empty while zero remains visible')
 	})
 
 	it('reads stores from context and rerenders subscribed consumers', async () => {

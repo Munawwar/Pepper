@@ -426,7 +426,6 @@ function getOrCreateChildStore(ownerRuntime, descriptor) {
 // src/component-syntax.js
 var INTERPOLATION_MARKER = "\u29D9\u29D8";
 var componentTemplateCache = /* @__PURE__ */ new WeakMap();
-var sourceTemplateCache = /* @__PURE__ */ new Map();
 function readInterpolationMarker(source, start) {
   if (!source.startsWith(INTERPOLATION_MARKER, start)) return null;
   const valueStart = start + INTERPOLATION_MARKER.length;
@@ -589,19 +588,37 @@ function compileComponentTemplate(strings) {
     const open = readDynamicComponentOpen(source, cursor);
     if (open) {
       foundComponentSyntax = true;
-      let childrenSource = null;
+      let childrenTemplate = null;
       let end = open.end;
       if (!open.selfClosing) {
         const close = findMatchingComponentClose(source, open.end);
         if (!close) throw new Error("Pepper component tag is missing a matching closing tag.");
-        childrenSource = source.slice(open.end, close.start);
+        const childrenSource = source.slice(open.end, close.start);
+        const childStrings = Object.assign([""], { raw: [""] });
+        const indices = [];
+        let childCursor = 0;
+        while (childCursor < childrenSource.length) {
+          const marker2 = readInterpolationMarker(childrenSource, childCursor);
+          if (marker2) {
+            indices.push(marker2.index);
+            childStrings.push("");
+            childStrings.raw.push("");
+            childCursor = marker2.end;
+            continue;
+          }
+          childStrings[childStrings.length - 1] += childrenSource[childCursor++];
+        }
+        childrenTemplate = { indices, strings: (
+          /** @type {TemplateStringsArray} */
+          childStrings
+        ) };
         end = close.end;
       }
       outputValues.push({
         type: "component",
         componentIndex: open.componentIndex,
         bindings: parseComponentBindings(open.attributesSource),
-        childrenSource
+        childrenTemplate
       });
       outputStrings.push("");
       outputStrings.raw.push("");
@@ -625,40 +642,8 @@ function compileComponentTemplate(strings) {
   componentTemplateCache.set(strings, compiled);
   return compiled;
 }
-function getSourceTemplate(source) {
-  let compiled = sourceTemplateCache.get(source);
-  if (compiled) return compiled;
-  const strings = Object.assign([""], { raw: [""] });
-  const indices = [];
-  let cursor = 0;
-  while (cursor < source.length) {
-    const marker = readInterpolationMarker(source, cursor);
-    if (marker) {
-      indices.push(marker.index);
-      strings.push("");
-      strings.raw.push("");
-      cursor = marker.end;
-      continue;
-    }
-    strings[strings.length - 1] += source[cursor++];
-  }
-  compiled = { indices, strings: (
-    /** @type {TemplateStringsArray} */
-    strings
-  ) };
-  sourceTemplateCache.set(source, compiled);
-  return compiled;
-}
-function renderSourceTemplate(tag, source, values) {
-  const compiled = getSourceTemplate(source);
-  return tag(compiled.strings, ...compiled.indices.map((index) => values[index]));
-}
-function lowerComponentTemplate(compiled, values, createComponentValue) {
-  if (!compiled) return null;
-  return {
-    strings: compiled.strings,
-    values: compiled.values.map((entry, index) => entry.type === "value" ? values[entry.index] : createComponentValue(entry, values, index))
-  };
+function lowerComponentValues(compiled, values, createComponentValue) {
+  return compiled.values.map((entry) => entry.type === "value" ? values[entry.index] : createComponentValue(entry, values));
 }
 function resolveComponentProps(bindings, values) {
   const props = {};
@@ -718,9 +703,7 @@ export {
   getCurrentOwnerRuntime,
   getOrCreateChildStore,
   compileComponentTemplate,
-  getSourceTemplate,
-  renderSourceTemplate,
-  lowerComponentTemplate,
+  lowerComponentValues,
   resolveComponentProps
 };
-//# sourceMappingURL=chunk-DDQYLZZ4.js.map
+//# sourceMappingURL=chunk-DR2BIXQ3.js.map

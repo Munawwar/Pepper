@@ -213,6 +213,7 @@ function serializeChildValue(value) {
 	value = unwrapForce(value)
 
 	if (value == null || value === '') return ''
+	if (typeof value === 'boolean') return ''
 	if (Array.isArray(value)) return value.map(serializeChildValue).join('')
 	if (typeof value === 'function') return serializeChildValue(value())
 	if (looksTrustedTextValue(value)) return serializeTrustedTextValue(value)
