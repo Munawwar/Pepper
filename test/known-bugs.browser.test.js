@@ -1081,15 +1081,18 @@ describe('Known Pepper browser regressions', () => {
 		assertEquals(cleanups, 2)
 	})
 
-	it.skip('[DOM] cleans up children inserted from a DocumentFragment', () => {
+	it('[DOM] cleans up children inserted from a DocumentFragment', () => {
 		const key = {}
 		const fragment = document.createDocumentFragment()
-		fragment.appendChild(document.createElement('span')).textContent = 'old'
+		const span = document.createElement('span')
+		fragment.append(span, 'old')
 		let value = fragment
 		const renderValue = () => domHtml`<div>${value}</div>`(key)
 		const [element] = renderValue()
 		document.body.append(element)
 
+		assertEquals(element.firstElementChild, span, 'Move the actual fragment children into the template')
+		assertEquals(fragment.childNodes.length, 0, 'Insertion consumes the fragment')
 		value = 'replacement'
 		renderValue()
 

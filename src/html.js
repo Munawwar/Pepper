@@ -1000,14 +1000,15 @@ function interpolateTextSite(/** @type {InterpolationSite} */ site, /** @type {I
 					}
 					if (isTrustedTextValue(item)) item = resolveTrustedTextValue(item)
 					// Handle arrays (already processed template results)
-					// Flatten one level because html functions return arrays
-					if (Array.isArray(item)) return item.flat(1)
+					// Flatten children before normalizing each node or primitive.
+					if (Array.isArray(item)) return item.flat(Infinity)
 					// Handle single nodes or primitive values
 					return [item]
 				})
 				.flatMap(item => {
 					if (isTrustedTextValue(item)) item = resolveTrustedTextValue(item)
-					if (Array.isArray(item)) return item.flat(Infinity)
+					if (Array.isArray(item)) return item
+					if (item?.nodeType === Node.DOCUMENT_FRAGMENT_NODE) return Array.from(item.childNodes)
 					if (item instanceof Node) return /** @type {Element | Text} */ (item)
 					if (item != null && item !== '' && typeof item !== 'boolean') return [new Text(String(item))]
 					return []

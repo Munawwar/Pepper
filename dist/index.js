@@ -616,11 +616,12 @@ function interpolateTextSite(site, value) {
           }
         }
         if (isTrustedTextValue(item)) item = resolveTrustedTextValue(item);
-        if (Array.isArray(item)) return item.flat(1);
+        if (Array.isArray(item)) return item.flat(Infinity);
         return [item];
       }).flatMap((item) => {
         if (isTrustedTextValue(item)) item = resolveTrustedTextValue(item);
-        if (Array.isArray(item)) return item.flat(Infinity);
+        if (Array.isArray(item)) return item;
+        if (item?.nodeType === Node.DOCUMENT_FRAGMENT_NODE) return Array.from(item.childNodes);
         if (item instanceof Node) return (
           /** @type {Element | Text} */
           item
