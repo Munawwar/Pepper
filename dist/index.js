@@ -105,22 +105,6 @@ function resolveTrustedTextValue(value) {
   }
   return Array.from(template.content.childNodes);
 }
-function handleForceValue(site, value) {
-  const isWrapped = isForceWrapped(value);
-  if (site.requiresUnwrapping) {
-    if (!isWrapped) {
-      throw new Error(
-        "Value must be wrapped with force() for this interpolation site. Once force() is used at a site, it must always be used."
-      );
-    }
-    return unwrapForce(value);
-  } else if (isWrapped) {
-    site.skipEqualityCheck = true;
-    site.requiresUnwrapping = true;
-    return unwrapForce(value);
-  }
-  return value;
-}
 function handleTemplateTag(mode, strings, ...values) {
   const template = parseTemplate(strings, mode);
   const renderFn = function(key = /* @__PURE__ */ Symbol(), liveNodes) {
@@ -147,9 +131,6 @@ function parseInterpolationParts(parts, isTopLevel = false) {
   let mapped = parts.map((part, i) => i % 2 === 1 ? parseInt(part) : part);
   if (isTopLevel) mapped = mapped.filter((part) => typeof part === "number" || part.trim() !== "");
   return mapped;
-}
-function joinPartsWithValues(parts, values) {
-  return parts.map((part) => typeof part === "number" ? String(values[part] ?? "") : part).join("");
 }
 function splitTextNodesWithInterpolation(fragment) {
   const walker = document.createTreeWalker(fragment, NodeFilter.SHOW_TEXT, null);
@@ -521,14 +502,6 @@ function updateEventHandler(element, eventName, state2, inputValue) {
   return false;
 }
 var ATTRIBUTE_SITE_ERROR = "Nested templates and DOM elements are not allowed in attributes. Use text content interpolation instead.";
-function resolveSiteValue(site, values) {
-  const parts = site.parts || [];
-  if (parts.length === 3 && parts[0] === "" && parts[2] === "" && typeof parts[1] === "number")
-    return handleForceValue(site, values[parts[1]]);
-  const processedValues = [...values];
-  for (const part of parts) if (typeof part === "number") processedValues[part] = handleForceValue(site, values[part]);
-  return joinPartsWithValues(parts, processedValues);
-}
 function reconcileDom(parentNode, oldNodes, newNodes, endBoundaryNode = null) {
   let oldStart = 0;
   let oldEnd = oldNodes.length;
@@ -598,9 +571,10 @@ function reconcileDom(parentNode, oldNodes, newNodes, endBoundaryNode = null) {
   return newNodes;
 }
 function interpolateTextSite(site, value) {
-  let unwrappedValue = handleForceValue(site, value);
+  const forced = isForceWrapped(value);
+  let unwrappedValue = unwrapForce(value);
   if (isTrustedTextValue(unwrappedValue)) unwrappedValue = resolveTrustedTextValue(unwrappedValue);
-  if (!site.skipEqualityCheck && site.lastValue === unwrappedValue) return;
+  if (!forced && site.lastValue === unwrappedValue) return;
   if (!(unwrappedValue instanceof Node) && !Array.isArray(unwrappedValue) && typeof unwrappedValue !== "function") {
     site.lastValue = unwrappedValue;
     if (site.insertedNodes) for (const node of site.insertedNodes) node.remove();
@@ -643,7 +617,7 @@ function interpolateTextSite(site, value) {
       })
     );
     site.lastValue = unwrappedValue;
-    if (!site.skipEqualityCheck && site.insertedNodes && arrayEquals(site.insertedNodes, nodes)) return;
+    if (!forced && site.insertedNodes && arrayEquals(site.insertedNodes, nodes)) return;
     const parentNode = site.node.parentNode;
     if (!parentNode) {
       site.node.textContent = "";
@@ -962,11 +936,11 @@ var TemplateInstance = class {
     for (const site of sites) {
       if (site.type === "text") {
         flushElementBindings();
-        const value = values[
+        const value2 = values[
           /** @type {number} */
           site.interpolationIndex
         ];
-        interpolateTextSite(site, value);
+        interpolateTextSite(site, value2);
         continue;
       }
       const element = (
@@ -979,132 +953,82 @@ var TemplateInstance = class {
         currentElementState = site.elementState || {};
         currentBindings = /* @__PURE__ */ new Map();
       }
-      const parts = site.parts || [];
+      if (!currentBindings) continue;
       if (site.type === "spread") {
-        const spreadValue = handleForceValue(site, values[
+        const input = values[
           /** @type {number} */
           site.interpolationIndex
-        ]);
+        ];
+        const spreadValue = unwrapForce(input);
+        const forced2 = isForceWrapped(input);
         if (spreadValue == null || spreadValue === false || typeof spreadValue !== "object" || Array.isArray(spreadValue) || spreadValue instanceof Node)
           continue;
-        for (const [name, inputValue2] of Object.entries(spreadValue)) {
+        for (const [name2, inputValue] of Object.entries(spreadValue)) {
           let type = "attribute";
-          let attributeName = name;
-          let bindingValue = inputValue2;
-          if (name.startsWith("?")) {
+          let attributeName = name2;
+          let bindingValue = inputValue;
+          if (name2.startsWith("?")) {
             type = "boolean-attribute";
-            attributeName = name.slice(1);
-            bindingValue = !!inputValue2;
-          } else if (name === "ref") {
+            attributeName = name2.slice(1);
+            bindingValue = !!inputValue;
+          } else if (name2 === "ref") {
             type = "property";
             attributeName = "__pepperRef";
-          } else if (name.startsWith(".")) {
+          } else if (name2.startsWith(".")) {
             type = "property";
-            attributeName = name.slice(1);
-          } else if (name.startsWith("@")) {
+            attributeName = name2.slice(1);
+          } else if (name2.startsWith("@")) {
             type = "event";
-            attributeName = name.slice(1);
-            if (inputValue2 == null || inputValue2 === false) {
-              if (!currentBindings) continue;
+            attributeName = name2.slice(1);
+            if (inputValue == null || inputValue === false) {
               currentBindings.delete(getBindingKey(type, attributeName));
               continue;
             }
           } else {
-            if (isTrustedTextValue(inputValue2)) throw new Error(TRUSTED_TEXT_CONTEXT_ERROR);
-            if (inputValue2 instanceof Node || Array.isArray(inputValue2) || typeof inputValue2 === "function")
+            if (isTrustedTextValue(inputValue)) throw new Error(TRUSTED_TEXT_CONTEXT_ERROR);
+            if (inputValue instanceof Node || Array.isArray(inputValue) || typeof inputValue === "function")
               throw new Error(ATTRIBUTE_SITE_ERROR);
-            bindingValue = String(inputValue2 ?? "");
+            bindingValue = String(inputValue ?? "");
           }
-          if (!currentBindings) continue;
           currentBindings.set(getBindingKey(type, attributeName), {
             type,
             attributeName,
             value: bindingValue,
-            force: site.skipEqualityCheck
+            force: forced2
           });
         }
         continue;
       }
-      if (site.type === "attribute") {
-        const attributeValues = parts.filter((part) => typeof part === "number").map((part) => {
-          const value = values[part];
-          if (isForceWrapped(value)) {
-            if (!site.requiresUnwrapping) {
-              site.skipEqualityCheck = true;
-              site.requiresUnwrapping = true;
-            }
-            return unwrapForce(value);
-          } else if (site.requiresUnwrapping) {
-            throw new Error(
-              "Value must be wrapped with force() for this interpolation site. Once force() is used at a site, it must always be used."
-            );
-          }
-          return value;
-        });
-        if (attributeValues.some(isTrustedTextValue)) throw new Error(TRUSTED_TEXT_CONTEXT_ERROR);
-        if (attributeValues.some((value) => value instanceof Node || Array.isArray(value) || typeof value === "function"))
-          throw new Error(ATTRIBUTE_SITE_ERROR);
-        const processedValues = [...values];
-        let attributeValueIndex = 0;
-        for (const part of parts)
-          if (typeof part === "number") processedValues[part] = attributeValues[attributeValueIndex++];
-        if (!currentBindings) continue;
-        currentBindings.set(getBindingKey(site.type, site.attributeName || ""), {
-          type: site.type,
-          attributeName: site.attributeName || "",
-          value: joinPartsWithValues(parts, processedValues),
-          force: site.skipEqualityCheck
-        });
-        continue;
-      }
-      if (site.type === "boolean-attribute") {
-        let setAttribute = false;
-        if (parts.length === 3 && parts[0] === "" && parts[2] === "" && typeof parts[1] === "number") {
-          const value = handleForceValue(site, values[parts[1]]);
-          if (isTrustedTextValue(value)) throw new Error(TRUSTED_TEXT_CONTEXT_ERROR);
-          setAttribute = !!value;
-        } else if (parts.length === 1 && typeof parts[0] === "string") setAttribute = parts[0].trim() !== "";
-        else setAttribute = true;
-        if (!currentBindings) continue;
-        currentBindings.set(getBindingKey(site.type, site.attributeName || ""), {
-          type: site.type,
-          attributeName: site.attributeName || "",
-          value: setAttribute,
-          force: site.skipEqualityCheck
-        });
-        continue;
-      }
-      if (site.type === "property") {
-        const value = resolveSiteValue(site, values);
-        if (isTrustedTextValue(value)) throw new Error(TRUSTED_TEXT_CONTEXT_ERROR);
-        if (site.attributeName === "__pepperRef" && (!value || typeof value !== "object" || !("current" in value))) {
-          throw new TypeError("Pepper ref bindings expect ref() objects, e.g. ref=${buttonRef}.");
+      const parts = site.parts || [];
+      let forced = site.skipEqualityCheck;
+      const singleHole = parts.length === 3 && parts[0] === "" && typeof parts[1] === "number" && parts[2] === "";
+      let value = "";
+      for (const part of parts) {
+        let entry = typeof part === "number" ? values[part] : part;
+        if (isForceWrapped(entry)) {
+          forced = true;
+          entry = unwrapForce(entry);
         }
-        if (!currentBindings) continue;
-        currentBindings.set(getBindingKey(site.type, site.attributeName || ""), {
-          type: site.type,
-          attributeName: site.attributeName || "",
-          value,
-          force: site.skipEqualityCheck
-        });
+        if (isTrustedTextValue(entry)) throw new Error(TRUSTED_TEXT_CONTEXT_ERROR);
+        if (site.type === "attribute" && (entry instanceof Node || Array.isArray(entry) || typeof entry === "function"))
+          throw new Error(ATTRIBUTE_SITE_ERROR);
+        if (singleHole && site.type !== "attribute") {
+          if (typeof part === "number") value = entry;
+        } else if (site.type !== "boolean-attribute") value += String(entry ?? "");
+      }
+      const name = site.attributeName || "";
+      const key = getBindingKey(site.type, name);
+      if (site.type === "boolean-attribute") {
+        if (singleHole) value = !!value;
+        else value = parts.length === 1 && typeof parts[0] === "string" ? !!parts[0].trim() : true;
+      }
+      if (site.type === "property" && name === "__pepperRef" && (!value || typeof value !== "object" || !("current" in value)))
+        throw new TypeError("Pepper ref bindings expect ref() objects, e.g. ref=${buttonRef}.");
+      if (site.type === "event" && (value == null || value === false)) {
+        currentBindings.delete(key);
         continue;
       }
-      const eventName = site.attributeName || "";
-      const inputValue = resolveSiteValue(site, values);
-      if (isTrustedTextValue(inputValue)) throw new Error(TRUSTED_TEXT_CONTEXT_ERROR);
-      const bindingKey = getBindingKey(site.type, eventName);
-      if (inputValue == null || inputValue === false) {
-        if (!currentBindings) continue;
-        currentBindings.delete(bindingKey);
-        continue;
-      }
-      if (!currentBindings) continue;
-      currentBindings.set(bindingKey, {
-        type: site.type,
-        attributeName: eventName,
-        value: inputValue,
-        force: site.skipEqualityCheck
-      });
+      currentBindings.set(key, { type: site.type, attributeName: name, value, force: forced });
     }
     flushElementBindings();
   }

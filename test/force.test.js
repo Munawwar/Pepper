@@ -18,25 +18,6 @@ function assertTrue(condition, message = '') {
 	if (!condition) throw new Error(`Assertion failed: ${message}\nExpected truthy value`)
 }
 
-/**
- * @param {() => void} fn
- * @param {RegExp} expectedErrorPattern
- * @param {string} message
- */
-function assertThrows(fn, expectedErrorPattern, message = '') {
-	try {
-		fn()
-		throw new Error(`Assertion failed: ${message}\nExpected function to throw`)
-	} catch (error) {
-		const errorMessage = error instanceof Error ? error.message : String(error)
-		if (expectedErrorPattern && !expectedErrorPattern.test(errorMessage)) {
-			throw new Error(
-				`Assertion failed: ${message}\nExpected error matching: ${expectedErrorPattern}\nActual error: ${errorMessage}`,
-			)
-		}
-	}
-}
-
 let setCount = 0
 
 class ForceElement extends HTMLElement {
@@ -123,21 +104,27 @@ describe('force functionality', () => {
 		assertEquals(setCount, 2)
 	})
 
-	it('should throw error when force usage becomes inconsistent', () => {
-		let useForce = true
-		const value = 'test'
-
-		const template = () => html`<force-element .testProp=${useForce ? force(value) : value}></force-element>`
-
-		// First render with force
+	it('forces only the current update, including bindings with multiple interpolations', () => {
 		const key = Symbol()
-		template()(key)
-
-		// Second render without force should throw
-		useForce = false
-		assertThrows(() => {
-			template()(key)
-		}, /Value must be wrapped with force/)
+		const handler = () => {}
+		setCount = 0
+		/** @param {boolean} forced */
+		const render = forced => html`<force-element
+			.testProp=${forced ? force(handler) : handler}
+			title="${forced ? force('first') : 'first'} ${'last'}"
+		></force-element>`(key)
+		const [element] = /** @type {[ForceElement]} */ (render(false))
+		render(true)
+		assertEquals(setCount, 2)
+		assertEquals(element.testProp, handler)
+		assertEquals(element.title, 'first last')
+		element.title = 'external edit'
+		render(false)
+		assertEquals(setCount, 2)
+		assertEquals(element.title, 'external edit')
+		render(true)
+		assertEquals(setCount, 3)
+		assertEquals(element.title, 'first last')
 	})
 
 	it('should work with text interpolation', async () => {

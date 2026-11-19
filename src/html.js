@@ -152,34 +152,6 @@ function resolveTrustedTextValue(value) {
 }
 
 /**
- * Handle force detection and unwrapping for a site
- * @param {InterpolationSite} site
- * @param {InterpolationValue} value
- * @returns {InterpolationValue} The unwrapped value
- */
-function handleForceValue(site, value) {
-	const isWrapped = isForceWrapped(value)
-
-	if (site.requiresUnwrapping) {
-		// This site has been marked as requiring unwrapping
-		if (!isWrapped) {
-			throw new Error(
-				'Value must be wrapped with force() for this interpolation site. Once force() is used at a site, it must always be used.',
-			)
-		}
-		return unwrapForce(value)
-	} else if (isWrapped) {
-		// First time seeing force at this site
-		site.skipEqualityCheck = true
-		site.requiresUnwrapping = true
-		return unwrapForce(value)
-	}
-
-	// Normal value, no unwrapping needed
-	return value
-}
-
-/**
  * @param {TemplateMode} mode
  * @param {TemplateStringsArray} strings
  * @param {...InterpolationValue} values
@@ -239,18 +211,6 @@ function parseInterpolationParts(parts, isTopLevel = false) {
 	if (isTopLevel) mapped = mapped.filter(part => typeof part === 'number' || part.trim() !== '')
 
 	return mapped
-}
-
-/**
- * Join parts with value substitution
- * @param {(string|number)[]} parts
- * @param {InterpolationValue[]} values
- * @returns {string}
- */
-function joinPartsWithValues(parts, values) {
-	return parts
-		.map((/** @type {string|number} */ part) => (typeof part === 'number' ? String(values[part] ?? '') : part))
-		.join('')
 }
 
 /**
@@ -838,21 +798,6 @@ const ATTRIBUTE_SITE_ERROR =
 	'Nested templates and DOM elements are not allowed in attributes. Use text content interpolation instead.'
 
 /**
- * @param {InterpolationSite} site
- * @param {InterpolationValue[]} values
- */
-function resolveSiteValue(site, values) {
-	const parts = site.parts || []
-
-	if (parts.length === 3 && parts[0] === '' && parts[2] === '' && typeof parts[1] === 'number')
-		return handleForceValue(site, values[parts[1]])
-
-	const processedValues = [...values]
-	for (const part of parts) if (typeof part === 'number') processedValues[part] = handleForceValue(site, values[part])
-	return joinPartsWithValues(parts, processedValues)
-}
-
-/**
  * Reconcile one ordered list of DOM nodes to another using strict node
  * identity. This keeps the cheap fast paths for matching heads/tails and
  * adjacent head/tail swaps, and otherwise replaces the unmatched middle.
@@ -968,10 +913,11 @@ function reconcileDom(parentNode, oldNodes, newNodes, endBoundaryNode = null) {
 
 function interpolateTextSite(/** @type {InterpolationSite} */ site, /** @type {InterpolationValue} */ value) {
 	// Handle force detection and unwrapping
-	let unwrappedValue = handleForceValue(site, value)
+	const forced = isForceWrapped(value)
+	let unwrappedValue = unwrapForce(value)
 	if (isTrustedTextValue(unwrappedValue)) unwrappedValue = resolveTrustedTextValue(unwrappedValue)
 
-	if (!site.skipEqualityCheck && site.lastValue === unwrappedValue) return // No change
+	if (!forced && site.lastValue === unwrappedValue) return // No change
 
 	// Handle simple text cases first (most common case)
 	if (!(unwrappedValue instanceof Node) && !Array.isArray(unwrappedValue) && typeof unwrappedValue !== 'function') {
@@ -1028,7 +974,7 @@ function interpolateTextSite(/** @type {InterpolationSite} */ site, /** @type {I
 		)
 
 		site.lastValue = unwrappedValue
-		if (!site.skipEqualityCheck && site.insertedNodes && arrayEquals(site.insertedNodes, nodes)) return // No change
+		if (!forced && site.insertedNodes && arrayEquals(site.insertedNodes, nodes)) return // No change
 		const parentNode = site.node.parentNode
 		if (!parentNode) {
 			site.node.textContent = ''
@@ -1392,13 +1338,15 @@ class TemplateInstance {
 			if (element !== currentElement) {
 				flushElementBindings()
 				currentElement = element
-					currentElementState = site.elementState || {}
+				currentElementState = site.elementState || {}
 				currentBindings = new Map()
 			}
 
-			const parts = site.parts || []
+			if (!currentBindings) continue
 			if (site.type === 'spread') {
-				const spreadValue = handleForceValue(site, values[/** @type {number} */ (site.interpolationIndex)])
+				const input = values[/** @type {number} */ (site.interpolationIndex)]
+				const spreadValue = unwrapForce(input)
+				const forced = isForceWrapped(input)
 				if (
 					spreadValue == null ||
 					spreadValue === false ||
@@ -1428,7 +1376,6 @@ class TemplateInstance {
 						type = 'event'
 						attributeName = name.slice(1)
 						if (inputValue == null || inputValue === false) {
-							if (!currentBindings) continue
 							currentBindings.delete(getBindingKey(type, attributeName))
 							continue
 						}
@@ -1439,108 +1386,48 @@ class TemplateInstance {
 						bindingValue = String(inputValue ?? '')
 					}
 
-						if (!currentBindings) continue
-						currentBindings.set(getBindingKey(type, attributeName), {
+					currentBindings.set(getBindingKey(type, attributeName), {
 						type,
 						attributeName,
 						value: bindingValue,
-						force: site.skipEqualityCheck,
+						force: forced,
 					})
 				}
 				continue
 			}
 
-			if (site.type === 'attribute') {
-				const attributeValues = parts
-					.filter(part => typeof part === 'number')
-					.map(part => {
-						const value = values[part]
-						if (isForceWrapped(value)) {
-							if (!site.requiresUnwrapping) {
-								site.skipEqualityCheck = true
-								site.requiresUnwrapping = true
-							}
-							return unwrapForce(value)
-						} else if (site.requiresUnwrapping) {
-							throw new Error(
-								'Value must be wrapped with force() for this interpolation site. Once force() is used at a site, it must always be used.',
-							)
-						}
-						return value
-					})
-
-				if (attributeValues.some(isTrustedTextValue)) throw new Error(TRUSTED_TEXT_CONTEXT_ERROR)
-				if (attributeValues.some(value => value instanceof Node || Array.isArray(value) || typeof value === 'function'))
+			const parts = site.parts || []
+			let forced = site.skipEqualityCheck
+			const singleHole = parts.length === 3 && parts[0] === '' && typeof parts[1] === 'number' && parts[2] === ''
+			/** @type {unknown} */
+			let value = ''
+			for (const part of parts) {
+				let entry = typeof part === 'number' ? values[part] : part
+				if (isForceWrapped(entry)) {
+					forced = true
+					entry = unwrapForce(entry)
+				}
+				if (isTrustedTextValue(entry)) throw new Error(TRUSTED_TEXT_CONTEXT_ERROR)
+				if (site.type === 'attribute' && (entry instanceof Node || Array.isArray(entry) || typeof entry === 'function'))
 					throw new Error(ATTRIBUTE_SITE_ERROR)
-
-				const processedValues = [...values]
-				let attributeValueIndex = 0
-				for (const part of parts)
-					if (typeof part === 'number') processedValues[part] = attributeValues[attributeValueIndex++]
-
-					if (!currentBindings) continue
-					currentBindings.set(getBindingKey(site.type, site.attributeName || ''), {
-					type: site.type,
-					attributeName: site.attributeName || '',
-					value: joinPartsWithValues(parts, processedValues),
-					force: site.skipEqualityCheck,
-				})
-				continue
+				if (singleHole && site.type !== 'attribute') {
+					if (typeof part === 'number') value = entry
+				} else if (site.type !== 'boolean-attribute') value += String(entry ?? '')
 			}
 
+			const name = site.attributeName || ''
+			const key = getBindingKey(site.type, name)
 			if (site.type === 'boolean-attribute') {
-				let setAttribute = false
-				if (parts.length === 3 && parts[0] === '' && parts[2] === '' && typeof parts[1] === 'number') {
-					const value = handleForceValue(site, values[parts[1]])
-					if (isTrustedTextValue(value)) throw new Error(TRUSTED_TEXT_CONTEXT_ERROR)
-					setAttribute = !!value
-				} else if (parts.length === 1 && typeof parts[0] === 'string') setAttribute = parts[0].trim() !== ''
-				else setAttribute = true
-
-					if (!currentBindings) continue
-					currentBindings.set(getBindingKey(site.type, site.attributeName || ''), {
-					type: site.type,
-					attributeName: site.attributeName || '',
-					value: setAttribute,
-					force: site.skipEqualityCheck,
-				})
+				if (singleHole) value = !!value
+				else value = parts.length === 1 && typeof parts[0] === 'string' ? !!parts[0].trim() : true
+			}
+			if (site.type === 'property' && name === '__pepperRef' && (!value || typeof value !== 'object' || !('current' in value)))
+				throw new TypeError('Pepper ref bindings expect ref() objects, e.g. ref=${buttonRef}.')
+			if (site.type === 'event' && (value == null || value === false)) {
+				currentBindings.delete(key)
 				continue
 			}
-
-			if (site.type === 'property') {
-				const value = resolveSiteValue(site, values)
-				if (isTrustedTextValue(value)) throw new Error(TRUSTED_TEXT_CONTEXT_ERROR)
-				if (site.attributeName === '__pepperRef' && (!value || typeof value !== 'object' || !('current' in value))) {
-					throw new TypeError('Pepper ref bindings expect ref() objects, e.g. ref=${buttonRef}.')
-				}
-					if (!currentBindings) continue
-					currentBindings.set(getBindingKey(site.type, site.attributeName || ''), {
-					type: site.type,
-					attributeName: site.attributeName || '',
-					value,
-					force: site.skipEqualityCheck,
-				})
-				continue
-			}
-
-			const eventName = site.attributeName || ''
-			const inputValue = resolveSiteValue(site, values)
-			if (isTrustedTextValue(inputValue)) throw new Error(TRUSTED_TEXT_CONTEXT_ERROR)
-
-			const bindingKey = getBindingKey(site.type, eventName)
-			if (inputValue == null || inputValue === false) {
-				if (!currentBindings) continue
-				currentBindings.delete(bindingKey)
-				continue
-			}
-
-				if (!currentBindings) continue
-				currentBindings.set(bindingKey, {
-				type: site.type,
-				attributeName: eventName,
-				value: inputValue,
-				force: site.skipEqualityCheck,
-			})
+			currentBindings.set(key, {type: site.type, attributeName: name, value, force: forced})
 		}
 
 		flushElementBindings()
@@ -1589,7 +1476,6 @@ class TemplateInstance {
  *   lastValue?: unknown,
  *   elementState?: { lastBindings?: Map<string, { type: 'attribute'|'boolean-attribute'|'property'|'event', attributeName: string, value: unknown, force?: boolean }>, eventBindings?: Map<string, { currentEventListener?: EventListener, internalHandler?: EventListener }> },
  *   skipEqualityCheck?: boolean,
- *   requiresUnwrapping?: boolean
  * }} InterpolationSite
  */
 
