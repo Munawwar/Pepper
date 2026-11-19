@@ -91,13 +91,13 @@ test('[A01] built SSR recognizes every browser value brand', async () => {
 			<div>${browser.force('forced')}</div>
 			<svg>${browser.unsafeSVG('<circle></circle>')}</svg>
 			<math>${browser.unsafeMathML('<mi>x</mi>')}</math>
-			<script>${browser.rawText('const end = "</script>";')}</script>
+			<script>${browser.rawText('const n = 2 < 3;')}</script>
 		`
 	}
 
 	assert.equal(
 		ssr.renderComponentToString(App),
-		'<div>forced</div><svg><circle></circle></svg><math><mi>x</mi></math><script>const end = "\\x3C/script>";</script>',
+		'<div>forced</div><svg><circle></circle></svg><math><mi>x</mi></math><script>const n = 2 < 3;</script>',
 	)
 })
 
@@ -130,7 +130,7 @@ test('[A01] built SSR recognizes browser component boundary metadata', async () 
 	assert.equal(ssr.renderComponentToString(App), '<p>fallback</p>')
 })
 
-test.skip('[A15] SSR rawText matches browser text semantics in normal elements', async () => {
+test('[A15] SSR rawText matches browser text semantics in normal elements', async () => {
 	const {html, rawText, renderToString} = await import('../src/html-ssr.js')
 
 	assert.equal(

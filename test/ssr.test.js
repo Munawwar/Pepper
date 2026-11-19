@@ -107,16 +107,15 @@ test('renders unsafeSVG and unsafeMathML without escaping', () => {
 	assert.equal(renderToString(mathml`<math>${unsafeMathML('<mi>x</mi>')}</math>`), '<math><mi>x</mi></math>')
 })
 
-test('renders rawText with raw-text-safe replacements', () => {
-	// prettier-ignore
-	const output = renderToString(
-		html`<script>${rawText('var x = "</style></script></textarea></title></template><script><!--<style>";')}</script>`,
-	)
-
-	assert.equal(
-		output,
-		'<script>var x = "\\x3C/style>\\x3C/script>\\x3C/textarea>\\x3C/title>\\x3C/template>\\x3Cscript>\\x3C!--\\x3Cstyle>";</script>',
-	)
+test('serializes rawText for the enclosing HTML element', () => {
+	const source = '{"value":"<&"}'
+	assert.equal(renderToString(html`<script type="application/json">${rawText(source)}</script>`), `<script type="application/json">${source}</script>`)
+	assert.equal(renderToString(html`<style>${rawText('a::after { content: "<&" }')}</style>`), '<style>a::after { content: "<&" }</style>')
+	assert.equal(renderToString(html`<textarea>${rawText('</textarea>&')}</textarea>`), '<textarea>&lt;/textarea&gt;&amp;</textarea>')
+	assert.equal(renderToString(html`<title>${rawText('a & b')}</title>`), '<title>a &amp; b</title>')
+	assert.throws(() => renderToString(html`<script>${[rawText('</scr'), rawText('IPT>')]}</script>`), /parser delimiter/)
+	assert.throws(() => renderToString(html`<style>${rawText('</STYLE >')}</style>`), /parser delimiter/)
+	assert.throws(() => renderToString(html`<script>${rawText('<!--')}</script>`), /parser delimiter/)
 })
 
 test('supports CDATA blocks during SSR', () => {

@@ -89,6 +89,6 @@ export function unsafeSVG(value: string): UnsafeSVGValue
  */
 export function unsafeMathML(value: string): UnsafeMathMLValue
 /**
- * Emit raw text content without entity escaping.
+ * Insert literal text. SSR escapes HTML text and preserves script/style source, rejecting unsafe HTML delimiters.
  */
 export function rawText(value: string): RawTextValue

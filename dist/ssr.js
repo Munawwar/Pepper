@@ -47,16 +47,6 @@ var VOID_ELEMENTS = /* @__PURE__ */ new Set([
 var ATTRIBUTE_SITE_ERROR = "Nested templates and DOM elements are not allowed in attributes. Use text content interpolation instead.";
 var TRUSTED_TEXT_INPUT_ERROR = "unsafeHTML(), unsafeSVG(), unsafeMathML(), and rawText() expect a string.";
 var TRUSTED_TEXT_CONTEXT_ERROR = "unsafeHTML(), unsafeSVG(), unsafeMathML(), and rawText() are only allowed in text content interpolation.";
-var RAW_TEXT_REPLACEMENTS = [
-  [/<\/script(?=[\t\n\f\r />])/gi, (match) => `\\x3C${match.slice(1)}`],
-  [/<script(?=[\t\n\f\r />])/gi, (match) => `\\x3C${match.slice(1)}`],
-  [/<!--/g, "\\x3C!--"],
-  [/<\/style(?=[\t\n\f\r />])/gi, (match) => `\\x3C${match.slice(1)}`],
-  [/<style(?=[\t\n\f\r />])/gi, (match) => `\\x3C${match.slice(1)}`],
-  [/<\/textarea(?=[\t\n\f\r />])/gi, (match) => `\\x3C${match.slice(1)}`],
-  [/<\/title(?=[\t\n\f\r />])/gi, (match) => `\\x3C${match.slice(1)}`],
-  [/<\/template(?=[\t\n\f\r />])/gi, (match) => `\\x3C${match.slice(1)}`]
-];
 var ssrTemplateCache = /* @__PURE__ */ new WeakMap();
 function html(strings, ...values) {
   return handleTemplateTag("html", strings, ...values);
@@ -102,13 +92,16 @@ function handleTemplateTag(mode, strings, ...values) {
   render.template = { mode, strings };
   return render;
 }
-function serializeChildValue(value) {
+function serializeChildValue(value, rawContent = false) {
   value = unwrapForce(value);
   if (value == null || value === "") return "";
   if (typeof value === "boolean") return "";
-  if (Array.isArray(value)) return value.map(serializeChildValue).join("");
-  if (typeof value === "function") return serializeChildValue(value());
-  if (looksTrustedTextValue(value)) return serializeTrustedTextValue(value);
+  if (Array.isArray(value)) return value.map((item) => serializeChildValue(item, rawContent)).join("");
+  if (typeof value === "function") return serializeChildValue(value(), rawContent);
+  if (looksTrustedTextValue(value)) {
+    if (RAW_TEXT_SYMBOL in value) return rawContent ? value[RAW_TEXT_SYMBOL] || "" : escapeHtml(value[RAW_TEXT_SYMBOL] || "");
+    return value[UNSAFE_HTML_SYMBOL] || value[UNSAFE_SVG_SYMBOL] || value[UNSAFE_MATHML_SYMBOL] || "";
+  }
   if (looksTemplateValue(value))
     return serializeCompiledTemplate(
       getCompiledTemplate(
@@ -156,6 +149,17 @@ function getCompiledTemplate(strings) {
       compiled.ops.push(tag.op);
       cursor = tag.end;
       depth += tag.depthDelta;
+      if (tag.op.type === "start-tag" && !tag.op.selfClosing) {
+        const name = tag.op.tagName.toLowerCase();
+        if (name === "script" || name === "style" || name === "title" || name === "textarea") {
+          const close = new RegExp(`</${name}(?=[\\t\\n\\f\\r />])`, "ig");
+          close.lastIndex = cursor;
+          const end2 = close.exec(source)?.index ?? source.length;
+          const parts2 = parseInterpolationParts(source.slice(cursor, end2));
+          compiled.ops.push({ type: "text", parts: parts2, rawTag: name === "script" || name === "style" ? name : void 0 });
+          cursor = end2;
+        }
+      }
       continue;
     }
     const nextTag = source.indexOf("<", cursor);
@@ -256,7 +260,13 @@ function serializeCompiledTemplate(compiled, values) {
   for (const op of compiled.ops) {
     if (op.type === "static") output += op.value;
     else if (op.type === "text") {
-      for (const part of op.parts) output += typeof part === "number" ? serializeChildValue(values[part]) : part;
+      let content = "";
+      for (const part of op.parts) content += typeof part === "number" ? serializeChildValue(values[part], !!op.rawTag) : part;
+      if (op.rawTag && op.parts.some((part) => typeof part === "number")) {
+        const unsafe = op.rawTag === "script" ? /<!--|<\/script(?=[\t\n\f\r />])/i : /<\/style(?=[\t\n\f\r />])/i;
+        if (unsafe.test(content)) throw new Error(`Cannot serialize dynamic <${op.rawTag}> content containing an HTML parser delimiter.`);
+      }
+      output += content;
     } else {
       const bindings = /* @__PURE__ */ new Map();
       for (const binding of op.bindings) {
@@ -334,17 +344,6 @@ function looksLikeNode(value) {
 }
 function looksTrustedTextValue(value) {
   return typeof value === "object" && value !== null && (UNSAFE_HTML_SYMBOL in value || UNSAFE_SVG_SYMBOL in value || UNSAFE_MATHML_SYMBOL in value || RAW_TEXT_SYMBOL in value);
-}
-function serializeTrustedTextValue(value) {
-  if (UNSAFE_HTML_SYMBOL in value || UNSAFE_SVG_SYMBOL in value || UNSAFE_MATHML_SYMBOL in value)
-    return value[UNSAFE_HTML_SYMBOL] || value[UNSAFE_SVG_SYMBOL] || value[UNSAFE_MATHML_SYMBOL] || "";
-  if (!(RAW_TEXT_SYMBOL in value)) return "";
-  let text = value[RAW_TEXT_SYMBOL] || "";
-  for (const [pattern, replacement] of RAW_TEXT_REPLACEMENTS) {
-    if (typeof replacement === "string") text = text.replace(pattern, replacement);
-    else text = text.replace(pattern, replacement);
-  }
-  return text;
 }
 
 // src/pepper-ssr.js
