@@ -1,12 +1,4 @@
 /**
- * @param {object | null | undefined} obj
- * @returns {string[]}
- */
-function keys(obj) {
-  if (!obj) return [];
-	return Object.keys(obj).filter(key => key !== 'constructor');
-}
-/**
  * @param {unknown} value1
  * @param {unknown} value2
  * @param {WeakSet<object>} [ancestors]
@@ -52,6 +44,5 @@ function isEqual(value1, value2, ancestors) {
 }
 
 export {
-  keys,
   isEqual,
 };

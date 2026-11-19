@@ -146,7 +146,7 @@ test.skip('[A16] SSR never emits internal interpolation markers in comments', as
 	assert.doesNotMatch(output, /⧙⧘\d+⧙⧘/)
 })
 
-test.skip('[A17] Store notifies subscribers about a constructor key change', () => {
+test('[A17] Store notifies subscribers about a constructor key change', () => {
 	const store = new Store({constructor: 1})
 	const notifications = []
 	store.subscribe(['constructor'], changedProps => notifications.push(changedProps))
@@ -156,12 +156,20 @@ test.skip('[A17] Store notifies subscribers about a constructor key change', () 
 	assert.deepEqual(notifications, [['constructor']])
 })
 
-test.skip('[A17] Store.assign cannot mutate the data object prototype', () => {
-	const store = new Store({value: 1})
-	store.assign(JSON.parse('{"__proto__":{"injected":true}}'))
+test('[A17] Store rejects an own __proto__ key before changing data or notifying subscribers', () => {
+	const invalid = JSON.parse('{"value":2,"__proto__":{}}')
+	const data = {value: 1}
+	const store = new Store(data)
+	const changes = []
+	store.subscribe(['value'], keys => changes.push(keys))
 
-	assert.equal(Object.getPrototypeOf(store.data), Object.prototype)
-	assert.equal(store.data.injected, undefined)
+	assert.throws(() => new Store(invalid), /__proto__/)
+	assert.throws(() => { store.data = invalid }, /__proto__/)
+	assert.throws(() => store.assign(invalid), /__proto__/)
+	assert.equal(store.data, data)
+	assert.equal(store.data.value, 1)
+	assert.equal(Object.getPrototypeOf(data), Object.prototype)
+	assert.deepEqual(changes, [])
 })
 
 test.skip('[TOOLING] browser unit config excludes Node-only SSR tests', async () => {

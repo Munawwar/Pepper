@@ -1,10 +1,13 @@
-// src/utils.js
-function keys(obj) {
-  if (!obj) return [];
-  return Object.keys(obj).filter((key) => key !== "constructor");
-}
-
 // src/store.js
+function validateData(data) {
+  if (Object.hasOwn(data, "__proto__")) {
+    throw new TypeError("Store data cannot contain an own __proto__ key.");
+  }
+}
+function changedKeys(previous, next) {
+  validateData(next);
+  return Object.keys(next).filter((prop) => !Object.hasOwn(previous, prop) || previous[prop] !== next[prop]);
+}
 var Store = class {
   /** @type {Record<string, unknown>} */
   #data;
@@ -15,6 +18,7 @@ var Store = class {
    */
   constructor(initialData) {
     this.#data = initialData || {};
+    validateData(this.#data);
     this.#subscribers = [];
   }
   /**
@@ -35,8 +39,8 @@ var Store = class {
       return;
     }
     const changedProps = [
-      ...keys(newData).filter((prop) => this.#data[prop] !== newData[prop]),
-      ...keys(this.#data).filter((prop) => !(prop in newData))
+      ...changedKeys(this.#data, newData),
+      ...Object.keys(this.#data).filter((prop) => !Object.hasOwn(newData, prop))
     ];
     this.#data = newData;
     this.#notify(changedProps);
@@ -89,7 +93,7 @@ var Store = class {
     if (!newData || typeof newData !== "object") {
       return;
     }
-    const changedProps = keys(newData).filter((prop) => this.#data[prop] !== newData[prop]);
+    const changedProps = changedKeys(this.#data, newData);
     Object.assign(this.#data, newData);
     this.#notify(changedProps);
   }

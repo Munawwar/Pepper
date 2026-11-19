@@ -1,4 +1,18 @@
-import { keys } from './utils.js';
+/** @param {Record<string, unknown>} data */
+function validateData(data) {
+	if (Object.hasOwn(data, '__proto__')) {
+		throw new TypeError('Store data cannot contain an own __proto__ key.');
+	}
+}
+
+/**
+ * @param {Record<string, unknown>} previous
+ * @param {Record<string, unknown>} next
+ */
+function changedKeys(previous, next) {
+	validateData(next);
+	return Object.keys(next).filter(prop => !Object.hasOwn(previous, prop) || previous[prop] !== next[prop]);
+}
 
 // A store for Pepper views
 // it only does a shallow (i.e level 1) equality check of the store data properties
@@ -14,6 +28,7 @@ class Store {
 	 */
 	constructor(initialData) {
 		this.#data = initialData || {};
+		validateData(this.#data);
 		this.#subscribers = [];
 	}
 
@@ -36,8 +51,8 @@ class Store {
 			return;
 		}
 		const changedProps = [
-			...keys(newData).filter((prop) => this.#data[prop] !== newData[prop]),
-			...keys(this.#data).filter((prop) => !(prop in newData)),
+			...changedKeys(this.#data, newData),
+			...Object.keys(this.#data).filter(prop => !Object.hasOwn(newData, prop)),
 		];
 		this.#data = newData;
 		this.#notify(changedProps);
@@ -98,7 +113,7 @@ class Store {
 		if (!newData || typeof newData !== 'object') {
 			return;
 		}
-		const changedProps = keys(newData).filter((prop) => this.#data[prop] !== newData[prop]);
+		const changedProps = changedKeys(this.#data, newData);
 		Object.assign(this.#data, newData);
 		this.#notify(changedProps);
 	}
