@@ -1,4 +1,4 @@
-export type TemplateNodes = readonly (Element | Text)[]
+export type TemplateNodes = readonly (Element | CharacterData)[]
 export type WeakMapKey = symbol | object | Function
 export type TemplateKey = WeakMapKey
 export type TemplateMode = 'html' | 'svg' | 'mathml'
@@ -41,7 +41,9 @@ export type PrimitiveChild = string | number | boolean | bigint | null | undefin
 export type AttributeValue = string | number | boolean | bigint | null | undefined
 export type ChildValue =
 	| PrimitiveChild
-	| Node
+	| Element
+	| CharacterData
+	| DocumentFragment
 	| TemplateView
 	| UnsafeHTMLValue
 	| UnsafeSVGValue

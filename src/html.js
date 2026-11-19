@@ -976,10 +976,10 @@ function interpolateTextSite(/** @type {InterpolationSite} */ site, /** @type {I
 	if (isTrustedTextValue(unwrappedValue)) unwrappedValue = resolveTrustedTextValue(unwrappedValue)
 
 	if (!site.skipEqualityCheck && site.lastValue === unwrappedValue) return // No change
-	site.lastValue = unwrappedValue
 
 	// Handle simple text cases first (most common case)
 	if (!(unwrappedValue instanceof Node) && !Array.isArray(unwrappedValue) && typeof unwrappedValue !== 'function') {
+		site.lastValue = unwrappedValue
 		// Simple text content, just set textContent
 		if (site.insertedNodes) for (const node of site.insertedNodes) /** @type {ChildNode} */ (node).remove()
 		site.node.textContent = typeof unwrappedValue === 'boolean' ? '' : String(unwrappedValue ?? '')
@@ -993,7 +993,7 @@ function interpolateTextSite(/** @type {InterpolationSite} */ site, /** @type {I
 
 		/** @type {TemplateInstance[]} */
 		const nestedTemplateInstances = []
-		const nodes = /** @type {(Element | Text)[]} */ (
+		const nodes = /** @type {(Element | CharacterData)[]} */ (
 			itemsToProcess
 				.flatMap((item, index) => {
 					// Handle template functions - call them to get their nodes
@@ -1022,12 +1022,16 @@ function interpolateTextSite(/** @type {InterpolationSite} */ site, /** @type {I
 					if (isTrustedTextValue(item)) item = resolveTrustedTextValue(item)
 					if (Array.isArray(item)) return item
 					if (item?.nodeType === Node.DOCUMENT_FRAGMENT_NODE) return Array.from(item.childNodes)
-					if (item instanceof Node) return /** @type {Element | Text} */ (item)
+					if (item instanceof Node) {
+						if (item instanceof Element || item instanceof CharacterData) return item
+						throw new TypeError(`Cannot render ${item.nodeName} as a DOM child.`)
+					}
 					if (item != null && item !== '' && typeof item !== 'boolean') return [new Text(String(item))]
 					return []
 				})
 		)
 
+		site.lastValue = unwrappedValue
 		if (!site.skipEqualityCheck && site.insertedNodes && arrayEquals(site.insertedNodes, nodes)) return // No change
 		const parentNode = site.node.parentNode
 		if (!parentNode) {
@@ -1036,7 +1040,7 @@ function interpolateTextSite(/** @type {InterpolationSite} */ site, /** @type {I
 			return
 		}
 
-		const reconciledNodes = /** @type {(Element | Text)[]} */ (
+		const reconciledNodes = /** @type {(Element | CharacterData)[]} */ (
 			reconcileDom(
 				/** @type {Element | DocumentFragment | Document} */ (parentNode),
 				site.insertedNodes || [],
@@ -1563,7 +1567,7 @@ class TemplateInstance {
 	}
 }
 
-/** @typedef {readonly (Element | Text)[]} TemplateNodes */
+/** @typedef {readonly (Element | CharacterData)[]} TemplateNodes */
 /** @typedef {unknown} InterpolationValue */
 /** @typedef {symbol | object | function} WeakMapKey */
 /** @typedef {WeakMapKey} TemplateKey */

@@ -19,6 +19,11 @@ nodes[0]
 const view: TemplateView = html`<div>${['a', 1, document.createElement('span')]}</div>`
 const hydratedNodes: TemplateNodes = view(key, [document.createElement('div')])
 const childValue: ChildValue = html`<span>child</span>`
+const domChildren: ChildValue = [document.createComment('ok'), document.createDocumentFragment()]
+// @ts-expect-error attributes cannot be inserted as DOM children
+const attrChild: ChildValue = document.createAttribute('title')
+// @ts-expect-error documents cannot be inserted as DOM children
+const documentChild: ChildValue = document
 const attributeValue: AttributeValue = 123
 const forcedText = force('forced')
 const templateMetadata = view.template

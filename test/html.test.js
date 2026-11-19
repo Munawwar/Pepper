@@ -75,7 +75,7 @@ describe('html template function', () => {
 			</p>
 		`(key)
 
-		function testContent(/**@type {Element | Text} */ el) {
+		function testContent(/**@type {Element | CharacterData} */ el) {
 			assertTrue(el.textContent.includes('hello world'), 'Should contain interpolated value')
 			// Ensure whitespace inside elements is preserved, and that a text node
 			// for a text interpolation contains only the interpolated value and not
@@ -131,6 +131,19 @@ describe('html template function', () => {
 
 		assertEquals(circle.namespaceURI, 'http://www.w3.org/2000/svg', 'unsafeSVG should create SVG nodes')
 		assertEquals(mi.namespaceURI, 'http://www.w3.org/1998/Math/MathML', 'unsafeMathML should create MathML nodes')
+	})
+
+	it('rejects non-insertable DOM children on every update attempt', () => {
+		const key = {}
+		/** @param {Node} child */
+		const renderChild = child => html`<div>${child}</div>`(key)
+		const comment = document.createComment('ok')
+		const [parent] = renderChild(comment)
+		assertEquals(comment.parentNode, parent)
+		for (const child of [document, document, document.createAttribute('title')]) {
+			assertThrows(() => renderChild(child), /as a DOM child/)
+			assertEquals(comment.parentNode, parent)
+		}
 	})
 
 	it('omits comment holes while keeping adjacent bindings live', () => {
