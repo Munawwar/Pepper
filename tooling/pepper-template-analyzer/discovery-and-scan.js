@@ -252,7 +252,7 @@ function createDiscoveryAndScan(context) {
 						'invalidTableStructure',
 						'<tr> must appear inside <thead>, <tbody>, or <tfoot>.',
 					)
-				if (parent?.namespace === 'html' && CHILD_TAG_ALLOWLISTS.has(parentTag)) {
+				if (state.currentTag !== COMPONENT_TAG_PLACEHOLDER && parent?.namespace === 'html' && CHILD_TAG_ALLOWLISTS.has(parentTag)) {
 					const allowed = CHILD_TAG_ALLOWLISTS.get(parentTag)
 					const coveredByTableRule =
 						(lowerTagName === 'tr' && parentTag === 'table') ||

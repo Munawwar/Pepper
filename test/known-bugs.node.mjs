@@ -188,7 +188,7 @@ test('[TOOLING] test:dom runs every browser unit suite', async () => {
 	assert.doesNotMatch(script, /--files\s+test\/pepper\.test\.js/)
 })
 
-test.skip('[TOOLING] lint:templates supplies a default TypeScript project', async () => {
+test('[TOOLING] lint:templates supplies a default TypeScript project', async () => {
 	const packageJson = await readJson('../package.json')
 
 	assert.match(packageJson.scripts['lint:templates'], /(?:--project|-p)\s+\S+/)

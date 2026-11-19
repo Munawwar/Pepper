@@ -35,6 +35,7 @@ function createDiagnostics(context) {
 			if (hole.kind === 'boolean-attribute') return {kind: 'boolean', label: 'boolean'}
 			return {kind: 'unknown', label: 'unknown'}
 		}
+		if (hole.kind === 'attribute' && hole.name === 'ref') return {kind: 'ref', label: 'ref'}
 		if (hole.kind === 'property') {
 			const property = checker.getPropertyOfType(elementType, hole.name)
 			if (!property)
@@ -83,6 +84,12 @@ function createDiagnostics(context) {
 	function checkSimpleKind(actualType, expectation) {
 		const typeString = checker.typeToString(actualType)
 		if (actualType.flags & (ts.TypeFlags.Any | ts.TypeFlags.Unknown | ts.TypeFlags.Never)) return null
+		if (expectation.kind === 'ref') {
+			const parts = actualType.isUnion() ? actualType.types : [actualType]
+			return parts.every(part => part.flags & (ts.TypeFlags.Null | ts.TypeFlags.Undefined) || checker.getPropertyOfType(part, 'current'))
+				? null
+				: `a ref with a current property, got ${typeString}`
+		}
 		if (expectation.kind === 'attribute-primitive') {
 			if (actualType.isUnion()) {
 				for (const unionPart of actualType.types) {
