@@ -155,6 +155,8 @@ function Field() {
 }
 ```
 
+Pass a function to an event binding, for example `@click=${save}`. Use `false`, `null`, or `undefined` to remove it. String handlers such as `@click="save()"` are unsupported.
+
 Prefix an interpolated DOM binding with `!` to apply it on every template update, for example `!class=${name}`. Literal attributes such as `!class="x"` are invalid. Spreads and explicit bindings apply from left to right. On overlap the last binding wins, including when there are multiple spreads.
 
 `unmount(container)` disposes a rendered or hydrated root, runs effect cleanups, and removes its DOM and portals. Pass the same element or selector used to mount it. A subsequent `render()` creates a fresh root.

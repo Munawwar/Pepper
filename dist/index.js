@@ -502,19 +502,15 @@ function getBindingKey(type, name) {
   return name;
 }
 function updateEventHandler(element, eventName, state2, inputValue) {
-  let eventListener;
-  if (typeof inputValue === "function") eventListener = /** @type {EventListener} */
-  inputValue;
-  else if (typeof inputValue === "string") eventListener = /** @type {EventListener} */
-  new Function("event", inputValue);
-  else eventListener = null;
-  if (eventListener) {
+  if (typeof inputValue === "string") throw new TypeError(`@${eventName} requires a function. String event handlers are unsupported.`);
+  if (typeof inputValue === "function") {
     if (!state2.internalHandler) {
       state2.internalHandler = /** @type {EventListener} */
       ((event) => state2.currentEventListener?.(event));
       element.addEventListener(eventName, state2.internalHandler);
     }
-    state2.currentEventListener = eventListener;
+    state2.currentEventListener = /** @type {EventListener} */
+    inputValue;
     return true;
   }
   if (state2.internalHandler) {
@@ -1008,7 +1004,7 @@ var TemplateInstance = class {
           } else if (name.startsWith("@")) {
             type = "event";
             attributeName = name.slice(1);
-            if (inputValue2 == null || inputValue2 === "" || inputValue2 === false) {
+            if (inputValue2 == null || inputValue2 === false) {
               if (!currentBindings) continue;
               currentBindings.delete(getBindingKey(type, attributeName));
               continue;
@@ -1094,11 +1090,10 @@ var TemplateInstance = class {
         continue;
       }
       const eventName = site.attributeName || "";
-      let inputValue = resolveSiteValue(site, values);
+      const inputValue = resolveSiteValue(site, values);
       if (isTrustedTextValue(inputValue)) throw new Error(TRUSTED_TEXT_CONTEXT_ERROR);
-      if (typeof inputValue === "string" && inputValue.trim() === "") inputValue = null;
       const bindingKey = getBindingKey(site.type, eventName);
-      if (inputValue == null || inputValue === "" || inputValue === false) {
+      if (inputValue == null || inputValue === false) {
         if (!currentBindings) continue;
         currentBindings.delete(bindingKey);
         continue;

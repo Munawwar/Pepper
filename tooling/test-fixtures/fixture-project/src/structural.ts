@@ -53,3 +53,5 @@ html`<body>
 html`<div !class="x" !?hidden></div>`
 
 html`<!-- ${value} -->`
+
+html`<button @click="save()">Save</button>`

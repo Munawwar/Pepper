@@ -50,7 +50,7 @@ export type ChildValue =
 	| UnsafeMathMLValue
 	| RawTextValue
 	| readonly ChildValue[]
-export type EventValue<E extends Event = Event> = ((event: E) => unknown) | string | null | undefined | false | ''
+export type EventValue<E extends Event = Event> = ((event: E) => unknown) | null | undefined | false
 
 type ElementForTag<Tag extends string> = Tag extends keyof HTMLElementTagNameMap
 	? HTMLElementTagNameMap[Tag]

@@ -753,49 +753,11 @@ describe('html template function', () => {
 		assertTrue(clicked2, 'Event handler2 should be called')
 	})
 
-	const global = /** @type {any} */ (globalThis)
-
-	it('handles event handler as dynamic string', () => {
-		global.__clicked = false
-		global.__clicked2 = false
-		const codeString = '__clicked = true'
-		const codeString2 = '__clicked2 = true'
-		const key = Symbol()
-
-		/** @param {string} handler */
-		const tmpl = handler => html`<button .prop=${123} @click=${handler}>Click me</button>`(key)
-		const [button] = /** @type {[HTMLButtonElement]} */ (tmpl(codeString))
-
-		// Simulate click
-		button.click()
-
-		assertTrue(global.__clicked, 'Event handler should be called')
-
-		global.__clicked = false
-
-		tmpl(codeString2) // change the handler
-
-		// Simulate click
-		button.click()
-
-		assertTrue(!global.__clicked, 'Event handler should be removed')
-		assertTrue(global.__clicked2, 'Event handler2 should be called')
-	})
-
-	it('handles event handler as static string', () => {
-		global.__clicked = false
-		global.__clicked2 = false
-		const key = Symbol()
-
-		const tmpl = () => html`<button .prop=${123} @click="__clicked = true">Click me</button>`(key)
-		const [button] = /** @type {[HTMLButtonElement]} */ (tmpl())
-
-		assertTrue(!button.hasAttribute('@click'), 'It should not set the @click attribute') // Lit fails this test
-
-		// Simulate click
-		button.click()
-
-		assertTrue(global.__clicked, 'Event handler should be called')
+	it('rejects string event handlers in literal, interpolated and spread bindings', () => {
+		const error = /@click requires a function/
+		assertThrows(() => html`<button @click="save()"></button>`({}), error)
+		assertThrows(() => html`<button @click=${'save()'}></button>`({}), error)
+		assertThrows(() => html`<button ...${{'@click': 'save()'}}></button>`({}), error)
 	})
 
 	it('handles multiple elements at top level', () => {

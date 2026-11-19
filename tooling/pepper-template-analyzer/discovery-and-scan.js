@@ -137,7 +137,7 @@ function createDiscoveryAndScan(context) {
 		}
 		const holes = []
 		const diagnostics = []
-		const literalForcedAttributes = new Map()
+		const literalBindings = new Map()
 
 		function pushStructuralDiagnostic(start, length, code, ruleId, message) {
 			diagnostics.push({start, length, code, ruleId, message})
@@ -160,8 +160,8 @@ function createDiscoveryAndScan(context) {
 					`Attribute "${state.currentAttr}" duplicated`,
 				)
 			else state.currentTagAttributes.set(key, true)
-			if (state.currentTag !== COMPONENT_TAG_PLACEHOLDER && state.currentAttr.startsWith('!'))
-				literalForcedAttributes.set(state.currentAttrStart, state.currentAttr)
+			if (state.currentTag !== COMPONENT_TAG_PLACEHOLDER && (state.currentAttr.startsWith('!') || unforced.startsWith('@')))
+				literalBindings.set(state.currentAttrStart, state.currentAttr)
 			state.attrRecorded = true
 		}
 
@@ -598,14 +598,15 @@ function createDiscoveryAndScan(context) {
 			}
 			if (state.mode === 'beforeAttrValue' || state.mode === 'attrValue') {
 				const rawName = state.currentAttr
-				literalForcedAttributes.delete(state.currentAttrStart)
+				const bindingName = rawName.replace(/^!/, '')
+				literalBindings.delete(state.currentAttrStart)
 				holes.push({
 					index: segmentIndex,
-					kind: rawName.startsWith('.')
+					kind: bindingName.startsWith('.')
 						? 'property'
-						: rawName.startsWith('?')
+						: bindingName.startsWith('?')
 							? 'boolean-attribute'
-							: rawName.startsWith('@')
+							: bindingName.startsWith('@')
 								? 'event'
 								: 'attribute',
 					tagName: state.currentTag,
@@ -629,8 +630,9 @@ function createDiscoveryAndScan(context) {
 			})
 		}
 
-		for (const [start, name] of literalForcedAttributes)
-			pushRule(start, name.length, 'staticForce', 'Forced bindings require an interpolation.')
+		for (const [start, name] of literalBindings)
+			if (name.startsWith('@')) pushRule(start, name.length, 'stringEvent', 'Event bindings require an interpolated function.')
+			else pushRule(start, name.length, 'staticForce', 'Forced bindings require an interpolation.')
 		for (const entry of stack)
 			pushRule(
 				entry.start,

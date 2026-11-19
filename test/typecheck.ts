@@ -35,6 +35,7 @@ const inputValue: InputValue = 'ok'
 
 type ClickHandler = EventValue<MouseEvent>
 const clickHandler: ClickHandler = event => event.clientX
+// @ts-expect-error string event handlers are unsupported
 const stringHandler: ClickHandler = 'console.log(event.type)'
 const removedHandler: ClickHandler = false
 
@@ -200,5 +201,5 @@ const badAttributeValue: AttributeValue = () => 'nope'
 // @ts-expect-error input.value should be string
 const badInputValue: InputValue = 123
 
-// @ts-expect-error click handlers must be function, string, nullish, or false
+// @ts-expect-error click handlers must be function, nullish, or false
 const badClickHandler: ClickHandler = 123

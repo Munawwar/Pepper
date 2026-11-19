@@ -154,38 +154,16 @@ function createDiagnostics(context) {
 						},
 					]
 		}
-		if (actualType.getCallSignatures().length) return []
-		if (actualType.isUnion()) {
-			for (const unionPart of actualType.types) {
-				if (unionPart.getCallSignatures().length) continue
-				const flags = unionPart.flags
-				if (
-					flags &
-					(ts.TypeFlags.StringLike | ts.TypeFlags.BooleanLiteral | ts.TypeFlags.Null | ts.TypeFlags.Undefined)
-				)
-					continue
-				return [
-					{
-						node: expression,
-						code: DIAGNOSTIC_CODES.eventValue,
-						message: `pepper @${expectation.label} expects a function, string, false, null, or undefined.`,
-					},
-				]
-			}
-			return []
-		}
-		const flags = actualType.flags
-		return flags & ts.TypeFlags.StringLike ||
-			(flags & ts.TypeFlags.BooleanLiteral && actualType.intrinsicName === 'false') ||
-			flags & (ts.TypeFlags.Null | ts.TypeFlags.Undefined)
+		const parts = actualType.isUnion() ? actualType.types : [actualType]
+		return parts.every(part => part.getCallSignatures().length ||
+			part.flags & (ts.TypeFlags.Null | ts.TypeFlags.Undefined) ||
+			(part.flags & ts.TypeFlags.BooleanLiteral && part.intrinsicName === 'false'))
 			? []
-			: [
-					{
-						node: expression,
-						code: DIAGNOSTIC_CODES.eventValue,
-						message: `pepper @${expectation.label} expects a function, string, false, null, or undefined.`,
-					},
-				]
+			: [{
+				node: expression,
+				code: DIAGNOSTIC_CODES.eventValue,
+				message: `pepper @${expectation.label} expects a function, false, null, or undefined.`,
+			}]
 	}
 
 	function buildDiagnostics() {

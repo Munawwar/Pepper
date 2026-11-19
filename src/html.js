@@ -815,17 +815,13 @@ function getBindingKey(type, name) {
  * @param {unknown} inputValue
  */
 function updateEventHandler(element, eventName, state, inputValue) {
-	let eventListener
-	if (typeof inputValue === 'function') eventListener = /** @type {EventListener} */ (inputValue)
-	else if (typeof inputValue === 'string') eventListener = /** @type {EventListener} */ (new Function('event', inputValue))
-	else eventListener = null
-
-	if (eventListener) {
+	if (typeof inputValue === 'string') throw new TypeError(`@${eventName} requires a function. String event handlers are unsupported.`)
+	if (typeof inputValue === 'function') {
 		if (!state.internalHandler) {
 			state.internalHandler = /** @type {EventListener} */ (event => state.currentEventListener?.(event))
 			element.addEventListener(eventName, state.internalHandler)
 		}
-		state.currentEventListener = eventListener
+		state.currentEventListener = /** @type {EventListener} */ (inputValue)
 		return true
 	}
 
@@ -1431,7 +1427,7 @@ class TemplateInstance {
 					} else if (name.startsWith('@')) {
 						type = 'event'
 						attributeName = name.slice(1)
-						if (inputValue == null || inputValue === '' || inputValue === false) {
+						if (inputValue == null || inputValue === false) {
 							if (!currentBindings) continue
 							currentBindings.delete(getBindingKey(type, attributeName))
 							continue
@@ -1528,12 +1524,11 @@ class TemplateInstance {
 			}
 
 			const eventName = site.attributeName || ''
-			let inputValue = resolveSiteValue(site, values)
+			const inputValue = resolveSiteValue(site, values)
 			if (isTrustedTextValue(inputValue)) throw new Error(TRUSTED_TEXT_CONTEXT_ERROR)
-			if (typeof inputValue === 'string' && inputValue.trim() === '') inputValue = null
 
 			const bindingKey = getBindingKey(site.type, eventName)
-			if (inputValue == null || inputValue === '' || inputValue === false) {
+			if (inputValue == null || inputValue === false) {
 				if (!currentBindings) continue
 				currentBindings.delete(bindingKey)
 				continue

@@ -68,13 +68,13 @@ test('plugin diagnostics match the shared analyzer for TS files', () => {
 	const diagnostics = languageService.getSemanticDiagnostics(filePath).filter(diagnostic => diagnostic.code >= 91000)
 	assert.deepEqual(
 		diagnostics.map(diagnostic => diagnostic.code),
-		[91001, 91002, 91003, 91005, 91004, 91006, 91007, 91004, 91007, 91004],
+		[91001, 91002, 91003, 91005, 91004, 91006, 91007, 91004, 91007, 91004, 91004],
 	)
 	assert(
 		diagnostics.some(
 			diagnostic =>
 				diagnostic.code === 91004 &&
-				String(diagnostic.messageText).includes('@change expects a function, string, false, null, or undefined.'),
+				String(diagnostic.messageText).includes('@change expects a function, false, null, or undefined.'),
 		),
 	)
 })
@@ -275,6 +275,7 @@ test('cli reports the same TS diagnostics as the plugin', () => {
 	assert(output.includes('pepper/missing-closing-tag'))
 	assert(output.includes('pepper/invalid-table-structure'))
 	assert(output.includes('pepper/static-force'))
+	assert(output.includes('pepper/string-event'))
 	assert(output.includes('pepper/comment-interpolation'))
 	assert.match(output, /pepper-lint found \d+ issues\./)
 })
