@@ -6,5 +6,5 @@ export default {
 	...config,
 
 	// unit tests only (no performance tests)
-	files: ['test/**/*.test.js', '!test/perf/**/*.test.js'],
+	files: ['test/**/*.test.js', '!test/perf/**/*.test.js', '!test/ssr.test.js'],
 }

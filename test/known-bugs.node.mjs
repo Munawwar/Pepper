@@ -172,7 +172,7 @@ test('[A17] Store rejects an own __proto__ key before changing data or notifying
 	assert.deepEqual(changes, [])
 })
 
-test.skip('[TOOLING] browser unit config excludes Node-only SSR tests', async () => {
+test('[TOOLING] browser unit config excludes Node-only SSR tests', async () => {
 	const config = (await import('./web-test-runner.unit.config.mjs')).default
 
 	assert.ok(
@@ -181,7 +181,7 @@ test.skip('[TOOLING] browser unit config excludes Node-only SSR tests', async ()
 	)
 })
 
-test.skip('[TOOLING] test:dom runs every browser unit suite', async () => {
+test('[TOOLING] test:dom runs every browser unit suite', async () => {
 	const packageJson = await readJson('../package.json')
 	const script = packageJson.scripts['test:dom']
 
