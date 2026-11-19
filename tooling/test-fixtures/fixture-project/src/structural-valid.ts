@@ -23,3 +23,5 @@ html`<table>
 </table>`
 html`<em><span>text</span></em>`
 html`<button @someevent=${handler} @someEvent=${handler} .someprop=${value} .someProp=${value}></button>`
+
+html`<div !class="prefix-${value}"></div>`

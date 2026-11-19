@@ -384,6 +384,9 @@ function compileStartTag(raw) {
 			}
 		}
 
+		if (name.startsWith('!') && !value?.includes(INTERPOLATION_MARKER))
+			throw new SyntaxError('Forced bindings require an interpolation.')
+
 		const spreadMatch = name.match(SPREAD_SITE_REGEXP)
 		if (spreadMatch) {
 			bindings.push({type: 'spread', index: Number(spreadMatch[1])})

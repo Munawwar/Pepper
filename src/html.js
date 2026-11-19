@@ -621,9 +621,7 @@ function findInterpolationSites(fragment, caseMappings) {
 			const element = /** @type {Element} */ (node)
 			const elementState = {}
 
-			// A list of placeholder attributes to remove after finding
-			// interpolation sites (f.e. !foo="" is removed, as it will be set
-			// dynamically later)
+			// Remove placeholder attributes after discovering every binding.
 			const attributesToRemove = []
 
 			for (const attr of element.attributes) {
@@ -664,6 +662,9 @@ function findInterpolationSites(fragment, caseMappings) {
 				) {
 					const isStatic = !value.includes(INTERPOLATION_MARKER)
 
+					const skipEqualityCheck = name.startsWith('!')
+					if (isStatic && skipEqualityCheck) throw new SyntaxError('Forced bindings require an interpolation.')
+
 					let parsedParts
 					if (isStatic) parsedParts = [value]
 					// Parse attribute value parts (for interpolated content)
@@ -673,7 +674,6 @@ function findInterpolationSites(fragment, caseMappings) {
 					/** @type {'attribute'|'boolean-attribute'|'property'|'event'} */
 					let type = 'attribute'
 					let processedName = '' // The name without special prefixes
-					let skipEqualityCheck = name.startsWith('!')
 
 					if (name.startsWith('?') || name.startsWith('!?')) {
 						type = 'boolean-attribute'
@@ -689,8 +689,6 @@ function findInterpolationSites(fragment, caseMappings) {
 					} else {
 						type = 'attribute'
 						processedName = skipEqualityCheck ? name.slice(1) : name // Extract name after ! if present
-						// Ensure static forced attributes are set initially. Basically !foo="bar" acts like foo="bar".
-						if (isStatic && skipEqualityCheck) element.setAttribute(processedName, value)
 					}
 
 					/** @type {InterpolationSite} */

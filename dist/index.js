@@ -404,12 +404,13 @@ function findInterpolationSites(fragment, caseMappings) {
         }
         if (value.includes(INTERPOLATION_MARKER) || name.startsWith("?") || name.startsWith(".") || name.startsWith("@") || name.startsWith("!")) {
           const isStatic = !value.includes(INTERPOLATION_MARKER);
+          const skipEqualityCheck = name.startsWith("!");
+          if (isStatic && skipEqualityCheck) throw new SyntaxError("Forced bindings require an interpolation.");
           let parsedParts;
           if (isStatic) parsedParts = [value];
           else parsedParts = parseInterpolationParts(value.split(INTERPOLATION_REGEXP), false);
           let type = "attribute";
           let processedName = "";
-          let skipEqualityCheck = name.startsWith("!");
           if (name.startsWith("?") || name.startsWith("!?")) {
             type = "boolean-attribute";
             processedName = name.slice(skipEqualityCheck ? 2 : 1);
@@ -424,7 +425,6 @@ function findInterpolationSites(fragment, caseMappings) {
           } else {
             type = "attribute";
             processedName = skipEqualityCheck ? name.slice(1) : name;
-            if (isStatic && skipEqualityCheck) element.setAttribute(processedName, value);
           }
           const site = {
             node: element,

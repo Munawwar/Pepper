@@ -49,3 +49,5 @@ html`<not></not>`
 html`<body>
 	<title>x</title>
 </body>`
+
+html`<div !class="x" !?hidden></div>`

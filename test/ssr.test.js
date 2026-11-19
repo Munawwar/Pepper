@@ -45,6 +45,11 @@ test('renders mixed static and dynamic attributes', () => {
 	assert.equal(output, '<div class="a b c" data-x="1" title=""></div>')
 })
 
+test('rejects static forced bindings and renders interpolated forced attributes', () => {
+	assert.throws(() => renderToString(html`<input !.value="fixed">`), /Forced bindings require an interpolation/)
+	assert.equal(renderToString(html`<div !class=${'x'}></div>`), '<div class="x"></div>')
+})
+
 test('applies attribute precedence in template order', () => {
 	const output = renderToString(html`
 		<div

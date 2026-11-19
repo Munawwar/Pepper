@@ -144,6 +144,7 @@ test('plugin diagnostics report structural markup rules', () => {
 				String(diagnostic.messageText).includes('browser parsing will change the DOM tree'),
 		),
 	)
+	assert.equal(diagnostics.filter(diagnostic => diagnostic.ruleId === 'pepper/static-force').length, 2)
 	const duplicate = diagnostics.find(diagnostic => diagnostic.ruleId === 'pepper/duplicate-attribute')
 	assert.equal(duplicate?.start, getPosition(filePath, 'title="y"'))
 	assert.equal(duplicate?.length, 'title'.length)
@@ -273,5 +274,6 @@ test('cli reports the same TS diagnostics as the plugin', () => {
 	assert(output.includes('TS91007'))
 	assert(output.includes('pepper/missing-closing-tag'))
 	assert(output.includes('pepper/invalid-table-structure'))
+	assert(output.includes('pepper/static-force'))
 	assert.match(output, /pepper-lint found \d+ issues\./)
 })

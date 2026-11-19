@@ -277,13 +277,6 @@ describe('force functionality', () => {
 		<div class=${'same-class'}></div>
 	`
 
-	// This also tests that a static !foo="bar" attribute maps to foo="bar"
-	// (sets it only once though)
-	const template2 = () => html`
-		<div !class="same-class"></div>
-		<div class=${'same-class'}></div>
-	`
-
 	const template3 = () => html`
 		<div !class=${'same-class'}></div>
 		<div class=${'same-class'}></div>
@@ -342,10 +335,6 @@ describe('force functionality', () => {
 
 	it('should NOT affect other elements with same attribute in same template (force())', async () => {
 		await testForceIsolation(template)
-	})
-
-	it('should NOT affect other elements with same attribute in same template (regular static attribute)', async () => {
-		await testForceIsolation(template2)
 	})
 
 	it('should NOT affect other elements with same attribute in same template (!, regular attribute)', async () => {

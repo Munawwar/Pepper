@@ -137,6 +137,7 @@ function createDiscoveryAndScan(context) {
 		}
 		const holes = []
 		const diagnostics = []
+		const literalForcedAttributes = new Map()
 
 		function pushStructuralDiagnostic(start, length, code, ruleId, message) {
 			diagnostics.push({start, length, code, ruleId, message})
@@ -159,6 +160,8 @@ function createDiscoveryAndScan(context) {
 					`Attribute "${state.currentAttr}" duplicated`,
 				)
 			else state.currentTagAttributes.set(key, true)
+			if (state.currentTag !== COMPONENT_TAG_PLACEHOLDER && state.currentAttr.startsWith('!'))
+				literalForcedAttributes.set(state.currentAttrStart, state.currentAttr)
 			state.attrRecorded = true
 		}
 
@@ -593,6 +596,7 @@ function createDiscoveryAndScan(context) {
 			}
 			if (state.mode === 'beforeAttrValue' || state.mode === 'attrValue') {
 				const rawName = state.currentAttr
+				literalForcedAttributes.delete(state.currentAttrStart)
 				holes.push({
 					index: segmentIndex,
 					kind: rawName.startsWith('.')
@@ -623,6 +627,8 @@ function createDiscoveryAndScan(context) {
 			})
 		}
 
+		for (const [start, name] of literalForcedAttributes)
+			pushRule(start, name.length, 'staticForce', 'Forced bindings require an interpolation.')
 		for (const entry of stack)
 			pushRule(
 				entry.start,

@@ -24,6 +24,7 @@ const DIAGNOSTIC_CODES = {
 	closeTagAttribute: 92009,
 	invalidElementName: 92010,
 	invalidElementParent: 92011,
+	staticForce: 92012,
 }
 const STRUCTURAL_RULES = {
 	missingClosingTag: 'pepper/missing-closing-tag',
@@ -37,6 +38,7 @@ const STRUCTURAL_RULES = {
 	closeTagAttribute: 'pepper/close-tag-attribute',
 	invalidElementName: 'pepper/invalid-element-name',
 	invalidElementParent: 'pepper/invalid-element-parent',
+	staticForce: 'pepper/static-force',
 }
 
 const VOID_HTML_TAGS = new Set([

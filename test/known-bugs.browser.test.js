@@ -1048,22 +1048,8 @@ describe('Known Pepper browser regressions', () => {
 		assertEquals(liveInput.indeterminate, true, 'Hydration should initialize indeterminate')
 	})
 
-	it.skip('[A14] reapplies a static forced regular attribute', async () => {
-		const key = {}
-		const renderForced = () => domHtml`<div !class="same"></div>`(key)
-		const [element] = renderForced()
-		document.body.append(element)
-		let mutations = 0
-		const observer = new MutationObserver(records => {
-			mutations += records.filter(record => record.attributeName === 'class').length
-		})
-		observer.observe(element, {attributes: true})
-
-		renderForced()
-		await new Promise(resolve => setTimeout(resolve, 0))
-		observer.disconnect()
-
-		assert(mutations > 0, 'A static forced binding should set the same value again')
+	it('[A14] rejects force on a literal attribute', () => {
+		assertThrows(() => domHtml`<div !class="same"></div>`({}), /Forced bindings require an interpolation/)
 	})
 
 	it.skip('[A18] exposes an explicit root unmount operation', () => {
