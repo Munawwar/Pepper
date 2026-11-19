@@ -1264,18 +1264,12 @@ class TemplateInstance {
 					updateEventHandler(/** @type {Element} */ (node), eventName, eventState, eventState.currentEventListener)
 			}
 
-			if (/** @type {Element} */ (node).localName.includes('-'))
-				for (const binding of elementState.lastBindings?.values() || [])
-					if (binding.type === 'property') /** @type {any} */ (node)[binding.attributeName] = binding.value
 			for (const binding of elementState.lastBindings?.values() || []) {
-				if (
-					binding.type === 'property' &&
-					binding.attributeName === '__pepperRef' &&
-					binding.value &&
-					typeof binding.value === 'object' &&
-					'current' in binding.value
-				) {
-					if (this.active) binding.value.current = /** @type {Element} */ (node)
+				if (binding.type !== 'property') continue
+				if (binding.attributeName !== '__pepperRef') {
+					/** @type {any} */ (node)[binding.attributeName] = binding.value
+				} else if (this.active && binding.value && typeof binding.value === 'object' && 'current' in binding.value) {
+					binding.value.current = /** @type {Element} */ (node)
 				}
 			}
 

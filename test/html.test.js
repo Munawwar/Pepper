@@ -419,7 +419,7 @@ describe('html template function', () => {
 		)
 	})
 
-	it('pseudo-hydrates spread events and custom props without clobbering native state', () => {
+	it('hydrates spread events and properties on native and custom elements', () => {
 		const container = document.createElement('div')
 		container.innerHTML = '<spread-hydrate-el title="live"></spread-hydrate-el><button title="live"></button>'
 		const liveCustom = /** @type {HTMLElement} */ (container.childNodes[0])
@@ -438,7 +438,7 @@ describe('html template function', () => {
 		assertEquals(button, liveButton, 'Hydration should reuse the existing native element')
 		assertEquals(/** @type {any} */ (custom).foo, 'bar', 'Hydration should initialize custom element props from spread')
 		assertEquals(custom.getAttribute('title'), 'live', 'Hydration should preserve native attributes on custom elements')
-		assertEquals(/** @type {any} */ (button).foo, undefined, 'Hydration should skip native props from spread')
+		assertEquals(/** @type {any} */ (button).foo, 'bar', 'Hydration should initialize native props from spread')
 		assertEquals(
 			button.getAttribute('title'),
 			'live',

@@ -155,6 +155,8 @@ function Field() {
 }
 ```
 
+Hydration applies explicit DOM property bindings to the adopted element. For example, `.value=${name}` sets the live input value even if someone typed before hydration. Use the `value` attribute for an initial default that preserves edits.
+
 When a page has multiple SSR roots, pass the same `identifierPrefix` to server render and client hydrate for each root:
 
 ```js

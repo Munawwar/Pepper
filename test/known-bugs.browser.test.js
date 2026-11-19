@@ -1035,12 +1035,15 @@ describe('Known Pepper browser regressions', () => {
 		assertEquals(siblingRenders, 1, 'The non-consumer sibling should remain memoized')
 	})
 
-	it.skip('[A13] initializes non-form native properties during hydration', () => {
+	it('[A13] applies template properties to the adopted input', () => {
 		const container = createContainer()
 		container.innerHTML = '<input>'
 		const liveInput = container.firstElementChild
 
-		domHtml`<input .indeterminate=${true}>`({}, [liveInput])
+		liveInput.value = 'typed before hydration'
+		domHtml`<input .indeterminate=${true} .value=${'from template'}>`({}, [liveInput])
+
+		assertEquals(liveInput.value, 'from template', 'An explicit property binding controls the adopted input')
 
 		assertEquals(liveInput.indeterminate, true, 'Hydration should initialize indeterminate')
 	})
