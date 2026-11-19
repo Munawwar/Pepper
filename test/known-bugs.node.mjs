@@ -156,6 +156,17 @@ test('[A17] Store notifies subscribers about a constructor key change', () => {
 	assert.deepEqual(notifications, [['constructor']])
 })
 
+test('Store uses Object.is for both patch and replacement notifications', () => {
+	const store = new Store({score: NaN, offset: 0})
+	const notifications = []
+	store.subscribe(['score', 'offset'], keys => notifications.push(keys))
+
+	store.assign({score: NaN, offset: -0})
+	store.data = {score: NaN, offset: 0}
+
+	assert.deepEqual(notifications, [['offset'], ['offset']])
+})
+
 test('[A17] Store rejects an own __proto__ key before changing data or notifying subscribers', () => {
 	const invalid = JSON.parse('{"value":2,"__proto__":{}}')
 	const data = {value: 1}

@@ -11,7 +11,7 @@ function validateData(data) {
  */
 function changedKeys(previous, next) {
 	validateData(next);
-	return Object.keys(next).filter(prop => !Object.hasOwn(previous, prop) || previous[prop] !== next[prop]);
+	return Object.keys(next).filter(prop => !Object.hasOwn(previous, prop) || !Object.is(previous[prop], next[prop]));
 }
 
 // A store for Pepper views
