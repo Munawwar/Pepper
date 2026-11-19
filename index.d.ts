@@ -78,6 +78,8 @@ export function ref<T = Node>(): { current: T | null }
 export function stableId(): string
 export function portal(target: PortalTarget, renderable: unknown): PortalRenderable
 
+export function unmount(container: RootContainer): void
+
 export function render<
 	Props = Record<string, unknown>,
 	Result extends ComponentFactoryResult = ComponentFactoryResult,

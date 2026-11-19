@@ -1052,21 +1052,33 @@ describe('Known Pepper browser regressions', () => {
 		assertThrows(() => domHtml`<div !class="same"></div>`({}), /Forced bindings require an interpolation/)
 	})
 
-	it.skip('[A18] exposes an explicit root unmount operation', () => {
+	it('[A18] unmounts a root, cancels pending updates and permits a fresh mount', async () => {
+		const container = createContainer()
+		const outlet = createContainer()
 		let cleanups = 0
+		let callbacks = 0
 
-		function App({effect}) {
+		function App({effect, update}) {
 			effect(() => () => cleanups++, () => [])
-			return html => html`<span>mounted</span>`
+			return {update, render: html => html`<span>mounted</span>${portal(outlet, html`<b>portal</b>`)}`}
 		}
 
-		const container = createContainer()
-		render(App, container)
-		assert(typeof Pepper.unmount === 'function', 'Pepper should export unmount(container)')
+		const model = render(App, container)
+		assertEquals(outlet.textContent, 'portal')
+		model.update(() => callbacks++)
 		Pepper.unmount(container)
-
-		assertEquals(cleanups, 1, 'Unmount should run root cleanup exactly once')
-		assertEquals(container.childNodes.length, 0, 'Unmount should remove root DOM')
+		Pepper.unmount(container)
+		assertEquals(cleanups, 1)
+		assertEquals(container.childNodes.length, 0)
+		assertEquals(outlet.childNodes.length, 0)
+		render(App, container)
+		model.update(() => callbacks++)
+		await Promise.resolve()
+		assertEquals(callbacks, 0)
+		assertEquals(container.textContent, 'mounted')
+		assertEquals(outlet.textContent, 'portal')
+		Pepper.unmount(container)
+		assertEquals(cleanups, 2)
 	})
 
 	it.skip('[DOM] cleans up children inserted from a DocumentFragment', () => {

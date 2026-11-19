@@ -196,7 +196,10 @@ function createChildIdPath(ownerRuntime) {
   return [...ownerRuntime.idPath, `c${ownerRuntime.nextChildId++}`];
 }
 function markRuntimeDirty(runtime, callback) {
-  if (callback && runtime.rootRecord.pendingCallbacks) runtime.rootRecord.pendingCallbacks.push(callback);
+  if (runtime.destroyed) return;
+  if (callback) runtime.rootRecord.pendingCallbacks?.push(() => {
+    if (!runtime.destroyed) callback();
+  });
   runtime.dirty = true;
   runtime.rootRecord.dirtyRuntimes?.add(runtime);
   runtime.rootRecord.scheduleRender();
@@ -405,8 +408,12 @@ function flushEffects(rootRecord) {
       }
       if (cleanupError !== NO_ERROR) throw cleanupError;
       for (const { effect, dependencies, previousDependencies } of changedEffects) {
+        if (runtime.destroyed) break;
         const cleanup = effect.handler(dependencies, previousDependencies);
-        if (typeof cleanup === "function") effect.cleanup = cleanup;
+        if (typeof cleanup === "function") {
+          if (runtime.destroyed) cleanup();
+          else effect.cleanup = cleanup;
+        }
       }
     } catch (error) {
       for (const pendingRuntime of pendingEffects.slice(index + 1)) rootRecord.pendingEffects?.add(pendingRuntime);
@@ -706,4 +713,4 @@ export {
   lowerComponentValues,
   resolveComponentProps
 };
-//# sourceMappingURL=chunk-42WHAVSZ.js.map
+//# sourceMappingURL=chunk-W6HGGVDB.js.map

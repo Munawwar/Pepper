@@ -157,6 +157,8 @@ function Field() {
 
 Prefix an interpolated DOM binding with `!` to apply it on every template update, for example `!class=${name}`. Literal attributes such as `!class="x"` are invalid. Spreads and explicit bindings apply from left to right. On overlap the last binding wins, including when there are multiple spreads.
 
+`unmount(container)` disposes a rendered or hydrated root, runs effect cleanups, and removes its DOM and portals. Pass the same element or selector used to mount it. A subsequent `render()` creates a fresh root.
+
 Hydration applies explicit DOM property bindings to the adopted element. For example, `.value=${name}` sets the live input value even if someone typed before hydration. Use the `value` attribute for an initial default that preserves edits.
 
 When a page has multiple SSR roots, pass the same `identifierPrefix` to server render and client hydrate for each root:

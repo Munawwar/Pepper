@@ -26,7 +26,7 @@ import {
   state,
   syncComponentProps,
   throwBoundaryError
-} from "./chunks/chunk-42WHAVSZ.js";
+} from "./chunks/chunk-W6HGGVDB.js";
 
 // src/html.js
 var html_exports = {};
@@ -1350,6 +1350,7 @@ function flushDirtyRuntimes(rootRecord) {
   });
   rootRecord.dirtyRuntimes.clear();
   for (const runtime of dirtyRuntimes) {
+    if (runtime.destroyed) continue;
     let retryRuntime = runtime;
     let retrying = false;
     while (true) {
@@ -1418,8 +1419,7 @@ function scheduleRootRender(rootRecord) {
   rootRecord.flushScheduled = true;
   queueMicrotask(() => {
     rootRecord.flushScheduled = false;
-    if (!rootRecord.topRuntime) throw new Error("Pepper root is missing its top runtime.");
-    flushDirtyRuntimes(rootRecord);
+    if (!rootRecord.topRuntime?.destroyed) flushDirtyRuntimes(rootRecord);
   });
 }
 function mountRoot(Component, container, props = {}, options = {}, hydrateOnly = false) {
@@ -1457,6 +1457,19 @@ function mountRoot(Component, container, props = {}, options = {}, hydrateOnly =
   performRootRender(rootRecord, hydrateOnly && !rootRecord.mounted);
   if (!rootRecord.topRuntime?.model) throw new Error("Pepper root did not produce a component model.");
   return rootRecord.topRuntime.model;
+}
+function unmount(container) {
+  const target = resolveElementTarget(container, "Pepper unmount target");
+  const root = rootMap.get(target);
+  if (!root) return;
+  rootMap.delete(target);
+  root.pendingCallbacks.length = 0;
+  root.dirtyRuntimes.clear();
+  try {
+    destroyComponentRuntime(root.topRuntime);
+  } finally {
+    if (!rootMap.has(target)) target.replaceChildren();
+  }
 }
 function hydrate(Component, container, props = {}, options = {}) {
   return mountRoot(Component, container, props, options, true);
@@ -1529,6 +1542,7 @@ export {
   stableId,
   state,
   svg2 as svg,
+  unmount,
   unsafeHTML,
   unsafeMathML,
   unsafeSVG

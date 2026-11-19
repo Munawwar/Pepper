@@ -353,6 +353,7 @@ function flushDirtyRuntimes(rootRecord) {
 		})
 	rootRecord.dirtyRuntimes.clear()
 	for (const runtime of dirtyRuntimes) {
+		if (runtime.destroyed) continue
 		let retryRuntime = runtime
 		let retrying = false
 		while (true) {
@@ -439,8 +440,7 @@ function scheduleRootRender(rootRecord) {
 	rootRecord.flushScheduled = true
 	queueMicrotask(() => {
 		rootRecord.flushScheduled = false
-		if (!rootRecord.topRuntime) throw new Error('Pepper root is missing its top runtime.')
-		flushDirtyRuntimes(rootRecord)
+		if (!rootRecord.topRuntime?.destroyed) flushDirtyRuntimes(rootRecord)
 	})
 }
 
@@ -485,6 +485,21 @@ function mountRoot(Component, container, props = {}, options = {}, hydrateOnly =
 	performRootRender(rootRecord, hydrateOnly && !rootRecord.mounted)
 	if (!rootRecord.topRuntime?.model) throw new Error('Pepper root did not produce a component model.')
 	return rootRecord.topRuntime.model
+}
+
+/** @param {string | Element} container */
+function unmount(container) {
+	const target = resolveElementTarget(container, 'Pepper unmount target')
+	const root = rootMap.get(target)
+	if (!root) return
+	rootMap.delete(target)
+	root.pendingCallbacks.length = 0
+	root.dirtyRuntimes.clear()
+	try {
+		destroyComponentRuntime(root.topRuntime)
+	} finally {
+		if (!rootMap.has(target)) target.replaceChildren()
+	}
 }
 
 /**
@@ -597,6 +612,7 @@ export {
 	portal,
 	state,
 	svg,
+	unmount,
 	unsafeHTML,
 	unsafeMathML,
 	unsafeSVG,
