@@ -194,7 +194,7 @@ test.skip('[TOOLING] lint:templates supplies a default TypeScript project', asyn
 	assert.match(packageJson.scripts['lint:templates'], /(?:--project|-p)\s+\S+/)
 })
 
-test.skip('[TOOLING] VS Code manifest points at the Pepper repository', async () => {
+test('[TOOLING] VS Code manifest points at the Pepper repository', async () => {
 	const manifest = await readJson('../tooling/pepper-vscode/package.json')
 
 	assert.equal(manifest.repository.url, 'https://github.com/Munawwar/pepper.git')
