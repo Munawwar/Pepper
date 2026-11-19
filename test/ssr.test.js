@@ -293,6 +293,23 @@ test('renders deterministic component-scoped ids during SSR', () => {
 	assert.equal(renderComponentToString(App, {}, {identifierPrefix: 'checkout-'}), output)
 })
 
+test('keeps distinct ids for the formerly colliding paths 298/38 and 369/822', () => {
+	function Empty() { return () => '' }
+	function Field() {
+		const id = stableId()
+		return h => h`<input id=${id}>`
+	}
+	function Row({getProps}) {
+		return h => h`${Array.from({length: getProps().offset}, () => h`<${Empty} />`)}<${Field} />`
+	}
+	function App() {
+		return h => h`${Array.from({length: 370}, (_, i) =>
+			i === 298 || i === 369 ? h`<${Row} offset=${i === 298 ? 38 : 822} />` : h`<${Empty} />`)}`
+	}
+
+	assert.equal(renderComponentToString(App), '<input id="p-8a-12-0"><input id="p-a9-mu-0">')
+})
+
 test('distinguishes separate SSR component sites that use the same key', () => {
 	function Field() {
 		const id = stableId()

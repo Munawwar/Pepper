@@ -67,10 +67,9 @@ let currentOwnerRuntime = null
  *   debugKeyNodes?: Element[],
  *   destroyed: boolean,
  *   dirty: boolean,
- *   idBase: string | null,
  *   nextChildId: number,
  *   idLocalCounter: number,
- *   idPath: string[],
+ *   idPath: string,
  *   lastSeen: number,
  *   model: ComponentModel | null,
  *   effects: Array<{
@@ -301,33 +300,15 @@ function ref() {
 function stableId() {
 	const runtime = currentSetupRuntime
 	if (!runtime) throw new Error('stableId() can only be used while creating a Pepper component.')
-	if (runtime.idBase == null) runtime.idBase = hashIdPath(runtime.idPath)
-	return `${runtime.rootRecord.identifierPrefix || ''}p-${runtime.idBase}-${runtime.idLocalCounter++}`
+	return `${runtime.rootRecord.identifierPrefix || ''}p-${runtime.idPath}${(runtime.idLocalCounter++).toString(36)}`
 }
 
 /**
- * @param {string[]} parts
+ * @param {{ idPath: string, nextChildId: number }} ownerRuntime
  * @returns {string}
  */
-function hashIdPath(parts) {
-	let hash = 0x811c9dc5
-	for (const part of parts) {
-		for (let index = 0; index < part.length; index++) {
-			hash ^= part.charCodeAt(index)
-			hash = Math.imul(hash, 0x01000193)
-		}
-		hash ^= 0xff
-		hash = Math.imul(hash, 0x01000193)
-	}
-	return (hash >>> 0).toString(36)
-}
-
-/**
- * @param {{ idPath: string[], nextChildId: number }} ownerRuntime
- * @returns {string[]}
- */
 function createChildIdPath(ownerRuntime) {
-	return [...ownerRuntime.idPath, `c${ownerRuntime.nextChildId++}`]
+	return `${ownerRuntime.idPath}${(ownerRuntime.nextChildId++).toString(36)}-`
 }
 
 /**
@@ -383,10 +364,10 @@ function syncComponentProps(runtime, nextProps = {}) {
  * @param {Props} props
  * @param {RootRecord} rootRecord
  * @param {ComponentRuntime | null} [parentRuntime=null]
- * @param {string[]} [idPath]
+ * @param {string} [idPath]
  * @returns {ComponentRuntime}
  */
-function createComponentRuntime(componentType, props, rootRecord, parentRuntime = null, idPath = parentRuntime?.idPath || []) {
+function createComponentRuntime(componentType, props, rootRecord, parentRuntime = null, idPath = '') {
 	const definition = getComponentDefinition(componentType)
 	/** @type {ComponentRuntime} */
 	const runtime = {
@@ -400,7 +381,6 @@ function createComponentRuntime(componentType, props, rootRecord, parentRuntime 
 		currentTemplateInstance: null,
 		destroyed: false,
 		dirty: true,
-		idBase: null,
 		nextChildId: 0,
 		idLocalCounter: 0,
 		idPath,

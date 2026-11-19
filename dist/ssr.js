@@ -22,7 +22,7 @@ import {
   stableId,
   state,
   throwBoundaryError
-} from "./chunks/chunk-CB5VZCVD.js";
+} from "./chunks/chunk-LV2SZM5N.js";
 
 // src/html-ssr.js
 var TEMPLATE_RESULT_SYMBOL = /* @__PURE__ */ Symbol("template-result");
@@ -353,7 +353,7 @@ function looksTrustedTextValue(value) {
 var publicSsrTagsHolder = {
   context: /* @__PURE__ */ new Map(),
   identifierPrefix: "",
-  idPath: [],
+  idPath: "",
   nextChildId: 0,
   scheduleRender() {
   },
@@ -444,7 +444,7 @@ function renderComponentToString(Component, props = {}, options = {}) {
   const rootRecord = {
     context: createContextValues(options.context),
     identifierPrefix: options.identifierPrefix || "",
-    idPath: [],
+    idPath: "",
     nextChildId: 0,
     scheduleRender() {
     },

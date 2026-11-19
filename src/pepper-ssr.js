@@ -45,7 +45,7 @@ import {
  * @typedef {{
  *   context: Map<string, unknown>,
  *   identifierPrefix?: string,
- *   idPath: string[],
+ *   idPath: string,
  *   nextChildId: number,
  *   scheduleRender(): void,
  *   seenChildKeys: WeakMap<object, { pass: number, sites: Map<unknown, Set<string | number>> }>,
@@ -57,7 +57,7 @@ import {
 const publicSsrTagsHolder = {
 	context: new Map(),
 	identifierPrefix: '',
-	idPath: [],
+	idPath: '',
 	nextChildId: 0,
 	scheduleRender() {},
 	seenChildKeys: new WeakMap(),
@@ -173,7 +173,7 @@ function renderComponentToString(Component, props = {}, options = {}) {
 	const rootRecord = {
 		context: createContextValues(options.context),
 		identifierPrefix: options.identifierPrefix || '',
-		idPath: [],
+		idPath: '',
 		nextChildId: 0,
 		scheduleRender() {},
 		seenChildKeys: new WeakMap(),

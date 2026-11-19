@@ -177,23 +177,10 @@ function ref() {
 function stableId() {
   const runtime = currentSetupRuntime;
   if (!runtime) throw new Error("stableId() can only be used while creating a Pepper component.");
-  if (runtime.idBase == null) runtime.idBase = hashIdPath(runtime.idPath);
-  return `${runtime.rootRecord.identifierPrefix || ""}p-${runtime.idBase}-${runtime.idLocalCounter++}`;
-}
-function hashIdPath(parts) {
-  let hash = 2166136261;
-  for (const part of parts) {
-    for (let index = 0; index < part.length; index++) {
-      hash ^= part.charCodeAt(index);
-      hash = Math.imul(hash, 16777619);
-    }
-    hash ^= 255;
-    hash = Math.imul(hash, 16777619);
-  }
-  return (hash >>> 0).toString(36);
+  return `${runtime.rootRecord.identifierPrefix || ""}p-${runtime.idPath}${(runtime.idLocalCounter++).toString(36)}`;
 }
 function createChildIdPath(ownerRuntime) {
-  return [...ownerRuntime.idPath, `c${ownerRuntime.nextChildId++}`];
+  return `${ownerRuntime.idPath}${(ownerRuntime.nextChildId++).toString(36)}-`;
 }
 function markRuntimeDirty(runtime, callback) {
   if (runtime.destroyed) return;
@@ -229,7 +216,7 @@ function syncComponentProps(runtime, nextProps = {}) {
   runtime.props = normalizedProps;
   if (changed) runtime.dirty = true;
 }
-function createComponentRuntime(componentType, props, rootRecord, parentRuntime = null, idPath = parentRuntime?.idPath || []) {
+function createComponentRuntime(componentType, props, rootRecord, parentRuntime = null, idPath = "") {
   const definition = getComponentDefinition(componentType);
   const runtime = {
     childStores: /* @__PURE__ */ new Map(),
@@ -242,7 +229,6 @@ function createComponentRuntime(componentType, props, rootRecord, parentRuntime 
     currentTemplateInstance: null,
     destroyed: false,
     dirty: true,
-    idBase: null,
     nextChildId: 0,
     idLocalCounter: 0,
     idPath,
@@ -715,4 +701,4 @@ export {
   lowerComponentValues,
   resolveComponentProps
 };
-//# sourceMappingURL=chunk-CB5VZCVD.js.map
+//# sourceMappingURL=chunk-LV2SZM5N.js.map
