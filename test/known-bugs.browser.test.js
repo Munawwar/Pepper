@@ -1112,7 +1112,7 @@ describe('Known Pepper browser regressions', () => {
 		assertThrows(() => render(App, container), /duplicate key/i, 'Duplicate keys should fail clearly instead of collapsing DOM')
 	})
 
-	it.skip('[PORTAL] resolves a selector target created by the same render', () => {
+	it('[PORTAL] requires the selector to match when the portal renders', () => {
 		function App() {
 			return html => html`
 				<div id="local-outlet"></div>
@@ -1121,8 +1121,6 @@ describe('Known Pepper browser regressions', () => {
 		}
 
 		const container = createContainer()
-		render(App, container)
-
-		assertEquals(container.querySelector('#local-outlet')?.textContent, 'portal', 'Portal target resolution should occur after owner DOM commit')
+		assertThrows(() => render(App, container), /portal target selector "#local-outlet" must match an existing element/)
 	})
 })

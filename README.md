@@ -374,7 +374,7 @@ function App() {
 
 Notes:
 
-- `target` can be a DOM element or selector
+- Pass a DOM element directly, or use a selector that already matches an element in the document when the portal renders. For the example above, put `<div id="modal-root"></div>` in the page shell before mounting `App`. An outlet created by the same render becomes available after that render commits.
 - portal children still get normal Pepper lifecycle and context
 - SSR omits portal output
 

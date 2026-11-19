@@ -1344,6 +1344,7 @@ function removeOwnedNodes(target, nodes) {
 }
 function resolveElementTarget(container, errorPrefix) {
   const target = typeof container === "string" ? document.querySelector(container) : container;
+  if (typeof container === "string" && !target) throw new Error(`${errorPrefix} selector "${container}" must match an existing element in the document.`);
   if (!(target instanceof Element)) throw new Error(`${errorPrefix} must be a DOM element or selector.`);
   return target;
 }
