@@ -5,6 +5,7 @@ import {
   UNSAFE_MATHML_SYMBOL,
   UNSAFE_SVG_SYMBOL,
   captureBoundaryError,
+  commentHolePattern,
   compileComponentTemplate,
   component,
   createChildIdPath,
@@ -21,7 +22,7 @@ import {
   stableId,
   state,
   throwBoundaryError
-} from "./chunks/chunk-W6HGGVDB.js";
+} from "./chunks/chunk-CB5VZCVD.js";
 
 // src/html-ssr.js
 var TEMPLATE_RESULT_SYMBOL = /* @__PURE__ */ Symbol("template-result");
@@ -133,7 +134,7 @@ function getCompiledTemplate(strings) {
     if (source.startsWith("<!--", cursor)) {
       const commentEnd = source.indexOf("-->", cursor + 4);
       const end2 = commentEnd === -1 ? source.length : commentEnd + 3;
-      compiled.ops.push({ type: "static", value: source.slice(cursor, end2) });
+      compiled.ops.push({ type: "static", value: source.slice(cursor, end2).replace(commentHolePattern, " ") });
       cursor = end2;
       continue;
     }

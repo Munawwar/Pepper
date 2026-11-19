@@ -161,7 +161,7 @@ test('plugin handles scanner state across template segment boundaries', () => {
 	const {languageService} = createPluginLanguageService()
 	const filePath = path.join(fixtureRoot, 'src/structural-boundaries.ts')
 	const diagnostics = languageService.getSemanticDiagnostics(filePath).filter(diagnostic => diagnostic.code >= 92000)
-	assert.equal(diagnostics.length, 0)
+	assert.deepEqual(diagnostics.map(diagnostic => diagnostic.ruleId), ['pepper/comment-interpolation'])
 })
 
 test('plugin reports additional optional-end-tag and mismatched-close cases', () => {
@@ -275,5 +275,6 @@ test('cli reports the same TS diagnostics as the plugin', () => {
 	assert(output.includes('pepper/missing-closing-tag'))
 	assert(output.includes('pepper/invalid-table-structure'))
 	assert(output.includes('pepper/static-force'))
+	assert(output.includes('pepper/comment-interpolation'))
 	assert.match(output, /pepper-lint found \d+ issues\./)
 })

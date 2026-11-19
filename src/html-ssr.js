@@ -5,6 +5,7 @@
 import {
 	FORCE_SYMBOL,
 	RAW_TEXT_SYMBOL,
+	commentHolePattern,
 	UNSAFE_HTML_SYMBOL,
 	UNSAFE_MATHML_SYMBOL,
 	UNSAFE_SVG_SYMBOL,
@@ -250,7 +251,7 @@ function getCompiledTemplate(strings) {
 		if (source.startsWith('<!--', cursor)) {
 			const commentEnd = source.indexOf('-->', cursor + 4)
 			const end = commentEnd === -1 ? source.length : commentEnd + 3
-			compiled.ops.push({type: 'static', value: source.slice(cursor, end)})
+			compiled.ops.push({type: 'static', value: source.slice(cursor, end).replace(commentHolePattern, ' ')})
 			cursor = end
 			continue
 		}

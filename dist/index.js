@@ -6,6 +6,7 @@ import {
   UNSAFE_SVG_SYMBOL,
   __export,
   captureBoundaryError,
+  commentHolePattern,
   compileComponentTemplate,
   component,
   createChildIdPath,
@@ -26,7 +27,7 @@ import {
   state,
   syncComponentProps,
   throwBoundaryError
-} from "./chunks/chunk-W6HGGVDB.js";
+} from "./chunks/chunk-CB5VZCVD.js";
 
 // src/html.js
 var html_exports = {};
@@ -252,6 +253,21 @@ var Template = class {
       return parts.join("");
     });
     el.innerHTML = htmlString;
+    if (strings.length > 1 && htmlString.includes("<!--")) {
+      const fragments = [el.content];
+      for (const fragment of fragments) {
+        const comments = document.createTreeWalker(fragment, NodeFilter.SHOW_COMMENT);
+        while (comments.nextNode()) {
+          const comment = (
+            /** @type {Comment} */
+            comments.currentNode
+          );
+          comment.data = comment.data.replace(commentHolePattern, " ");
+        }
+        for (const template of fragment.querySelectorAll("template"))
+          if (template.content) fragments.push(template.content);
+      }
+    }
     if (mode === "svg" || mode === "mathml") {
       const wrapperElement = (
         /** @type {Element} */

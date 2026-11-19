@@ -25,6 +25,7 @@ const DIAGNOSTIC_CODES = {
 	invalidElementName: 92010,
 	invalidElementParent: 92011,
 	staticForce: 92012,
+	commentInterpolation: 92013,
 }
 const STRUCTURAL_RULES = {
 	missingClosingTag: 'pepper/missing-closing-tag',
@@ -39,6 +40,7 @@ const STRUCTURAL_RULES = {
 	invalidElementName: 'pepper/invalid-element-name',
 	invalidElementParent: 'pepper/invalid-element-parent',
 	staticForce: 'pepper/static-force',
+	commentInterpolation: 'pepper/comment-interpolation',
 }
 
 const VOID_HTML_TAGS = new Set([

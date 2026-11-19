@@ -133,6 +133,12 @@ describe('html template function', () => {
 		assertEquals(mi.namespaceURI, 'http://www.w3.org/1998/Math/MathML', 'unsafeMathML should create MathML nodes')
 	})
 
+	it('omits comment holes while keeping adjacent bindings live', () => {
+		const [div] = html`<div><!--left${'ignored'}:${'also ignored'}right-->${'visible'}</div>`({})
+		assertEquals(div.firstChild?.nodeValue, 'left : right', 'Keep the static comment text')
+		assertEquals(div.textContent, 'visible', 'Render the next binding')
+	})
+
 	it('supports rawText in text interpolation without HTML parsing', () => {
 		const [script, style, textarea, title] =
 			/** @type {[HTMLScriptElement, HTMLStyleElement, HTMLTextAreaElement, HTMLTitleElement]} */ (

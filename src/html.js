@@ -1,6 +1,7 @@
 import {
 	FORCE_SYMBOL,
 	RAW_TEXT_SYMBOL,
+	commentHolePattern,
 	UNSAFE_HTML_SYMBOL,
 	UNSAFE_MATHML_SYMBOL,
 	UNSAFE_SVG_SYMBOL,
@@ -412,6 +413,18 @@ class Template {
 
 		// Use the standard HTML parser to parse the string into a template document
 		el.innerHTML = htmlString
+		if (strings.length > 1 && htmlString.includes('<!--')) {
+			const fragments = [el.content]
+			for (const fragment of fragments) {
+				const comments = document.createTreeWalker(fragment, NodeFilter.SHOW_COMMENT)
+				while (comments.nextNode()) {
+					const comment = /** @type {Comment} */ (comments.currentNode)
+					comment.data = comment.data.replace(commentHolePattern, ' ')
+				}
+				for (const template of fragment.querySelectorAll('template'))
+					if (template.content) fragments.push(template.content)
+			}
+		}
 
 		// For SVG and MathML templates, unwrap the content from the wrapper
 		// element that was added during parsing, and remove the wrapper, to

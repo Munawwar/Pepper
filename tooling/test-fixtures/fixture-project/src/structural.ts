@@ -51,3 +51,5 @@ html`<body>
 </body>`
 
 html`<div !class="x" !?hidden></div>`
+
+html`<!-- ${value} -->`

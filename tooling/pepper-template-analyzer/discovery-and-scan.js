@@ -560,6 +560,8 @@ function createDiscoveryAndScan(context) {
 			}
 
 			if (segmentIndex === segments.length - 1) continue
+			if (state.mode === 'comment')
+				pushRule(segmentStart + segment.length, 2, 'commentInterpolation', 'Interpolations in HTML comments are ignored.')
 			if (state.pendingSpread && state.mode === 'beforeAttr') {
 				holes.push({
 					index: segmentIndex,

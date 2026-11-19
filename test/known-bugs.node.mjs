@@ -139,11 +139,11 @@ test('[A15] SSR rawText matches browser text semantics in normal elements', asyn
 	)
 })
 
-test.skip('[A16] SSR never emits internal interpolation markers in comments', async () => {
+test('[A16] SSR never emits internal interpolation markers in comments', async () => {
 	const {html, renderToString} = await import('../src/html-ssr.js')
-	const output = renderToString(html`<!-- ${'ignored'} --><p>ok</p>`)
+	const output = renderToString(html`<!--left${'ignored'}:${'also ignored'}right--><p>${'ok'}</p>`)
 
-	assert.doesNotMatch(output, /⧙⧘\d+⧙⧘/)
+	assert.equal(output, '<!--left : right--><p>ok</p>')
 })
 
 test('[A17] Store notifies subscribers about a constructor key change', () => {

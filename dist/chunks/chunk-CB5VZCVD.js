@@ -683,6 +683,7 @@ var UNSAFE_HTML_SYMBOL = /* @__PURE__ */ Symbol("unsafe-html");
 var UNSAFE_SVG_SYMBOL = /* @__PURE__ */ Symbol("unsafe-svg");
 var UNSAFE_MATHML_SYMBOL = /* @__PURE__ */ Symbol("unsafe-mathml");
 var RAW_TEXT_SYMBOL = /* @__PURE__ */ Symbol("raw-text");
+var commentHolePattern = /⧙⧘\d+⧙⧘/g;
 
 export {
   __export,
@@ -691,6 +692,7 @@ export {
   UNSAFE_SVG_SYMBOL,
   UNSAFE_MATHML_SYMBOL,
   RAW_TEXT_SYMBOL,
+  commentHolePattern,
   component,
   isErrorBoundarySignal,
   throwBoundaryError,
@@ -713,4 +715,4 @@ export {
   lowerComponentValues,
   resolveComponentProps
 };
-//# sourceMappingURL=chunk-W6HGGVDB.js.map
+//# sourceMappingURL=chunk-CB5VZCVD.js.map
