@@ -1330,8 +1330,8 @@ function flushDirtyRuntimes(rootRecord) {
 }
 function performRootRender(rootRecord, hydrateOnly = false) {
   if (!rootRecord.topRuntime) throw new Error("Pepper root is missing its top runtime.");
-  if (!hydrateOnly && rootRecord.mounted && !rootRecord.topRuntime.dirty && rootRecord.dirtyRuntimes.size) {
-    flushDirtyRuntimes(rootRecord);
+  if (!hydrateOnly && rootRecord.mounted && !rootRecord.topRuntime.dirty) {
+    if (rootRecord.dirtyRuntimes.size) flushDirtyRuntimes(rootRecord);
     return;
   }
   rootRecord.dirtyRuntimes.clear();

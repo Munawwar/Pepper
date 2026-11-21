@@ -408,10 +408,9 @@ function performRootRender(rootRecord, hydrateOnly = false) {
 	if (
 		!hydrateOnly &&
 		rootRecord.mounted &&
-		!rootRecord.topRuntime.dirty &&
-		rootRecord.dirtyRuntimes.size
+		!rootRecord.topRuntime.dirty
 	) {
-		flushDirtyRuntimes(rootRecord)
+		if (rootRecord.dirtyRuntimes.size) flushDirtyRuntimes(rootRecord)
 		return
 	}
 	rootRecord.dirtyRuntimes.clear()

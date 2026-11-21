@@ -59,6 +59,26 @@ describe('Known Pepper browser regressions', () => {
 		}
 	})
 
+	it('keeps a child live across equal root renders', async () => {
+		const container = createContainer()
+		let increment, cleanups = 0
+		function Child({effect}) {
+			const [get, set] = state(0)
+			increment = () => set(get() + 1)
+			effect(() => () => cleanups++, () => [])
+			return html => html`<b>${get()}</b>`
+		}
+		function App() { return html => html`<section><${Child}/></section>` }
+		render(App, container)
+		render(App, container)
+		increment()
+		await Promise.resolve()
+		assertEquals(container.textContent, '1')
+		assertEquals(cleanups, 0)
+		Pepper.unmount(container)
+		assertEquals(cleanups, 1)
+	})
+
 	it('[A03] commits a child-local root template change', async () => {
 		let showOn
 
