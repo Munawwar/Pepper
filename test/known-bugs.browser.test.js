@@ -1191,6 +1191,30 @@ describe('Known Pepper browser regressions', () => {
 		assertEquals(subscriptions.join(','), 'start one,stop one,start two,stop two')
 	})
 
+	it('runs callbacks from effects after their scheduled DOM update', async () => {
+		const container = createContainer()
+		const seen = []
+		function App({effect, update}) {
+			const [count, setCount] = state(0)
+			effect(([value]) => {
+				if (value === 0) setCount(1, () => seen.push('mount ' + container.textContent))
+				if (value === 1) {
+					setCount(2, false)
+					update(() => seen.push('update ' + container.textContent))
+				}
+			}, () => [count()])
+			return html => html`<span>${count()}</span>`
+		}
+
+		render(App, container)
+		assertEquals(container.textContent, '0')
+		assertEquals(seen.length, 0)
+		await Promise.resolve()
+		assertEquals(seen.join(','), 'mount 1')
+		await Promise.resolve()
+		assertEquals(seen.join(','), 'mount 1,update 2')
+	})
+
 	it('[A18] unmounts a root, cancels pending updates and permits a fresh mount', async () => {
 		const container = createContainer()
 		const outlet = createContainer()

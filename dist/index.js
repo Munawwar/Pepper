@@ -1243,19 +1243,21 @@ function resolveElementTarget(container, errorPrefix) {
   if (!(target instanceof Element)) throw new Error(`${errorPrefix} must be a DOM element or selector.`);
   return target;
 }
-function flushEffectsWithBoundaries(rootRecord) {
+function finishRootCommit(rootRecord, callbacks) {
+  let retry = false;
   rootsFlushingEffects.add(rootRecord.container);
   try {
     flushEffects(rootRecord);
-    return true;
   } catch (error) {
     if (!isErrorBoundarySignal(error)) throw error;
     captureBoundaryError(error.boundary, error.error);
     rootRecord.dirtyRuntimes.add(error.boundary);
-    return false;
+    retry = true;
   } finally {
     rootsFlushingEffects.delete(rootRecord.container);
   }
+  if (retry) flushDirtyRuntimes(rootRecord);
+  for (const callback of callbacks) callback();
 }
 function flushDirtyRuntimes(rootRecord) {
   const dirtyRuntimes = /* @__PURE__ */ new Set();
@@ -1270,6 +1272,7 @@ function flushDirtyRuntimes(rootRecord) {
     for (const owner of pending.reverse()) dirtyRuntimes.add(owner);
   }
   rootRecord.dirtyRuntimes.clear();
+  const callbacks = rootRecord.pendingCallbacks.splice(0);
   for (const runtime of dirtyRuntimes) {
     if (!runtime.dirty || runtime.destroyed) continue;
     let retryRuntime = runtime;
@@ -1305,8 +1308,7 @@ function flushDirtyRuntimes(rootRecord) {
       }
     }
   }
-  if (!flushEffectsWithBoundaries(rootRecord)) flushDirtyRuntimes(rootRecord);
-  for (const callback of rootRecord.pendingCallbacks.splice(0)) callback();
+  finishRootCommit(rootRecord, callbacks);
 }
 function performRootRender(rootRecord, hydrateOnly = false) {
   if (!rootRecord.topRuntime) throw new Error("Pepper root is missing its top runtime.");
@@ -1316,6 +1318,7 @@ function performRootRender(rootRecord, hydrateOnly = false) {
     return;
   }
   rootRecord.dirtyRuntimes.clear();
+  const callbacks = rootRecord.pendingCallbacks.splice(0);
   let liveNodes = hydrateOnly ? Array.from(rootRecord.container.childNodes) : null;
   let replaceNodes = !rootRecord.mounted && !hydrateOnly;
   let nodes;
@@ -1334,8 +1337,7 @@ function performRootRender(rootRecord, hydrateOnly = false) {
   }
   if (replaceNodes) rootRecord.container.replaceChildren(...nodes);
   rootRecord.mounted = true;
-  if (!flushEffectsWithBoundaries(rootRecord)) flushDirtyRuntimes(rootRecord);
-  for (const callback of rootRecord.pendingCallbacks.splice(0)) callback();
+  finishRootCommit(rootRecord, callbacks);
 }
 function scheduleRootRender(rootRecord) {
   if (rootRecord.flushScheduled) return;
