@@ -118,6 +118,7 @@ Setup API:
   - other dependency arrays are compared item-by-item with `Object.is`
   - `handler(currentDependencies, previousDependencies)` receives `undefined` for the previous dependencies on its first run
   - cleanup runs before a changed effect reruns and when the component is removed
+  - use a state setter or `update()` to schedule a render from an effect. Calling `render()` or `hydrate()` on the same container during its effect flush throws.
   - effects are registered during SSR but never run there
 - `getProps()`
 - `getError()` - returns the currently captured error for an error-boundary component, otherwise `null`

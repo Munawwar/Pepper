@@ -1060,6 +1060,7 @@ var { componentBoundaries: componentBoundaries2, reconcileDom: reconcileDom2, re
   html_exports
 );
 var rootMap = /* @__PURE__ */ new WeakMap();
+var rootsFlushingEffects = /* @__PURE__ */ new Set();
 var singleValueStrings = (
   /** @type {TemplateStringsArray} */
   Object.assign(
@@ -1269,6 +1270,7 @@ function resolveElementTarget(container, errorPrefix) {
   return target;
 }
 function flushEffectsWithBoundaries(rootRecord) {
+  rootsFlushingEffects.add(rootRecord.container);
   try {
     flushEffects(rootRecord);
     return true;
@@ -1277,6 +1279,8 @@ function flushEffectsWithBoundaries(rootRecord) {
     captureBoundaryError(error.boundary, error.error);
     rootRecord.dirtyRuntimes.add(error.boundary);
     return false;
+  } finally {
+    rootsFlushingEffects.delete(rootRecord.container);
   }
 }
 function flushDirtyRuntimes(rootRecord) {
@@ -1362,6 +1366,8 @@ function scheduleRootRender(rootRecord) {
 }
 function mountRoot(Component, container, props = {}, options = {}, hydrateOnly = false) {
   const target = resolveElementTarget(container, "Pepper render/hydrate target");
+  if (rootsFlushingEffects.has(target))
+    throw new Error("Cannot render or hydrate a root while its effects are running. Use a state setter or update() to schedule a render.");
   let rootRecord = rootMap.get(target);
   if (!rootRecord || rootRecord.Component !== Component) {
     if (rootRecord) {

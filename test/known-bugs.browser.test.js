@@ -1052,6 +1052,37 @@ describe('Known Pepper browser regressions', () => {
 		assertThrows(() => domHtml`<div !class="same"></div>`({}), /Forced bindings require an interpolation/)
 	})
 
+	it('rejects synchronous same-root renders during effects and allows scheduled updates', async () => {
+		const container = createContainer()
+		const other = createContainer()
+		const subscriptions = []
+		function Other() { return html => html`<span>other</span>` }
+		function App({effect, getProps}) {
+			const [count, setCount] = state(0)
+			effect(() => {
+				for (const mount of [render, hydrate])
+					assertThrows(() => mount(Other, container), /while its effects are running/)
+				render(Other, other)
+				setCount(1)
+			}, () => [])
+			effect(([value]) => {
+				subscriptions.push('start ' + value)
+				return () => subscriptions.push('stop ' + value)
+			}, () => [getProps().value])
+			return html => html`<span>${getProps().value}/${count()}</span>`
+		}
+
+		render(App, container, {value: 'one'})
+		assertEquals(container.textContent, 'one/0')
+		assertEquals(other.textContent, 'other')
+		await Promise.resolve()
+		assertEquals(container.textContent, 'one/1')
+		render(App, container, {value: 'two'})
+		Pepper.unmount(container)
+		Pepper.unmount(other)
+		assertEquals(subscriptions.join(','), 'start one,stop one,start two,stop two')
+	})
+
 	it('[A18] unmounts a root, cancels pending updates and permits a fresh mount', async () => {
 		const container = createContainer()
 		const outlet = createContainer()
