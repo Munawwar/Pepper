@@ -59,6 +59,25 @@ describe('Known Pepper browser regressions', () => {
 		assertEquals(mounted.textContent, 'second')
 	})
 
+	it('only allows a provider to set context during its own setup', () => {
+		let changeTheme
+		function Child({getContext}) {
+			assertThrows(() => changeTheme('from child setup'), /setContext.*setup/)
+			return html => html`<span>${getContext('theme')}</span>`
+		}
+		function App({setContext}) {
+			changeTheme = theme => setContext('theme', theme)
+			changeTheme('light')
+			return html => html`<${Child}/>`
+		}
+
+		const container = createContainer()
+		render(App, container)
+		assertThrows(() => changeTheme('dark'), /setContext.*setup/)
+		assertEquals(container.textContent, 'light')
+		assertEquals(renderComponentToString(App), '<span>light</span>')
+	})
+
 	it.skip('[A02] renders when WeakMap only accepts object keys', () => {
 		const originalSet = WeakMap.prototype.set
 		WeakMap.prototype.set = function setObjectKeyOnly(key, value) {

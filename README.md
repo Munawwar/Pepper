@@ -274,7 +274,7 @@ const sidebarHtml = renderComponentToString(SidebarCart, {}, { context: { cart: 
 Context API available inside components:
 
 - `getContext(key)`
-- `setContext(key, value)`
+- `setContext(key, value)` provides a value during component setup. For values that change, provide a Store and subscribe to it as shown above.
 - `hasContext(key)`
 
 Browser components subscribe to the root context keys they read while rendering or resolving effect dependencies. Passing changed context values to a later `render()` call rerenders only those consumers; keys are compared by presence and `Object.is`. Read context lazily in render functions and effect dependency functions instead of capturing it once during setup.

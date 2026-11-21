@@ -416,6 +416,7 @@ function createComponentRuntime(componentType, props, rootRecord, parentRuntime 
 			if (runtime.parentRuntime) markRuntimeDirty(runtime.parentRuntime)
 		},
 		setContext: (key, value) => {
+			if (currentSetupRuntime !== runtime) throw new Error('Pepper setContext() can only be called during component setup.')
 			if (!runtime.contextValues) runtime.contextValues = new Map()
 			runtime.contextValues.set(key, value)
 			return value
