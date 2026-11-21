@@ -36,9 +36,9 @@ import {
 } from './component-syntax.js'
 
 const {componentBoundaries, reconcileDom, replaceNodeOwnership} = /** @type {{
- * componentBoundaries: WeakSet<Node>,
+ * componentBoundaries: WeakMap<Node, ComponentRuntime>,
  * reconcileDom(parentNode: Element | DocumentFragment | Document, oldNodes: Node[], newNodes: Node[], endBoundaryNode?: Node | null): Node[],
- * replaceNodeOwnership(boundary: Node, previousNodes: Node[], nextNodes: Node[]): boolean,
+ * replaceNodeOwnership(boundary: Node, previousNodes: Node[], nextNodes: Node[]): void,
  * }} */ (/** @type {unknown} */ (htmlRuntime))
 
 /**
@@ -144,22 +144,14 @@ function commitRuntimeNodes(runtime, previousNodes, nextNodes) {
 		boundary,
 	)
 
-	let ownerRuntime = runtime
-	let previousOwnedNodes = previousNodes
-	let nextOwnedNodes = nextNodes
-	while (ownerRuntime.parentRuntime) {
-		if (replaceNodeOwnership(/** @type {Text} */ (ownerRuntime.domBoundary), previousOwnedNodes, nextOwnedNodes)) break
-		const ownerNodes = ownerRuntime.parentRuntime.currentNodes
-		const boundaryIndex = ownerNodes?.indexOf(/** @type {Text} */ (ownerRuntime.domBoundary)) ?? -1
-		const startIndex = boundaryIndex - previousOwnedNodes.length + 1
-		if (!ownerNodes || startIndex < 0) break
-		const updatedOwnerNodes = [...ownerNodes]
-		updatedOwnerNodes.splice(startIndex, previousOwnedNodes.length, ...nextOwnedNodes)
-		const parentRuntime = ownerRuntime.parentRuntime
-		previousOwnedNodes = /** @type {Node[]} */ (parentRuntime.currentNodes)
-		parentRuntime.currentNodes = updatedOwnerNodes
-		nextOwnedNodes = updatedOwnerNodes
-		ownerRuntime = parentRuntime
+	replaceNodeOwnership(boundary, previousNodes, nextNodes)
+	for (let owner = runtime.parentRuntime; owner; owner = owner.parentRuntime) {
+		const owned = owner.currentNodes
+		const boundaryIndex = owned?.indexOf(boundary) ?? -1
+		if (!owned || boundaryIndex < 0) break
+		const updated = [...owned]
+		updated.splice(boundaryIndex + 1 - previousNodes.length, previousNodes.length, ...nextNodes)
+		owner.currentNodes = updated
 	}
 }
 
@@ -236,7 +228,7 @@ function createDomComponentValue(ownerRuntime, descriptor, values) {
 
 		if (!runtime.domBoundary) {
 			runtime.domBoundary = new Text()
-			componentBoundaries.add(runtime.domBoundary)
+			componentBoundaries.set(runtime.domBoundary, runtime)
 		}
 		runtime.lastSeen = ownerRuntime.renderPassId
 		const nodes = (

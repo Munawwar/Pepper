@@ -292,7 +292,7 @@ var Template = class {
     const templateInstance = this.getInstance(key);
     templateInstance.applyValues(values);
     const renderedNodes = templateInstance.getRenderedNodes();
-    trackTemplateInstanceNodes(templateInstance, renderedNodes);
+    trackTemplateInstanceNodes(templateInstance);
     return renderedNodes;
   }
   /**
@@ -328,10 +328,20 @@ var Template = class {
       managedCustomElements,
       liveNodes[liveNodes.length - 1]?.nextSibling || null
     );
-    templateInstance.absorb(adoptionMap);
-    const renderedNodes = templateInstance.getRenderedNodes();
-    trackTemplateInstanceNodes(templateInstance, renderedNodes);
-    return renderedNodes;
+    const instances = /* @__PURE__ */ new Set([templateInstance]);
+    for (const [target, live] of adoptionMap) {
+      const instance = nodeTemplateInstances.get(target);
+      if (instance) instances.add(instance);
+      const runtime = componentBoundaries.get(target);
+      if (runtime) {
+        runtime.domBoundary = /** @type {Text} */
+        live;
+        componentBoundaries.set(live, runtime);
+        if (runtime.currentNodes) runtime.currentNodes = runtime.currentNodes.map((node) => adoptionMap.get(node) || node);
+      }
+    }
+    for (const instance of instances) instance.absorb(adoptionMap);
+    return templateInstance.getRenderedNodes();
   }
 };
 function parseTemplate(strings, mode) {
@@ -451,7 +461,7 @@ function arrayEquals(a, b) {
 var siteIndexKeys = /* @__PURE__ */ new WeakMap();
 var nodeTemplateInstances = /* @__PURE__ */ new WeakMap();
 var nodeHostSites = /* @__PURE__ */ new WeakMap();
-var componentBoundaries = /* @__PURE__ */ new WeakSet();
+var componentBoundaries = /* @__PURE__ */ new WeakMap();
 var siteTemplateInstances = /* @__PURE__ */ new WeakMap();
 function getStableNestedKey(site, index) {
   let indexKeys = siteIndexKeys.get(site);
@@ -460,21 +470,25 @@ function getStableNestedKey(site, index) {
   if (!key) indexKeys[index] = key = /* @__PURE__ */ Symbol("nested-template-key" + index);
   return key;
 }
-function trackTemplateInstanceNodes(templateInstance, nodes) {
-  for (const node of nodes) nodeTemplateInstances.set(node, templateInstance);
+function trackTemplateInstanceNodes(templateInstance) {
+  for (const node of templateInstance.nodes) nodeTemplateInstances.set(node, templateInstance);
+}
+function setInsertedNodes(site, nodes) {
+  for (const node of site.insertedNodes || []) nodeHostSites.get(node)?.delete(site);
+  site.insertedNodes = nodes.length ? nodes : void 0;
+  for (const node of nodes) {
+    if (!componentBoundaries.has(node)) continue;
+    let sites = nodeHostSites.get(node);
+    if (!sites) nodeHostSites.set(node, sites = /* @__PURE__ */ new Set());
+    sites.add(site);
+  }
 }
 function replaceNodeOwnership(boundary, previousNodes, nextNodes) {
-  const site = nodeHostSites.get(boundary);
-  const siteNodes = site?.insertedNodes;
-  if (!siteNodes) return false;
-  const boundaryIndex = siteNodes.indexOf(boundary);
-  const startIndex = boundaryIndex - previousNodes.length + 1;
-  if (startIndex < 0) return false;
-  const updatedSiteNodes = [...siteNodes];
-  updatedSiteNodes.splice(startIndex, previousNodes.length, ...nextNodes);
-  site.insertedNodes = updatedSiteNodes;
-  for (const node of nextNodes) if (componentBoundaries.has(node)) nodeHostSites.set(node, site);
-  return true;
+  for (const site of Array.from(nodeHostSites.get(boundary) || [])) {
+    const owned = [...site.insertedNodes];
+    owned.splice(owned.indexOf(boundary) + 1 - previousNodes.length, previousNodes.length, ...nextNodes);
+    setInsertedNodes(site, owned);
+  }
 }
 function getBindingKey(type, name) {
   if (type === "boolean-attribute") return `?${name}`;
@@ -507,7 +521,6 @@ function reconcileDom(parentNode, oldNodes, newNodes, endBoundaryNode = null) {
   let oldEnd = oldNodes.length;
   let newStart = 0;
   let newEnd = newNodes.length;
-  const startBoundaryNode = oldNodes.length ? oldNodes[0].previousSibling : endBoundaryNode?.previousSibling || null;
   while (oldStart < oldEnd || newStart < newEnd) {
     if (oldEnd === oldStart) {
       const retainedNode = newNodes[newEnd];
@@ -545,25 +558,21 @@ function reconcileDom(parentNode, oldNodes, newNodes, endBoundaryNode = null) {
         else parentNode.insertBefore(oldEndNode, safeInsertBefore);
       }
     } else {
-      const lastSettledNode = newNodes[newStart - 1] || null;
       const retainedNode = newNodes[newEnd];
-      const endBoundary = retainedNode?.parentNode === parentNode ? retainedNode : endBoundaryNode;
-      const firstPendingNode = newNodes[newStart] || endBoundary;
-      while (newStart < newEnd) {
-        const node2 = newNodes[newStart++];
-        if ("moveBefore" in parentNode && node2.parentNode === parentNode)
-          parentNode.moveBefore(node2, endBoundary);
-        else parentNode.insertBefore(node2, endBoundary);
+      let anchor = retainedNode?.parentNode === parentNode ? retainedNode : endBoundaryNode;
+      const retained = new Set(newNodes.slice(newStart, newEnd));
+      for (let i = newEnd - 1; i >= newStart; i--) {
+        const node = newNodes[i];
+        if (node.parentNode !== parentNode || node.nextSibling !== anchor) {
+          if ("moveBefore" in parentNode && node.parentNode === parentNode)
+            parentNode.moveBefore(node, anchor);
+          else parentNode.insertBefore(node, anchor);
+        }
+        anchor = node;
       }
-      let node = lastSettledNode ? lastSettledNode.nextSibling : startBoundaryNode ? startBoundaryNode.nextSibling : parentNode.firstChild;
-      while (node && node !== firstPendingNode) {
-        const nextSibling = node.nextSibling;
-        const removableNode = (
-          /** @type {ChildNode} */
-          node
-        );
-        removableNode.remove();
-        node = nextSibling;
+      for (let i = oldStart; i < oldEnd; i++) {
+        const node = oldNodes[i];
+        if (node.parentNode === parentNode && !retained.has(node)) parentNode.removeChild(node);
       }
       break;
     }
@@ -579,7 +588,7 @@ function interpolateTextSite(site, value) {
     site.lastValue = unwrappedValue;
     if (site.insertedNodes) for (const node of site.insertedNodes) node.remove();
     site.node.textContent = typeof unwrappedValue === "boolean" ? "" : String(unwrappedValue ?? "");
-    site.insertedNodes = void 0;
+    if (site.insertedNodes) setInsertedNodes(site, []);
     for (const templateInstance of site.nestedTemplateInstances || []) templateInstance.deactivate();
     site.nestedTemplateInstances = void 0;
   } else {
@@ -621,7 +630,7 @@ function interpolateTextSite(site, value) {
     const parentNode = site.node.parentNode;
     if (!parentNode) {
       site.node.textContent = "";
-      site.insertedNodes = nodes.length ? [...nodes] : void 0;
+      setInsertedNodes(site, nodes);
       return;
     }
     const reconciledNodes = (
@@ -635,8 +644,7 @@ function interpolateTextSite(site, value) {
       )
     );
     site.node.textContent = "";
-    site.insertedNodes = reconciledNodes.length ? reconciledNodes : void 0;
-    for (const node of reconciledNodes) if (componentBoundaries.has(node)) nodeHostSites.set(node, site);
+    setInsertedNodes(site, reconciledNodes);
     const previousTemplateInstances = site.nestedTemplateInstances || [];
     for (const templateInstance of previousTemplateInstances)
       if (!nestedTemplateInstances.includes(templateInstance)) templateInstance.deactivate();
@@ -808,7 +816,6 @@ var TemplateInstance = class {
       /** @type {Element | Text} */
       adoptionMap.get(node) || node
     )));
-    const nestedAdoptionMaps = /* @__PURE__ */ new Map();
     const reboundElementStates = /* @__PURE__ */ new WeakSet();
     for (const site of this.sites) {
       const previousNode = site.node;
@@ -818,12 +825,7 @@ var TemplateInstance = class {
       );
       site.node = node;
       if (site.insertedNodes)
-        site.insertedNodes = site.insertedNodes.map(
-          (node2) => (
-            /** @type {Element | Text} */
-            adoptionMap.get(node2) || node2
-          )
-        );
+        setInsertedNodes(site, site.insertedNodes.map((node2) => adoptionMap.get(node2) || node2));
       const elementState = site.elementState;
       if (!elementState || node === previousNode || reboundElementStates.has(elementState)) continue;
       for (const [eventName, eventState] of elementState.eventBindings || []) {
@@ -849,18 +851,7 @@ var TemplateInstance = class {
       }
       reboundElementStates.add(elementState);
     }
-    for (const [templateNode, liveNode] of adoptionMap) {
-      const templateInstance = nodeTemplateInstances.get(templateNode);
-      if (!templateInstance || templateInstance === this) continue;
-      let nestedAdoptionMap = nestedAdoptionMaps.get(templateInstance);
-      if (!nestedAdoptionMap) nestedAdoptionMaps.set(templateInstance, nestedAdoptionMap = /* @__PURE__ */ new Map());
-      nestedAdoptionMap.set(templateNode, liveNode);
-    }
-    for (const [templateInstance, nestedAdoptionMap] of nestedAdoptionMaps) templateInstance.absorb(nestedAdoptionMap);
-    for (const site of this.sites)
-      for (const node of site.insertedNodes || [])
-        if (componentBoundaries.has(node)) nodeHostSites.set(node, site);
-    trackTemplateInstanceNodes(this, this.getRenderedNodes());
+    trackTemplateInstanceNodes(this);
   }
   /**
    * Apply values to interpolation sites
@@ -1052,9 +1043,9 @@ var TemplateInstance = class {
 // src/index.js
 var { componentBoundaries: componentBoundaries2, reconcileDom: reconcileDom2, replaceNodeOwnership: replaceNodeOwnership2 } = (
   /** @type {{
-  * componentBoundaries: WeakSet<Node>,
+  * componentBoundaries: WeakMap<Node, ComponentRuntime>,
   * reconcileDom(parentNode: Element | DocumentFragment | Document, oldNodes: Node[], newNodes: Node[], endBoundaryNode?: Node | null): Node[],
-  * replaceNodeOwnership(boundary: Node, previousNodes: Node[], nextNodes: Node[]): boolean,
+  * replaceNodeOwnership(boundary: Node, previousNodes: Node[], nextNodes: Node[]): void,
   * }} */
   /** @type {unknown} */
   html_exports
@@ -1107,31 +1098,14 @@ function commitRuntimeNodes(runtime, previousNodes, nextNodes) {
     nextNodes.slice(0, -1),
     boundary
   );
-  let ownerRuntime = runtime;
-  let previousOwnedNodes = previousNodes;
-  let nextOwnedNodes = nextNodes;
-  while (ownerRuntime.parentRuntime) {
-    if (replaceNodeOwnership2(
-      /** @type {Text} */
-      ownerRuntime.domBoundary,
-      previousOwnedNodes,
-      nextOwnedNodes
-    )) break;
-    const ownerNodes = ownerRuntime.parentRuntime.currentNodes;
-    const boundaryIndex = ownerNodes?.indexOf(
-      /** @type {Text} */
-      ownerRuntime.domBoundary
-    ) ?? -1;
-    const startIndex = boundaryIndex - previousOwnedNodes.length + 1;
-    if (!ownerNodes || startIndex < 0) break;
-    const updatedOwnerNodes = [...ownerNodes];
-    updatedOwnerNodes.splice(startIndex, previousOwnedNodes.length, ...nextOwnedNodes);
-    const parentRuntime = ownerRuntime.parentRuntime;
-    previousOwnedNodes = /** @type {Node[]} */
-    parentRuntime.currentNodes;
-    parentRuntime.currentNodes = updatedOwnerNodes;
-    nextOwnedNodes = updatedOwnerNodes;
-    ownerRuntime = parentRuntime;
+  replaceNodeOwnership2(boundary, previousNodes, nextNodes);
+  for (let owner = runtime.parentRuntime; owner; owner = owner.parentRuntime) {
+    const owned = owner.currentNodes;
+    const boundaryIndex = owned?.indexOf(boundary) ?? -1;
+    if (!owned || boundaryIndex < 0) break;
+    const updated = [...owned];
+    updated.splice(boundaryIndex + 1 - previousNodes.length, previousNodes.length, ...nextNodes);
+    owner.currentNodes = updated;
   }
 }
 function createDomTags() {
@@ -1202,7 +1176,7 @@ function createDomComponentValue(ownerRuntime, descriptor, values) {
     }
     if (!runtime.domBoundary) {
       runtime.domBoundary = new Text();
-      componentBoundaries2.add(runtime.domBoundary);
+      componentBoundaries2.set(runtime.domBoundary, runtime);
     }
     runtime.lastSeen = ownerRuntime.renderPassId;
     const nodes = runtime.currentNodes && !runtime.dirty ? runtime.currentNodes : realizeComponentRuntime(

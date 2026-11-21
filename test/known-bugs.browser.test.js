@@ -130,6 +130,43 @@ describe('Known Pepper browser regressions', () => {
 		assertEquals(leafRenders, 2)
 	})
 
+	for (const mount of [render, hydrate]) {
+		it(`[A03] preserves locally updated fragments across ancestor updates and keyed moves (${mount.name})`, async () => {
+			const container = createContainer()
+			const setters = new Map()
+			function Leaf({getProps}) {
+				const [mode, setMode] = state(0)
+				const id = getProps().id
+				setters.set(id, setMode)
+				return html => mode() === 3 ? html`<em>${id}</em>` : html`${mode() === 0 ? html`<i>${id}</i>` : mode() === 1 ? html`<b>${id}</b><u>!</u>` : null}`
+			}
+			function Row({getProps}) { return html => html`<${Leaf} id=${getProps().id}/>` }
+			function App({getProps}) {
+				return html => html`<div><span>${getProps().label}</span>${getProps().rows.map(id => html`<${Row} key=${id} id=${id}/>`)}<small>end</small></div>`
+			}
+			const props = {label: 'start', rows: ['a', 'b']}
+			if (mount === hydrate) container.innerHTML = renderComponentToString(App, props)
+			mount(App, container, props)
+			const tail = container.querySelector('small')
+			setters.get('a')(1)
+			await flushRender()
+			assertEquals(container.innerHTML, '<div><span>start</span><b>a</b><u>!</u><i>b</i><small>end</small></div>')
+			const live = container.querySelector('b')
+			render(App, container, {label: 'next', rows: ['b', 'a']})
+			assertEquals(container.innerHTML, '<div><span>next</span><i>b</i><b>a</b><u>!</u><small>end</small></div>')
+			assertEquals(container.querySelector('b'), live)
+			setters.get('b')(2)
+			await flushRender()
+			render(App, container, {label: 'done', rows: ['b']})
+			assertEquals(container.innerHTML, '<div><span>done</span><small>end</small></div>')
+			assertEquals(container.querySelector('small'), tail)
+			setters.get('b')(3)
+			await flushRender()
+			render(App, container, {label: 'last', rows: ['b']})
+			assertEquals(container.innerHTML, '<div><span>last</span><em>b</em><small>end</small></div>')
+		})
+	}
+
 	it('[A03] commits a child-local root template change', async () => {
 		let showOn
 
