@@ -344,6 +344,19 @@ test('rejects invalid and duplicate SSR component keys', () => {
 	assert.throws(() => renderComponentToString(DuplicateKey), /Duplicate key at component site/)
 })
 
+test('isolates IDs and duplicate-key checks across nested serializations', () => {
+	function Field() {
+		const id = stableId()
+		return h => h`<input id=${id}>`
+	}
+	function Nested() {
+		return h => h`<p>${renderToString(html`snippet`)}</p>`
+	}
+	assert.equal(renderToString(html`<${Field}/><${Nested}/><${Field}/>`), '<input id="p-0-0"><p>snippet</p><input id="p-2-0">')
+	const field = () => html`<${Field} key="duplicate"/>`
+	assert.throws(() => renderToString(html`${field()}<${Nested}/>${field()}`), /Duplicate key/)
+})
+
 test('renders generated ids for top-level SSR component tags', () => {
 	function Field() {
 		const id = stableId()

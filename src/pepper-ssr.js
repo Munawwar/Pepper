@@ -191,9 +191,15 @@ function renderComponentToString(Component, props = {}, options = {}) {
  * @returns {string}
  */
 function renderToString(value) {
+	const {nextChildId, seenChildKeys} = publicSsrTagsHolder
 	publicSsrTagsHolder.nextChildId = 0
 	publicSsrTagsHolder.seenChildKeys = new WeakMap()
-	return baseRenderToString(value)
+	try {
+		return baseRenderToString(value)
+	} finally {
+		publicSsrTagsHolder.nextChildId = nextChildId
+		publicSsrTagsHolder.seenChildKeys = seenChildKeys
+	}
 }
 
 /**

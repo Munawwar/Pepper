@@ -460,9 +460,15 @@ function renderComponentToString(Component, props = {}, options = {}) {
   );
 }
 function renderToString2(value) {
+  const { nextChildId, seenChildKeys } = publicSsrTagsHolder;
   publicSsrTagsHolder.nextChildId = 0;
   publicSsrTagsHolder.seenChildKeys = /* @__PURE__ */ new WeakMap();
-  return renderToString(value);
+  try {
+    return renderToString(value);
+  } finally {
+    publicSsrTagsHolder.nextChildId = nextChildId;
+    publicSsrTagsHolder.seenChildKeys = seenChildKeys;
+  }
 }
 function portal() {
   return () => [];
