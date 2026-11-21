@@ -1079,7 +1079,7 @@ function realizeDomRenderable(renderable, runtime, liveNodes = null) {
   );
   const renderedNodes = liveNodes ? view(runtime.viewKey, liveNodes) : view(runtime.viewKey);
   const templateInstance = view.template?.getInstance(runtime.viewKey) || null;
-  const ownedNodes = runtime.domBoundary && templateInstance ? templateInstance.getRenderedNodes(true) : renderedNodes;
+  const ownedNodes = templateInstance ? templateInstance.getRenderedNodes(true) : renderedNodes;
   const nodes = runtime.domBoundary ? [...ownedNodes, runtime.domBoundary] : ownedNodes;
   if (runtime.currentTemplateInstance !== templateInstance) {
     runtime.currentTemplateInstance?.deactivate();
@@ -1298,6 +1298,7 @@ function flushDirtyRuntimes(rootRecord) {
     while (true) {
       try {
         const previousNodes = retryRuntime.currentNodes || [];
+        const previousTemplate = retryRuntime.currentTemplateInstance;
         const renderable = renderComponentRuntime(retryRuntime, rootRecord.domTags);
         const nodes = realizeComponentRuntime(
           renderable,
@@ -1308,7 +1309,7 @@ function flushDirtyRuntimes(rootRecord) {
           ) : null
         );
         commitRuntimeNodes(retryRuntime, previousNodes, nodes);
-        if (retryRuntime === rootRecord.topRuntime && (retrying || nodes.some((node) => node.parentNode !== rootRecord.container))) rootRecord.container.replaceChildren(...nodes);
+        if (retryRuntime === rootRecord.topRuntime && (retrying || previousTemplate !== retryRuntime.currentTemplateInstance || nodes.some((node) => node.parentNode !== rootRecord.container))) rootRecord.container.replaceChildren(...nodes);
         finalizeComponentRuntime(retryRuntime);
         break;
       } catch (error) {
@@ -1330,7 +1331,8 @@ function flushDirtyRuntimes(rootRecord) {
 }
 function performRootRender(rootRecord, hydrateOnly = false) {
   if (!rootRecord.topRuntime) throw new Error("Pepper root is missing its top runtime.");
-  if (!hydrateOnly && rootRecord.mounted && !rootRecord.topRuntime.dirty) {
+  if (rootRecord.mounted) {
+    if (rootRecord.topRuntime.dirty) rootRecord.dirtyRuntimes.add(rootRecord.topRuntime);
     if (rootRecord.dirtyRuntimes.size) flushDirtyRuntimes(rootRecord);
     return;
   }

@@ -79,6 +79,28 @@ describe('Known Pepper browser regressions', () => {
 		assertEquals(cleanups, 1)
 	})
 
+	it('commits explicit root updates through changed, empty and stable templates', () => {
+		const container = createContainer()
+		function App({getProps}) {
+			return html => {
+				const {mode, value} = getProps()
+				if (mode === 'text') return html`${value}`
+				if (mode === 'input') return html`<input .value=${value}>`
+				return html``
+			}
+		}
+		render(App, container, {mode: 'text', value: 'old'})
+		render(App, container, {mode: 'input', value: 'one'})
+		const input = container.querySelector('input')
+		render(App, container, {mode: 'input', value: 'two'})
+		assertEquals(container.querySelector('input'), input)
+		assertEquals(input.value, 'two')
+		render(App, container, {mode: 'empty'})
+		assertEquals(container.innerHTML, '')
+		render(App, container, {mode: 'text', value: 'new'})
+		assertEquals(container.textContent, 'new')
+	})
+
 	it('[A03] commits a child-local root template change', async () => {
 		let showOn
 
