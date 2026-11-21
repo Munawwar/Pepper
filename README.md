@@ -162,6 +162,8 @@ Wrap a value in `force(value)` to reapply a binding on that update. A plain valu
 
 Prefix an interpolated DOM binding with `!` to apply it on every template update, for example `!class=${name}`. Literal attributes such as `!class="x"` are invalid. Spreads and explicit bindings apply from left to right. On overlap the last binding wins, including when there are multiple spreads.
 
+Call `render(App, container, nextProps)` again to update the props and keep the component’s state.
+
 `unmount(container)` disposes a rendered or hydrated root, runs effect cleanups, and removes its DOM and portals. Pass the same element or selector used to mount it. A subsequent `render()` creates a fresh root.
 
 Hydration applies explicit DOM property bindings to the adopted element. For example, `.value=${name}` sets the live input value even if someone typed before hydration. Use the `value` attribute for an initial default that preserves edits.
@@ -214,7 +216,7 @@ function GoodExample() {
 
 ## SSR / Store / Context
 
-Pepper roots accept a 4th-param `context` object. This is the intended way to pass request-local stores through the tree for both SSR and hydration.
+Pass a store through `options.context` to share it across components. On the server, create a store for each request.
 
 ```ts
 import { hydrate } from '@pepper-js/pepper'
@@ -300,7 +302,7 @@ cart.unsubscribe(onCartChange)
 
 Notes:
 
-- change detection is shallow, top-level only
+- Store checks for changes at the top level.
 - `store.data = nextData` replaces the whole data object
 - `store.assign(partial)` shallow-merges into the existing data object
 - subscribers are notified only for the top-level keys they subscribed to
