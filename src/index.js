@@ -409,23 +409,21 @@ function performRootRender(rootRecord, hydrateOnly = false) {
 	}
 	rootRecord.dirtyRuntimes.clear()
 	const callbacks = rootRecord.pendingCallbacks.splice(0)
-	let liveNodes = hydrateOnly ? Array.from(rootRecord.container.childNodes) : null
-	let replaceNodes = !rootRecord.mounted && !hydrateOnly
+	let liveNodes = hydrateOnly && rootRecord.container.hasChildNodes() ? Array.from(rootRecord.container.childNodes) : null
 	let nodes
 	while (true) {
 		try {
 			const renderable = renderComponentRuntime(rootRecord.topRuntime, rootRecord.domTags)
-			nodes = realizeComponentRuntime(renderable, rootRecord.topRuntime, liveNodes?.length ? liveNodes : null)
+			nodes = realizeComponentRuntime(renderable, rootRecord.topRuntime, liveNodes)
 			finalizeComponentRuntime(rootRecord.topRuntime)
 			break
 		} catch (error) {
 			if (!isErrorBoundarySignal(error)) throw error
 			captureBoundaryError(error.boundary, error.error)
 			liveNodes = null
-			replaceNodes = true
 		}
 	}
-	if (replaceNodes) rootRecord.container.replaceChildren(...nodes)
+	if (!liveNodes) rootRecord.container.replaceChildren(...nodes)
 	rootRecord.mounted = true
 	finishRootCommit(rootRecord, callbacks)
 }

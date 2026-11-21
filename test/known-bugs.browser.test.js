@@ -44,6 +44,21 @@ const renderWithBoundary = Child => {
 describe('Known Pepper browser regressions', () => {
 	afterEach(() => document.body.replaceChildren())
 
+	it('hydrates an empty container by mounting the client output before effects run', () => {
+		const container = createContainer()
+		let mounted
+		function App({effect, getProps}) {
+			effect(() => { mounted = container.querySelector('button') }, () => [])
+			return html => html`<button>${getProps().label}</button>`
+		}
+
+		hydrate(App, container, {label: 'first'})
+		assertEquals(mounted?.textContent, 'first')
+		render(App, container, {label: 'second'})
+		assertEquals(container.firstChild, mounted)
+		assertEquals(mounted.textContent, 'second')
+	})
+
 	it.skip('[A02] renders when WeakMap only accepts object keys', () => {
 		const originalSet = WeakMap.prototype.set
 		WeakMap.prototype.set = function setObjectKeyOnly(key, value) {
