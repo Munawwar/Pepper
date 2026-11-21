@@ -1284,15 +1284,20 @@ function flushEffectsWithBoundaries(rootRecord) {
   }
 }
 function flushDirtyRuntimes(rootRecord) {
-  const dirtyRuntimes = [...rootRecord.dirtyRuntimes].filter((runtime) => runtime.dirty && !runtime.destroyed).filter((runtime) => {
-    for (let parent = runtime.parentRuntime; parent; parent = parent.parentRuntime) {
-      if (rootRecord.dirtyRuntimes.has(parent) && parent.dirty && !parent.destroyed) return false;
+  const dirtyRuntimes = /* @__PURE__ */ new Set();
+  for (const runtime of rootRecord.dirtyRuntimes) {
+    const pending = [];
+    for (let owner = (
+      /** @type {ComponentRuntime | null} */
+      runtime
+    ); owner && !dirtyRuntimes.has(owner); owner = owner.parentRuntime) {
+      if (rootRecord.dirtyRuntimes.has(owner)) pending.push(owner);
     }
-    return true;
-  });
+    for (const owner of pending.reverse()) dirtyRuntimes.add(owner);
+  }
   rootRecord.dirtyRuntimes.clear();
   for (const runtime of dirtyRuntimes) {
-    if (runtime.destroyed) continue;
+    if (!runtime.dirty || runtime.destroyed) continue;
     let retryRuntime = runtime;
     let retrying = false;
     while (true) {

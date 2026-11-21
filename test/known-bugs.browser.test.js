@@ -101,6 +101,35 @@ describe('Known Pepper browser regressions', () => {
 		assertEquals(container.textContent, 'new')
 	})
 
+	it('flushes dirty descendants through memoized branches and skips removed children', async () => {
+		const container = createContainer()
+		let setCount, setVisible, leafRenders = 0
+		function Leaf({getContext}) {
+			const [count, set] = state(0)
+			setCount = set
+			return html => {
+				leafRenders++
+				return html`<b>${count()}:${getContext('leaf')}</b>`
+			}
+		}
+		function Middle() { return html => html`<section><${Leaf}/></section>` }
+		function App({getContext}) {
+			const [visible, set] = state(true)
+			setVisible = set
+			return html => html`<div>${getContext('root')}/${visible() ? html`<${Middle}/>` : null}</div>`
+		}
+		render(App, container, {}, {context: {root: 0, leaf: 0}})
+		setCount(1)
+		render(App, container, {}, {context: {root: 1, leaf: 1}})
+		assertEquals(container.textContent, '1/1:1')
+		assertEquals(leafRenders, 2)
+		setCount(2)
+		setVisible(false)
+		await Promise.resolve()
+		assertEquals(container.textContent, '1/')
+		assertEquals(leafRenders, 2)
+	})
+
 	it('[A03] commits a child-local root template change', async () => {
 		let showOn
 
