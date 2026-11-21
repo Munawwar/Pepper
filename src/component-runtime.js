@@ -15,6 +15,7 @@ let currentSetupRuntime = null
 let currentOwnerRuntime = null
 
 /**
+ * @typedef {{ activate(): void, deactivate(): void, getRenderedNodes(includeInterpolationAnchors?: boolean): ChildNode[] }} DomTemplateInstance
  * @typedef {() => void} RenderCallback
  * @typedef {{ current: Node | null }} RuntimeRef
  * @typedef {(strings: TemplateStringsArray, ...values: readonly unknown[]) => unknown} TemplateTag
@@ -61,7 +62,7 @@ let currentOwnerRuntime = null
  *   contextDependencies: Set<string>,
  *   currentNodes: Node[] | null,
  *   currentRenderable: unknown,
- *   currentTemplateInstance: { activate(): void, deactivate(): void } | null,
+ *   currentTemplateInstance: DomTemplateInstance | null,
  *   domBoundary?: Text,
  *   childrenValues?: unknown[],
  *   debugKeyNodes?: Element[],
@@ -81,7 +82,7 @@ let currentOwnerRuntime = null
  *   options: ComponentOptions,
  *   parentRuntime: ComponentRuntime | null,
  *   nextContextDependencies: Set<string> | null,
- *   portals: Map<unknown, { currentNodes: ChildNode[], currentTarget: Element | null, destroy(): void, lastSeen: number, viewKey: symbol }>,
+ *   portals: Map<unknown, { currentTarget: Element | null, instance: DomTemplateInstance, destroy(): void, lastSeen: number, viewKey: symbol }>,
  *   props: Record<string, unknown>,
  *   refs: RuntimeRef[],
  *   renderPassId: number,

@@ -1320,4 +1320,53 @@ describe('Known Pepper browser regressions', () => {
 		const container = createContainer()
 		assertThrows(() => render(App, container), /portal target selector "#local-outlet" must match an existing element/)
 	})
+
+	it('[PORTAL] cleans up child-local root shape changes after retarget and unmount', async () => {
+		const container = createContainer()
+		const first = createContainer()
+		const second = createContainer()
+		const siblings = ['before', 'after'].map(text => Object.assign(document.createElement('i'), {textContent: text}))
+		first.append(siblings[0], siblings[1])
+		let setCount, setTarget, childRef
+
+		function Child() {
+			const [count, set] = state(1)
+			setCount = set
+			childRef = Pepper.ref()
+			return html => html`<span ref=${childRef}>0</span>${Array.from({length: count() - 1}, (_, i) => html`<span>${i + 1}</span>`)}`
+		}
+
+		function App() {
+			const [target, set] = state(first)
+			setTarget = set
+			return html => html`<main>app</main>${portal(target(), html`<b>head</b><${Child} />`)}`
+		}
+
+		render(App, container)
+		assertEquals(first.textContent, 'beforeafterhead0')
+		setCount(3)
+		await Promise.resolve()
+		assertEquals(first.textContent, 'beforeafterhead012', 'Child-local multi-node growth stays inside the portal')
+		setCount(2)
+		await Promise.resolve()
+		assertEquals(first.textContent, 'beforeafterhead01')
+		assertEquals(first.firstChild, siblings[0])
+
+		const firstSpan = first.querySelector('span')
+		setTarget(second)
+		await Promise.resolve()
+		assertEquals(first.textContent, 'beforeafter', 'Retarget removes every portal node from the old outlet')
+		assertEquals(second.textContent, 'head01')
+		assertEquals(childRef.current, firstSpan)
+		assertEquals(second.querySelector('span'), firstSpan)
+		setCount(3)
+		await Promise.resolve()
+		assertEquals(second.textContent, 'head012')
+
+		Pepper.unmount(container)
+		assertEquals(second.textContent, '', 'Unmount removes the whole live range')
+		assertEquals(first.textContent, 'beforeafter')
+		assertEquals(first.lastChild, siblings[1])
+		assertEquals(childRef.current, null)
+	})
 })
